@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block title %}Home | LTAdmin Flask{% endblock %}
+
+{% block body %}
+<div class="dashboard-shell">
+  <aside class="sidebar p-3">
+    <div class="brand-pill mb-4">
+      <i class="bi bi-grid-fill"></i>
+      <span>LTAdmin</span>
+    </div>
+    <nav class="nav flex-column gap-1">
+      <a class="nav-link active" href="{{ url_for('main.home') }}"><i class="bi bi-house-door"></i> Home</a>
+      <a class="nav-link" href="#"><i class="bi bi-kanban"></i> Proyectos</a>
+      <a class="nav-link" href="#"><i class="bi bi-life-preserver"></i> Soporte</a>
+      <a class="nav-link" href="#"><i class="bi bi-people"></i> Equipo</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <header class="content-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+      <div>
+        <h1 class="h4 mb-0">Panel principal</h1>
+        <small class="text-secondary">Gestión de proyectos y soporte</small>
+      </div>
+      <form method="post" action="{{ url_for('auth.logout') }}">
+        <button class="btn btn-outline-danger btn-sm" type="submit">Cerrar sesión</button>
+      </form>
+    </header>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }} mt-3 py-2" role="alert">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <section class="row g-3 mt-1">
+      <div class="col-12 col-md-6 col-xl-3">
+        <div class="card metric-card border-0">
+          <div class="card-body">
+            <p class="text-secondary mb-1 small">Proyectos activos</p>
+            <h2 class="h4 mb-0">12</h2>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-6 col-xl-3">
+        <div class="card metric-card border-0">
+          <div class="card-body">
+            <p class="text-secondary mb-1 small">Tickets abiertos</p>
+            <h2 class="h4 mb-0">34</h2>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-6 col-xl-3">
+        <div class="card metric-card border-0">
+          <div class="card-body">
+            <p class="text-secondary mb-1 small">SLA cumplido</p>
+            <h2 class="h4 mb-0">96%</h2>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-6 col-xl-3">
+        <div class="card metric-card border-0">
+          <div class="card-body">
+            <p class="text-secondary mb-1 small">Usuario</p>
+            <h2 class="h5 mb-0">{{ username }}</h2>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+{% endblock %}
