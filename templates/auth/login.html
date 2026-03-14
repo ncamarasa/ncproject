@@ -1,47 +1,43 @@
 {% extends 'base.html' %}
 
 {% block title %}Login | LTAdmin Flask{% endblock %}
+{% block body_class %}hold-transition login-page{% endblock %}
 
 {% block body %}
-<div class="container min-vh-100 d-flex align-items-center justify-content-center py-4">
-  <div class="row w-100 justify-content-center">
-    <div class="col-12 col-sm-10 col-md-8 col-lg-5 col-xl-4">
-      <div class="card border-0 shadow-lg login-card">
-        <div class="card-body p-4 p-md-5">
-          <div class="text-center mb-4">
-            <div class="brand-pill mx-auto mb-3">
-              <i class="bi bi-grid-fill"></i>
-              <span>LTAdmin</span>
-            </div>
-            <h1 class="h4 mb-1">Iniciar sesión</h1>
-            <p class="text-secondary mb-0">Panel de gestión de proyectos y soporte</p>
+<div class="login-box">
+  <div class="login-logo">
+    <a href="#"><b>LTE</b>Admin</a>
+  </div>
+
+  <div class="card card-outline card-primary shadow-sm">
+    <div class="card-body login-card-body">
+      <p class="login-box-msg mb-3">Iniciar sesión en el panel</p>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert alert-{{ category }} py-2" role="alert">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      <form method="post">
+        <div class="input-group mb-3">
+          <input id="username" name="username" class="form-control" placeholder="Usuario" required autofocus>
+          <div class="input-group-append">
+            <div class="input-group-text"><span class="fas fa-user"></span></div>
           </div>
-
-          {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-              {% for category, message in messages %}
-                <div class="alert alert-{{ category }} py-2" role="alert">{{ message }}</div>
-              {% endfor %}
-            {% endif %}
-          {% endwith %}
-
-          <form method="post" class="d-grid gap-3">
-            <div>
-              <label for="username" class="form-label">Usuario</label>
-              <input id="username" name="username" class="form-control form-control-lg" required autofocus>
-            </div>
-            <div>
-              <label for="password" class="form-label">Contraseña</label>
-              <input id="password" name="password" type="password" class="form-control form-control-lg" required>
-            </div>
-            <button type="submit" class="btn btn-primary btn-lg w-100">Entrar</button>
-          </form>
-
-          <p class="text-center text-secondary mt-4 mb-0 small">
-            Demo: <code>admin / admin123</code>
-          </p>
         </div>
-      </div>
+        <div class="input-group mb-3">
+          <input id="password" name="password" type="password" class="form-control" placeholder="Contraseña" required>
+          <div class="input-group-append">
+            <div class="input-group-text"><span class="fas fa-lock"></span></div>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Entrar</button>
+      </form>
+
+      <p class="text-center text-muted mt-3 mb-0 small">Demo: <code>admin / admin123</code></p>
     </div>
   </div>
 </div>

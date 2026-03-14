@@ -1,0 +1,187 @@
+{% extends 'dashboard/layout.html' %}
+
+{% block title %}{{ 'Editar proyecto' if is_edit else 'Nuevo proyecto' }} | LTAdmin Flask{% endblock %}
+{% block page_title %}{{ 'Editar proyecto' if is_edit else 'Nuevo proyecto' }}{% endblock %}
+{% block page_subtitle %}Datos, planificación y stakeholders{% endblock %}
+{% block page_actions %}
+<a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-secondary btn-sm">Volver al listado</a>
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="card border-0 metric-card">
+  <div class="card-body">
+    <form method="post" enctype="multipart/form-data" class="row g-3">
+      <div class="col-12 col-lg-6">
+        <label class="form-label">Nombre *</label>
+        <input name="name" class="form-control" required value="{{ form_values.get('name', project.name if project else '') }}">
+      </div>
+      <div class="col-12 col-lg-6">
+        <label class="form-label">Cliente *</label>
+        <select name="client_id" class="form-select" required>
+          <option value="">Seleccionar</option>
+          {% for client in clients %}
+            {% set selected = form_values.get('client_id', project.client_id if project else '')|string %}
+            <option value="{{ client.id }}" {% if selected == client.id|string %}selected{% endif %}>{{ client.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-12">
+        <label class="form-label">Descripción</label>
+        <textarea name="description" class="form-control" rows="3">{{ form_values.get('description', project.description if project else '') }}</textarea>
+      </div>
+
+      <div class="col-12 col-md-4">
+        <label class="form-label">Tipo *</label>
+        <select name="project_type" class="form-select" required>
+          {% set current = form_values.get('project_type', project.project_type if project else '') %}
+          <option value="">Seleccionar</option>
+          {% for item in project_types %}
+            <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-4">
+        <label class="form-label">Estado *</label>
+        <select name="status" class="form-select" required>
+          {% set current = form_values.get('status', project.status if project else '') %}
+          <option value="">Seleccionar</option>
+          {% for item in project_statuses %}
+            <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-4">
+        <label class="form-label">Prioridad *</label>
+        <select name="priority" class="form-select" required>
+          {% set current = form_values.get('priority', project.priority if project else '') %}
+          <option value="">Seleccionar</option>
+          {% for item in project_priorities %}
+            <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-12 col-md-6">
+        <label class="form-label">Fecha estimada de inicio</label>
+        <input type="date" name="estimated_start_date" class="form-control" value="{{ form_values.get('estimated_start_date', project.estimated_start_date.isoformat() if project and project.estimated_start_date else '') }}">
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label">Fecha estimada de fin</label>
+        <input type="date" name="estimated_end_date" class="form-control" value="{{ form_values.get('estimated_end_date', project.estimated_end_date.isoformat() if project and project.estimated_end_date else '') }}">
+      </div>
+
+      <div class="col-12 col-md-6">
+        <label class="form-label">Responsable *</label>
+        <input name="owner" class="form-control" required value="{{ form_values.get('owner', project.owner if project else '') }}">
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label">Contrato adjunto (PDF/DOC/DOCX)</label>
+        <input type="file" name="contract" class="form-control" accept=".pdf,.doc,.docx">
+        {% if project and project.contract_file_name %}
+          <small class="text-secondary">Actual: <a href="{{ url_for('projects.download_contract', project_id=project.id) }}">{{ project.contract_original_name }}</a></small>
+        {% endif %}
+      </div>
+
+      <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <label class="form-label mb-0">Stakeholders del proyecto</label>
+          <button type="button" id="addStakeholderRow" class="btn btn-sm btn-outline-primary">Agregar stakeholder</button>
+        </div>
+        <div id="stakeholderRows" class="d-grid gap-2">
+          {% for row in stakeholder_rows %}
+          <div class="border rounded p-2 stakeholder-row">
+            <div class="row g-2">
+              <div class="col-12 col-lg-3">
+                <input name="stakeholder_name[]" class="form-control" placeholder="Nombre" value="{{ row.name or '' }}">
+              </div>
+              <div class="col-12 col-lg-2">
+                <input name="stakeholder_role[]" class="form-control" placeholder="Rol" value="{{ row.role or '' }}">
+              </div>
+              <div class="col-12 col-lg-3">
+                <input name="stakeholder_email[]" type="email" class="form-control" placeholder="Email" value="{{ row.email or '' }}">
+              </div>
+              <div class="col-12 col-lg-2">
+                <input name="stakeholder_phone[]" class="form-control" placeholder="Teléfono" value="{{ row.phone or '' }}">
+              </div>
+              <div class="col-10 col-lg-2">
+                <input name="stakeholder_notes[]" class="form-control" placeholder="Notas" value="{{ row.notes or '' }}">
+              </div>
+              <div class="col-2 col-lg-1 d-grid">
+                <button type="button" class="btn btn-outline-danger remove-row">X</button>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <small class="text-secondary">Se cargan y editan únicamente dentro de este proyecto.</small>
+      </div>
+
+      <div class="col-12">
+        <label class="form-label">Observaciones</label>
+        <textarea name="observations" class="form-control" rows="3">{{ form_values.get('observations', project.observations if project else '') }}</textarea>
+      </div>
+
+      <div class="col-12 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">{{ 'Guardar cambios' if is_edit else 'Crear proyecto' }}</button>
+        <a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<template id="stakeholderRowTemplate">
+  <div class="border rounded p-2 stakeholder-row">
+    <div class="row g-2">
+      <div class="col-12 col-lg-3">
+        <input name="stakeholder_name[]" class="form-control" placeholder="Nombre">
+      </div>
+      <div class="col-12 col-lg-2">
+        <input name="stakeholder_role[]" class="form-control" placeholder="Rol">
+      </div>
+      <div class="col-12 col-lg-3">
+        <input name="stakeholder_email[]" type="email" class="form-control" placeholder="Email">
+      </div>
+      <div class="col-12 col-lg-2">
+        <input name="stakeholder_phone[]" class="form-control" placeholder="Teléfono">
+      </div>
+      <div class="col-10 col-lg-2">
+        <input name="stakeholder_notes[]" class="form-control" placeholder="Notas">
+      </div>
+      <div class="col-2 col-lg-1 d-grid">
+        <button type="button" class="btn btn-outline-danger remove-row">X</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+  (() => {
+    const container = document.getElementById("stakeholderRows");
+    const addBtn = document.getElementById("addStakeholderRow");
+    const template = document.getElementById("stakeholderRowTemplate");
+
+    const bindRemove = (scope) => {
+      scope.querySelectorAll(".remove-row").forEach((btn) => {
+        btn.onclick = () => {
+          if (container.children.length <= 1) {
+            btn.closest(".stakeholder-row").querySelectorAll("input").forEach((input) => {
+              input.value = "";
+            });
+            return;
+          }
+          btn.closest(".stakeholder-row").remove();
+        };
+      });
+    };
+
+    bindRemove(document);
+
+    addBtn.onclick = () => {
+      const node = template.content.firstElementChild.cloneNode(true);
+      container.appendChild(node);
+      bindRemove(node);
+    };
+  })();
+</script>
+{% endblock %}

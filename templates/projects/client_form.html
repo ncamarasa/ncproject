@@ -1,0 +1,51 @@
+{% extends 'dashboard/layout.html' %}
+
+{% block title %}{{ 'Editar cliente' if is_edit else 'Nuevo cliente' }} | LTAdmin Flask{% endblock %}
+{% block page_title %}{{ 'Editar cliente' if is_edit else 'Nuevo cliente' }}{% endblock %}
+{% block page_subtitle %}Datos comerciales y de contacto{% endblock %}
+{% block page_actions %}
+<a href="{{ url_for('projects.list_clients') }}" class="btn btn-outline-secondary btn-sm">Volver al listado</a>
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="card border-0 metric-card">
+  <div class="card-body">
+    <form method="post" class="row g-3">
+      <div class="col-12 col-lg-6">
+        <label class="form-label">Nombre *</label>
+        <input name="name" class="form-control" required value="{{ form_values.get('name', client.name if client else '') }}">
+      </div>
+      <div class="col-12 col-lg-6">
+        <label class="form-label">Persona de contacto</label>
+        <input name="contact_name" class="form-control" value="{{ form_values.get('contact_name', client.contact_name if client else '') }}">
+      </div>
+      <div class="col-12 col-lg-6">
+        <label class="form-label">Email</label>
+        <input name="email" type="email" class="form-control" value="{{ form_values.get('email', client.email if client else '') }}">
+      </div>
+      <div class="col-12 col-lg-6">
+        <label class="form-label">Teléfono</label>
+        <input name="phone" class="form-control" value="{{ form_values.get('phone', client.phone if client else '') }}">
+      </div>
+      <div class="col-12">
+        <label class="form-label">Notas</label>
+        <textarea name="notes" rows="3" class="form-control">{{ form_values.get('notes', client.notes if client else '') }}</textarea>
+      </div>
+      {% if is_edit %}
+      <div class="col-12 col-md-4">
+        <label class="form-label">Estado</label>
+        {% set selected = form_values.get('is_active', '1' if client.is_active else '0') %}
+        <select name="is_active" class="form-select">
+          <option value="1" {% if selected == '1' %}selected{% endif %}>Activo</option>
+          <option value="0" {% if selected == '0' %}selected{% endif %}>Inactivo</option>
+        </select>
+      </div>
+      {% endif %}
+      <div class="col-12 d-flex gap-2">
+        <button class="btn btn-primary" type="submit">{{ 'Guardar cambios' if is_edit else 'Crear cliente' }}</button>
+        <a href="{{ url_for('projects.list_clients') }}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
