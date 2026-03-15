@@ -20,6 +20,9 @@ def create_app() -> Flask:
         SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL", "sqlite:///project_manager.db"),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         CONTRACT_UPLOAD_FOLDER=os.path.join(app.instance_path, "contracts"),
+        CLIENT_CONTRACT_UPLOAD_FOLDER=os.path.join(app.instance_path, "client_contracts"),
+        CLIENT_DOCUMENT_UPLOAD_FOLDER=os.path.join(app.instance_path, "client_documents"),
+        TASK_ATTACHMENT_UPLOAD_FOLDER=os.path.join(app.instance_path, "task_attachments"),
     )
 
     os.makedirs(app.instance_path, exist_ok=True)
@@ -30,12 +33,18 @@ def create_app() -> Flask:
     from project_manager.models import User  # noqa: F401
 
     from project_manager.blueprints.auth import bp as auth_bp
+    from project_manager.blueprints.clients import bp as clients_bp
     from project_manager.blueprints.main import bp as main_bp
     from project_manager.blueprints.projects import bp as projects_bp
+    from project_manager.blueprints.settings import bp as settings_bp
+    from project_manager.blueprints.tasks import bp as tasks_bp
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(clients_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(projects_bp)
+    app.register_blueprint(settings_bp)
+    app.register_blueprint(tasks_bp)
 
     app.before_request(load_logged_in_user)
 

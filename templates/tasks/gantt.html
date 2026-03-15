@@ -1,0 +1,124 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Gantt | LTAdmin Flask{% endblock %}
+{% block page_title %}Cronograma / Gantt - {{ project.name }}{% endblock %}
+{% block page_subtitle %}Visualización gráfica y tabla de planificación{% endblock %}
+{% block page_actions %}
+<a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver a tareas</a>
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="card border-0 metric-card mb-3">
+  <div class="card-header"><strong>Gráfico Gantt</strong></div>
+  <div class="card-body">
+    <p class="text-secondary small mb-3">
+      Vista gráfica del cronograma con fechas, estado de avance y dependencias.
+    </p>
+    <div id="ganttChart" style="width: 100%; min-height: 360px;"></div>
+    <div id="ganttChartEmpty" class="text-secondary small" style="display: none;">
+      No hay tareas con fechas suficientes para graficar.
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>Cronograma de tareas</strong></div>
+  <div class="card-body">
+    <p class="text-secondary small mb-3">
+      Vista base de planificación. Muestra tareas, hitos y rango de fechas para seguimiento operativo.
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered">
+        <thead>
+          <tr>
+            <th>Tarea</th>
+            <th>Inicio</th>
+            <th>Fin</th>
+            <th>Duración (días)</th>
+            <th>Esfuerzo (hs)</th>
+            <th>Tipo</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for task in tasks %}
+          <tr>
+            <td>
+              {{ task.title }}
+              {% if task.parent_task_id %}<small class="text-secondary">(Subtarea de #{{ task.parent_task_id }})</small>{% endif %}
+              {% if task.is_milestone %}<span class="badge badge-warning">Hito</span>{% endif %}
+            </td>
+            <td>{{ task.start_date or '-' }}</td>
+            <td>{{ task.due_date or '-' }}</td>
+            <td>{{ duration_by_task_id.get(task.id) or '-' }}</td>
+            <td>{{ task.estimated_hours if task.estimated_hours is not none else '-' }}</td>
+            <td>{{ task.task_type or '-' }}</td>
+            <td>{{ task.status or '-' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-center text-secondary">No hay tareas para graficar.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/charts/loader.js"></script>
+<script>
+  (() => {
+    const chartDataRows = [
+      {% for task in tasks %}
+        {% if task.start_date and task.due_date %}
+        [
+          "task_{{ task.id }}",
+          {{ (task.title or ('Tarea #' ~ task.id))|tojson }},
+          {{ (task.task_type or 'Tarea')|tojson }},
+          new Date({{ task.start_date.year }}, {{ task.start_date.month - 1 }}, {{ task.start_date.day }}),
+          new Date({{ task.due_date.year }}, {{ task.due_date.month - 1 }}, {{ task.due_date.day }}),
+          null,
+          {{ task.progress_percent if task.progress_percent is not none else 0 }},
+          {{ (('task_' ~ dependency_by_successor[task.id][0]) if dependency_by_successor.get(task.id) else None)|tojson }}
+        ],
+        {% endif %}
+      {% endfor %}
+    ];
+
+    const chartContainer = document.getElementById("ganttChart");
+    const emptyState = document.getElementById("ganttChartEmpty");
+    if (!chartContainer) return;
+
+    if (!chartDataRows.length) {
+      chartContainer.style.display = "none";
+      if (emptyState) emptyState.style.display = "block";
+      return;
+    }
+
+    google.charts.load("current", { packages: ["gantt"], language: "es" });
+    google.charts.setOnLoadCallback(() => {
+      const data = new google.visualization.DataTable();
+      data.addColumn("string", "Task ID");
+      data.addColumn("string", "Task Name");
+      data.addColumn("string", "Resource");
+      data.addColumn("date", "Start Date");
+      data.addColumn("date", "End Date");
+      data.addColumn("number", "Duration");
+      data.addColumn("number", "Percent Complete");
+      data.addColumn("string", "Dependencies");
+      data.addRows(chartDataRows);
+
+      const options = {
+        height: Math.max(360, 48 * chartDataRows.length + 40),
+        gantt: {
+          trackHeight: 32,
+          labelStyle: { fontName: "Source Sans Pro", fontSize: 12 },
+          criticalPathEnabled: false
+        }
+      };
+
+      const chart = new google.visualization.Gantt(chartContainer);
+      chart.draw(data, options);
+      window.addEventListener("resize", () => chart.draw(data, options));
+    });
+  })();
+</script>
+{% endblock %}

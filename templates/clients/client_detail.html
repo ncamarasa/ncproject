@@ -1,0 +1,262 @@
+{% extends 'dashboard/layout.html' %}
+
+{% block title %}Vista 360 de cliente | LTAdmin Flask{% endblock %}
+{% block page_title %}{{ client.name }}{% endblock %}
+{% block page_subtitle %}Vista 360: solo visualización{% endblock %}
+{% block page_actions %}
+<a href="{{ url_for('clients.edit_client', client_id=client.id) }}" class="btn btn-primary btn-sm mr-2 btn-action-standard">
+  <i class="fas fa-user-edit"></i> Editar cliente
+</a>
+<a href="{{ url_for('clients.list_clients') }}" class="btn btn-outline-dark btn-sm btn-action-standard">
+  <i class="fas fa-arrow-left"></i> Volver al listado
+</a>
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="row g-3 mb-2">
+  <div class="col-6 col-lg-2"><div class="small-box bg-info"><div class="inner"><h4>{{ stats.active_projects }}</h4><p>Proyectos activos</p></div></div></div>
+  <div class="col-6 col-lg-2"><div class="small-box bg-primary"><div class="inner"><h4>{{ stats.contacts }}</h4><p>Contactos</p></div></div></div>
+  <div class="col-6 col-lg-2"><div class="small-box bg-success"><div class="inner"><h4>{{ stats.contracts }}</h4><p>Contratos</p></div></div></div>
+  <div class="col-6 col-lg-2"><div class="small-box bg-secondary"><div class="inner"><h4>{{ stats.documents }}</h4><p>Documentos</p></div></div></div>
+  <div class="col-6 col-lg-2"><div class="small-box bg-warning"><div class="inner"><h4>{{ stats.interactions }}</h4><p>Interacciones</p></div></div></div>
+  <div class="col-6 col-lg-2"><div class="small-box bg-danger"><div class="inner"><h4>{{ client.risk_level or '-' }}</h4><p>Riesgo</p></div></div></div>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>1. Datos generales</strong></div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-5">Razón social</dt><dd class="col-sm-7">{{ client.legal_name or '-' }}</dd>
+          <dt class="col-sm-5">Nombre comercial</dt><dd class="col-sm-7">{{ client.trade_name or '-' }}</dd>
+          <dt class="col-sm-5">CUIT/Tax ID</dt><dd class="col-sm-7">{{ client.tax_id or '-' }}</dd>
+          <dt class="col-sm-5">Tipo</dt><dd class="col-sm-7">{{ client.client_type or '-' }}</dd>
+          <dt class="col-sm-5">Estado cliente</dt><dd class="col-sm-7">{{ client.status or '-' }}</dd>
+          <dt class="col-sm-5">Rubro</dt><dd class="col-sm-7">{{ client.industry or '-' }}</dd>
+          <dt class="col-sm-5">Ubicación</dt><dd class="col-sm-7">{{ [client.country, client.region, client.city]|select|join(' / ') or '-' }}</dd>
+          <dt class="col-sm-5">Web</dt><dd class="col-sm-7">{{ client.website or '-' }}</dd>
+          <dt class="col-sm-5">Moneda</dt><dd class="col-sm-7">{{ client.currency_code or '-' }}</dd>
+          <dt class="col-sm-5">Fecha alta</dt><dd class="col-sm-7">{{ client.onboarding_date or '-' }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>2. Gestión comercial</strong></div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-5">Origen</dt><dd class="col-sm-7">{{ client.lead_source or '-' }}</dd>
+          <dt class="col-sm-5">Segmento</dt><dd class="col-sm-7">{{ client.segment or '-' }}</dd>
+          <dt class="col-sm-5">Prioridad</dt><dd class="col-sm-7">{{ client.commercial_priority or '-' }}</dd>
+          <dt class="col-sm-5">Ejecutivo</dt><dd class="col-sm-7">{{ client.sales_executive or '-' }}</dd>
+          <dt class="col-sm-5">Account manager</dt><dd class="col-sm-7">{{ client.account_manager or '-' }}</dd>
+          <dt class="col-sm-5">Estado comercial</dt><dd class="col-sm-7">{{ client.commercial_status or '-' }}</dd>
+          <dt class="col-sm-5">Potencial</dt><dd class="col-sm-7">{{ client.billing_potential or '-' }}</dd>
+          <dt class="col-sm-5">Health score</dt><dd class="col-sm-7">{{ client.health_score if client.health_score is not none else '-' }}</dd>
+          <dt class="col-sm-5">Última interacción</dt><dd class="col-sm-7">{{ client.last_interaction_at or '-' }}</dd>
+          <dt class="col-sm-5">Próxima acción</dt><dd class="col-sm-7">{{ client.next_action_at or '-' }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>3. Datos administrativos</strong></div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-5">Condición impositiva</dt><dd class="col-sm-7">{{ client.tax_condition or '-' }}</dd>
+          <dt class="col-sm-5">Dirección fiscal</dt><dd class="col-sm-7">{{ client.fiscal_address or '-' }}</dd>
+          <dt class="col-sm-5">Email facturación</dt><dd class="col-sm-7">{{ client.billing_email or '-' }}</dd>
+          <dt class="col-sm-5">Condición pago</dt><dd class="col-sm-7">{{ client.payment_terms or '-' }}</dd>
+          <dt class="col-sm-5">OC requerida</dt><dd class="col-sm-7">{{ 'Sí' if client.purchase_order_required else 'No' }}</dd>
+          <dt class="col-sm-5">Tarifas</dt><dd class="col-sm-7">{{ client.rate_card or '-' }}</dd>
+          <dt class="col-sm-5">Límite crédito</dt><dd class="col-sm-7">{{ client.credit_limit or '-' }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>4. Configuración operativa</strong></div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-5">Metodología</dt><dd class="col-sm-7">{{ client.methodology or '-' }}</dd>
+          <dt class="col-sm-5">Canal soporte</dt><dd class="col-sm-7">{{ client.preferred_support_channel or '-' }}</dd>
+          <dt class="col-sm-5">Horario</dt><dd class="col-sm-7">{{ client.support_hours or '-' }}</dd>
+          <dt class="col-sm-5">Zona horaria</dt><dd class="col-sm-7">{{ client.timezone or '-' }}</dd>
+          <dt class="col-sm-5">Idioma</dt><dd class="col-sm-7">{{ client.language or '-' }}</dd>
+          <dt class="col-sm-5">Delivery manager</dt><dd class="col-sm-7">{{ client.delivery_manager or '-' }}</dd>
+          <dt class="col-sm-5">Criticidad</dt><dd class="col-sm-7">{{ client.criticality_level or '-' }}</dd>
+          <dt class="col-sm-5">Tipo servicio</dt><dd class="col-sm-7">{{ client.service_type or '-' }}</dd>
+          <dt class="col-sm-5">Modalidad facturación</dt><dd class="col-sm-7">{{ client.billing_mode or '-' }}</dd>
+          <dt class="col-sm-5">Tarifa default</dt><dd class="col-sm-7">{{ client.default_rate or '-' }}</dd>
+          <dt class="col-sm-5">Horas contratadas</dt><dd class="col-sm-7">{{ client.contracted_hours or '-' }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 metric-card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>5. Contactos y Stakeholders</strong>
+        <a href="{{ url_for('clients.manage_contacts', client_id=client.id) }}" class="btn btn-primary btn-sm ml-auto btn-manage-action btn-action-standard">
+          Gestionar contactos
+        </a>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered">
+            <thead><tr><th>Nombre</th><th>Cargo/Área</th><th>Canales</th><th>Flags</th></tr></thead>
+            <tbody>
+              {% for contact in contacts %}
+                <tr>
+                  <td><strong>{{ contact.full_name }}</strong><br><small class="text-secondary">{{ contact.relationship_role or '-' }}</small></td>
+                  <td>{{ contact.job_title or '-' }} / {{ contact.area or '-' }}</td>
+                  <td>{{ contact.email or '-' }}<br>{{ contact.phone or '-' }} {{ contact.whatsapp and (' / WA: ' ~ contact.whatsapp) or '' }}</td>
+                  <td>
+                    {% if contact.is_primary %}<span class="badge badge-primary">Principal</span>{% endif %}
+                    {% if contact.is_technical %}<span class="badge badge-info">Técnico</span>{% endif %}
+                    {% if contact.is_administrative %}<span class="badge badge-secondary">Administrativo</span>{% endif %}
+                    {% if contact.is_billing %}<span class="badge badge-warning">Facturación</span>{% endif %}
+                  </td>
+                </tr>
+              {% else %}
+                <tr><td colspan="4" class="text-center text-secondary">Sin contactos cargados.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% with pagination=contacts_pagination, page_param='contacts_page' %}
+          {% include 'clients/_pagination.html' %}
+        {% endwith %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 metric-card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>6. Contratos</strong>
+        <a href="{{ url_for('clients.manage_contracts', client_id=client.id) }}" class="btn btn-success btn-sm ml-auto btn-manage-action btn-action-standard">
+          Gestionar contratos
+        </a>
+      </div>
+      <div class="card-body">
+        <ul class="list-group list-group-flush">
+          {% for item in contracts %}
+          <li class="list-group-item px-0 d-flex justify-content-between align-items-start">
+            <div>
+              <strong>{{ item.contract_type }}</strong> {{ item.contract_code and ('(' ~ item.contract_code ~ ')') or '' }}
+              <div class="small text-secondary">{{ item.status or '-' }} | Inicio: {{ item.start_date or '-' }} | Fin: {{ item.end_date or '-' }} | Renovación: {{ item.renewal_date or '-' }}</div>
+              {% if item.attachment_file_name %}
+              <a class="small" href="{{ url_for('clients.download_contract_attachment', client_id=client.id, contract_id=item.id) }}">Descargar adjunto</a>
+              {% endif %}
+            </div>
+          </li>
+          {% else %}
+          <li class="list-group-item px-0 text-secondary">Sin contratos cargados.</li>
+          {% endfor %}
+        </ul>
+        {% with pagination=contracts_pagination, page_param='contracts_page' %}
+          {% include 'clients/_pagination.html' %}
+        {% endwith %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 metric-card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>7. Documentos</strong>
+        <a href="{{ url_for('clients.manage_documents', client_id=client.id) }}" class="btn btn-secondary btn-sm ml-auto btn-manage-action btn-action-standard">
+          Gestionar documentos
+        </a>
+      </div>
+      <div class="card-body">
+        <ul class="list-group list-group-flush">
+          {% for item in documents %}
+          <li class="list-group-item px-0 d-flex justify-content-between align-items-start">
+            <div>
+              <strong>{{ item.title }}</strong> <small class="text-secondary">{{ item.category or '-' }}</small>
+              <div class="small text-secondary">Vence: {{ item.expires_on or '-' }} | {{ item.uploaded_by or '-' }}</div>
+              <a class="small" href="{{ url_for('clients.download_document', client_id=client.id, document_id=item.id) }}">Descargar</a>
+            </div>
+          </li>
+          {% else %}
+          <li class="list-group-item px-0 text-secondary">Sin documentos cargados.</li>
+          {% endfor %}
+        </ul>
+        {% with pagination=documents_pagination, page_param='documents_page' %}
+          {% include 'clients/_pagination.html' %}
+        {% endwith %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 metric-card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>8. Interacciones e historial</strong>
+        <a href="{{ url_for('clients.manage_interactions', client_id=client.id) }}" class="btn btn-warning btn-sm ml-auto btn-manage-action btn-action-standard">
+          Gestionar interacciones
+        </a>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered">
+            <thead><tr><th>Fecha</th><th>Tipo</th><th>Asunto</th><th>Responsable</th><th>Próxima acción</th><th>Riesgo</th></tr></thead>
+            <tbody>
+              {% for item in interactions %}
+              <tr>
+                <td>{{ item.interaction_date }}</td>
+                <td>{{ item.interaction_type }}</td>
+                <td>{{ item.subject }}<br><small class="text-secondary">{{ item.description or '' }}</small></td>
+                <td>{{ item.owner or '-' }}</td>
+                <td>{{ item.next_action_date or '-' }}</td>
+                <td>{{ item.risk_level or '-' }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="text-center text-secondary">Sin interacciones registradas.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% with pagination=interactions_pagination, page_param='interactions_page' %}
+          {% include 'clients/_pagination.html' %}
+        {% endwith %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 metric-card">
+      <div class="card-header"><strong>9. Proyectos vinculados</strong></div>
+      <div class="card-body">
+        <ul class="list-group list-group-flush">
+          {% for project in projects %}
+            <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+              <span>
+                <strong>{{ project.name }}</strong>
+                <small class="text-secondary">{{ project.status }} | {{ project.priority }}</small>
+              </span>
+              <a class="btn btn-sm btn-outline-secondary btn-action-standard" href="{{ url_for('projects.project_detail', project_id=project.id) }}">Ver</a>
+            </li>
+          {% else %}
+            <li class="list-group-item px-0 text-secondary">Sin proyectos asociados.</li>
+          {% endfor %}
+        </ul>
+        {% with pagination=projects_pagination, page_param='projects_page' %}
+          {% include 'clients/_pagination.html' %}
+        {% endwith %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

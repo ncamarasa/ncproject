@@ -1,0 +1,57 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}ABM Interacciones | LTAdmin Flask{% endblock %}
+{% block page_title %}ABM Interacciones - {{ client.name }}{% endblock %}
+{% block page_actions %}
+<a href="{{ url_for('clients.client_detail', client_id=client.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver a Vista 360</a>
+{% endblock %}
+{% block dashboard_content %}
+<div class="card border-0 metric-card mb-3">
+  <div class="card-header"><strong>{{ 'Editar interacción' if edit_interaction else 'Nueva interacción' }}</strong></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('clients.edit_interaction', client_id=client.id, interaction_id=edit_interaction.id, page=current_page) if edit_interaction else url_for('clients.manage_interactions', client_id=client.id, page=current_page) }}" class="row g-2">
+      <div class="col-12 col-md-2"><label class="form-label">Tipo *</label><select required name="interaction_type" class="custom-select"><option value="">Seleccionar</option>{% set current = form_values.get('interaction_type', edit_interaction.interaction_type if edit_interaction else '') %}{% for item in interaction_types %}<option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+      <div class="col-12 col-md-4"><label class="form-label">Asunto *</label><input required name="subject" class="form-control" value="{{ form_values.get('subject', edit_interaction.subject if edit_interaction else '') }}"></div>
+      <div class="col-12 col-md-2"><label class="form-label">Fecha interacción *</label><input required type="date" name="interaction_date" class="form-control" value="{{ form_values.get('interaction_date', edit_interaction.interaction_date.isoformat() if edit_interaction and edit_interaction.interaction_date else '') }}"></div>
+      <div class="col-12 col-md-2"><label class="form-label">Próxima acción</label><input type="date" name="next_action_date" class="form-control" value="{{ form_values.get('next_action_date', edit_interaction.next_action_date.isoformat() if edit_interaction and edit_interaction.next_action_date else '') }}"></div>
+      <div class="col-12 col-md-2"><label class="form-label">Riesgo</label><select name="risk_level" class="custom-select"><option value="">Seleccionar</option>{% set current = form_values.get('risk_level', edit_interaction.risk_level if edit_interaction else '') %}{% for item in risk_levels %}<option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
+      <div class="col-12 col-md-3"><label class="form-label">Responsable</label><input name="owner" class="form-control" value="{{ form_values.get('owner', edit_interaction.owner if edit_interaction else '') }}"></div>
+      <div class="col-12 col-md-9"><label class="form-label">Descripción</label><input name="description" class="form-control" value="{{ form_values.get('description', edit_interaction.description if edit_interaction else '') }}"></div>
+      <div class="col-12 d-flex gap-2 mt-2"><button class="btn btn-primary btn-action-standard" type="submit">{{ 'Guardar cambios' if edit_interaction else 'Registrar interacción' }}</button>{% if edit_interaction %}<a class="btn btn-outline-secondary btn-action-standard" href="{{ url_for('clients.manage_interactions', client_id=client.id, page=current_page) }}">Cancelar edición</a>{% endif %}</div>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>Listado de interacciones</strong></div>
+  <div class="card-body p-3">
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered mb-0">
+        <thead><tr><th>Fecha</th><th>Tipo</th><th>Asunto</th><th>Responsable</th><th>Próxima acción</th><th>Riesgo</th><th class="text-end">Acciones</th></tr></thead>
+        <tbody>
+          {% for item in interactions %}
+          <tr>
+            <td>{{ item.interaction_date }}</td>
+            <td>{{ item.interaction_type }}</td>
+            <td>{{ item.subject }}<br><small class="text-secondary">{{ item.description or '' }}</small></td>
+            <td>{{ item.owner or '-' }}</td>
+            <td>{{ item.next_action_date or '-' }}</td>
+            <td>{{ item.risk_level or '-' }}</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-secondary btn-action-icon" href="{{ url_for('clients.edit_interaction', client_id=client.id, interaction_id=item.id, page=current_page) }}"><i class="fas fa-pen"></i></a>
+              <form method="post" action="{{ url_for('clients.delete_interaction', client_id=client.id, interaction_id=item.id, page=current_page) }}" class="d-inline" onsubmit="return confirm('¿Eliminar interacción?');"><button class="btn btn-sm btn-outline-danger btn-action-icon" type="submit"><i class="fas fa-trash"></i></button></form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-center text-secondary py-3">Sin interacciones registradas.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="px-3 pb-3">
+    {% with pagination=interactions_pagination, page_param='page' %}
+      {% include 'clients/_pagination.html' %}
+    {% endwith %}
+  </div>
+</div>
+{% endblock %}

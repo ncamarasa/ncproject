@@ -1,29 +1,82 @@
 {% extends 'dashboard/layout.html' %}
-{% block extra_head %}
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap4.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.5.1/css/responsive.bootstrap4.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap4.min.css">
-{% endblock %}
-
 {% block title %}Proyectos | LTAdmin Flask{% endblock %}
 {% block page_title %}Proyectos{% endblock %}
 {% block page_subtitle %}Listado y seguimiento del ciclo de vida{% endblock %}
 {% block page_actions %}
-<a href="{{ url_for('projects.create_project') }}" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle"></i> Nuevo proyecto</a>
+<a href="{{ url_for('projects.create_project') }}" class="btn btn-primary btn-sm btn-action-standard"><i class="bi bi-plus-circle"></i> Nuevo proyecto</a>
 {% endblock %}
 
 {% block dashboard_content %}
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-12 col-md-4">
+        <label class="form-label">Buscar</label>
+        <input name="q" class="form-control" placeholder="Nombre, descripción, responsable..." value="{{ filters.q }}">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">Estado</label>
+        <select name="status" class="custom-select">
+          <option value="">Todos</option>
+          {% for item in project_statuses %}
+            <option value="{{ item }}" {% if filters.status == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">Tipo</label>
+        <select name="project_type" class="custom-select">
+          <option value="">Todos</option>
+          {% for item in project_types %}
+            <option value="{{ item }}" {% if filters.project_type == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">Prioridad</label>
+        <select name="priority" class="custom-select">
+          <option value="">Todas</option>
+          {% for item in project_priorities %}
+            <option value="{{ item }}" {% if filters.priority == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label">Registro</label>
+        <select name="active" class="custom-select">
+          <option value="all" {% if filters.active == 'all' %}selected{% endif %}>Todos</option>
+          <option value="1" {% if filters.active == '1' %}selected{% endif %}>Activos</option>
+          <option value="0" {% if filters.active == '0' %}selected{% endif %}>Inactivos</option>
+        </select>
+      </div>
+      <div class="col-12 col-md-4">
+        <label class="form-label">Cliente</label>
+        <select name="client_id" class="custom-select">
+          <option value="">Todos</option>
+          {% for client in clients %}
+            <option value="{{ client.id }}" {% if filters.client_id|string == client.id|string %}selected{% endif %}>{{ client.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 d-flex gap-2 mt-2">
+        <button class="btn btn-outline-primary btn-sm btn-action-standard" type="submit">Filtrar</button>
+        <a class="btn btn-outline-secondary btn-sm btn-action-standard" href="{{ url_for('projects.list_projects') }}">Limpiar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-body">
     <div class="table-responsive">
-      <table id="projectsTable" class="table table-bordered table-hover">
+      <table class="table table-bordered table-hover">
         <thead>
           <tr>
-            <th>Nombre</th>
+            <th>Proyecto</th>
             <th>Cliente</th>
+            <th>Contrato</th>
             <th>Estado</th>
             <th>Prioridad</th>
-            <th>Fechas estimadas</th>
             <th>Responsable</th>
             <th class="text-end">Acciones</th>
           </tr>
@@ -33,30 +86,26 @@
           <tr>
             <td>
               <div class="fw-semibold">{{ project.name }}</div>
-              <small class="text-secondary">{{ project.project_type }}</small>
+              <small class="text-secondary">{{ project.project_code or '-' }} | {{ project.project_type }}</small>
             </td>
             <td>{{ project.client.name }}</td>
+            <td>
+              {% if project.client_contract %}
+                <small>{{ project.client_contract.contract_code or '-' }}<br>{{ project.client_contract.contract_name or project.client_contract.contract_type }}</small>
+              {% else %}
+                -
+              {% endif %}
+            </td>
             <td><span class="badge badge-light">{{ project.status }}</span></td>
             <td>{{ project.priority }}</td>
-            <td>
-              <small>
-                {{ project.estimated_start_date or '-' }}<br>
-                {{ project.estimated_end_date or '-' }}
-              </small>
-            </td>
             <td>{{ project.owner }}</td>
             <td class="text-end">
-              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('projects.project_detail', project_id=project.id) }}" title="Detalle" aria-label="Detalle">
+              <a class="btn btn-sm btn-outline-primary btn-action-icon" href="{{ url_for('projects.project_detail', project_id=project.id) }}" title="Detalle" aria-label="Detalle">
                 <i class="fas fa-eye"></i>
               </a>
-              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('projects.edit_project', project_id=project.id) }}" title="Editar" aria-label="Editar">
+              <a class="btn btn-sm btn-outline-secondary btn-action-icon" href="{{ url_for('projects.edit_project', project_id=project.id) }}" title="Editar" aria-label="Editar">
                 <i class="fas fa-pen"></i>
               </a>
-              <form method="post" action="{{ url_for('projects.delete_project', project_id=project.id) }}" class="d-inline" onsubmit="return confirm('Vas a eliminar este proyecto. Esta acción no tiene vuelta atrás. ¿Deseas continuar?');">
-                <button class="btn btn-sm btn-outline-danger" type="submit" title="Eliminar" aria-label="Eliminar">
-                  <i class="fas fa-trash"></i>
-                </button>
-              </form>
             </td>
           </tr>
         {% else %}
@@ -65,48 +114,8 @@
         </tbody>
       </table>
     </div>
+    {% include 'projects/_pagination.html' %}
   </div>
 </div>
-{% endblock %}
 
-{% block extra_scripts %}
-<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap4.min.js"></script>
-<script src="https://cdn.datatables.net/responsive/2.5.1/js/dataTables.responsive.min.js"></script>
-<script src="https://cdn.datatables.net/responsive/2.5.1/js/responsive.bootstrap4.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap4.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.print.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
-<script>
-  $(function () {
-    $("#projectsTable").DataTable({
-      paging: true,
-      lengthChange: false,
-      searching: true,
-      ordering: true,
-      info: true,
-      autoWidth: false,
-      responsive: true,
-      dom:
-        "<'row mb-2'<'col-sm-12 col-md-6 d-flex align-items-center'B><'col-sm-12 col-md-6 d-flex justify-content-md-end align-items-center'f>>" +
-        "rt" +
-        "<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
-      pageLength: 10,
-      order: [[0, "asc"]],
-      buttons: [
-        { extend: "csv", text: "CSV" },
-        { extend: "excel", text: "Excel" },
-        { extend: "pdf", text: "PDF" },
-        { extend: "print", text: "Imprimir" },
-      ],
-      language: {
-        url: "https://cdn.datatables.net/plug-ins/1.13.8/i18n/es-ES.json"
-      }
-    });
-  });
-</script>
 {% endblock %}

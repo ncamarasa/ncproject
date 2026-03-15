@@ -1,0 +1,99 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Configuración Clientes | LTAdmin Flask{% endblock %}
+{% block page_title %}Configuración / Clientes{% endblock %}
+{% block page_subtitle %}Catálogos administrables por usuario{% endblock %}
+{% block dashboard_content %}
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>Catálogos dinámicos del formulario de Clientes</strong></div>
+  <div class="card-body">
+    <div class="form-group">
+      <label for="catalogSearch">Buscar catálogo</label>
+      <input
+        id="catalogSearch"
+        type="text"
+        class="form-control"
+        placeholder="Ej: rubro, idioma, soporte..."
+      >
+    </div>
+    <div class="row" id="catalogCards">
+      <div
+        class="col-12 col-md-6 catalog-card"
+        data-label="tipos de empresa"
+        data-desc="gestiona opciones del campo tipo en clientes"
+      >
+        <div class="card border mb-3">
+          <div class="card-body">
+            <h3 class="h6">ABM Tipos de empresa</h3>
+            <p class="small text-secondary mb-3">Gestioná opciones del campo "Tipo" en clientes.</p>
+            <a href="{{ url_for('settings.company_types') }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar tipos de empresa</a>
+          </div>
+        </div>
+      </div>
+
+      <div
+        class="col-12 col-md-6 catalog-card"
+        data-label="tipos de pago"
+        data-desc="gestiona opciones del campo condicion de pago en clientes"
+      >
+        <div class="card border mb-3">
+          <div class="card-body">
+            <h3 class="h6">ABM Tipos de pago</h3>
+            <p class="small text-secondary mb-3">Gestioná opciones del campo "Condición de pago" en clientes.</p>
+            <a href="{{ url_for('settings.payment_types') }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar tipos de pago</a>
+          </div>
+        </div>
+      </div>
+
+      {% for field_key, field_label in catalog_fields.items() %}
+      <div
+        class="col-12 col-md-6 catalog-card"
+        data-label="{{ field_label|lower }}"
+        data-desc="Gestiona opciones del campo {{ field_label|lower }} en clientes"
+      >
+        <div class="card border mb-3">
+          <div class="card-body">
+            <h3 class="h6">ABM {{ field_label }}</h3>
+            <p class="small text-secondary mb-3">Gestioná opciones del campo "{{ field_label }}" en clientes.</p>
+            <a href="{{ url_for('settings.client_catalog', field_key=field_key) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar {{ field_label|lower }}</a>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <p id="catalogEmpty" class="text-secondary mb-0 d-none">No se encontraron catálogos para ese texto.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (() => {
+    const searchInput = document.getElementById("catalogSearch");
+    const cards = Array.from(document.querySelectorAll(".catalog-card"));
+    const emptyState = document.getElementById("catalogEmpty");
+
+    if (!searchInput || !cards.length || !emptyState) {
+      return;
+    }
+
+    const runFilter = () => {
+      const term = searchInput.value.trim().toLowerCase();
+      let visibleCount = 0;
+
+      cards.forEach((card) => {
+        const label = card.dataset.label || "";
+        const desc = (card.dataset.desc || "").toLowerCase();
+        const visible = !term || label.includes(term) || desc.includes(term);
+        card.classList.toggle("d-none", !visible);
+        if (visible) {
+          visibleCount += 1;
+        }
+      });
+
+      emptyState.classList.toggle("d-none", visibleCount > 0);
+    };
+
+    searchInput.addEventListener("input", runFilter);
+  })();
+</script>
+{% endblock %}

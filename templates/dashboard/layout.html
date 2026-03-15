@@ -30,24 +30,38 @@
             </a>
           </li>
 
-          {% set projects_section_active = request.endpoint and request.endpoint.startswith('projects.') %}
-          <li class="nav-item {% if projects_section_active %}menu-open{% endif %}">
-            <a href="#" class="nav-link {% if projects_section_active %}active{% endif %}">
+          <li class="nav-item">
+            <a href="{{ url_for('projects.list_projects') }}" class="nav-link {% if request.endpoint in ['projects.list_projects', 'projects.create_project', 'projects.project_detail', 'projects.edit_project', 'projects.manage_stakeholders', 'projects.edit_stakeholder'] or (request.endpoint and request.endpoint.startswith('tasks.')) %}active{% endif %}">
               <i class="nav-icon fas fa-diagram-project"></i>
+              <p>Proyectos</p>
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a href="{{ url_for('clients.list_clients') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('clients.') %}active{% endif %}">
+              <i class="nav-icon fas fa-building"></i>
+              <p>Clientes</p>
+            </a>
+          </li>
+
+          {% set settings_section_active = request.endpoint and request.endpoint.startswith('settings.') %}
+          <li class="nav-item {% if settings_section_active %}menu-open{% endif %}">
+            <a href="{{ url_for('settings.projects_settings') }}" class="nav-link {% if settings_section_active %}active{% endif %}">
+              <i class="nav-icon fas fa-gear"></i>
               <p>
-                Proyectos
+                Configuración
                 <i class="fas fa-angle-left right"></i>
               </p>
             </a>
             <ul class="nav nav-treeview">
               <li class="nav-item">
-                <a href="{{ url_for('projects.list_projects') }}" class="nav-link {% if request.endpoint in ['projects.list_projects', 'projects.create_project', 'projects.project_detail', 'projects.edit_project'] %}active{% endif %}">
+                <a href="{{ url_for('settings.projects_settings') }}" class="nav-link {% if request.endpoint in ['settings.projects_settings', 'settings.project_catalog', 'settings.edit_project_catalog'] %}active{% endif %}">
                   <i class="far fa-circle nav-icon"></i>
                   <p>Proyectos</p>
                 </a>
               </li>
               <li class="nav-item">
-                <a href="{{ url_for('projects.list_clients') }}" class="nav-link {% if request.endpoint in ['projects.list_clients', 'projects.create_client', 'projects.client_detail', 'projects.edit_client'] %}active{% endif %}">
+                <a href="{{ url_for('settings.clients_settings') }}" class="nav-link {% if request.endpoint in ['settings.clients_settings', 'settings.company_types', 'settings.payment_types'] %}active{% endif %}">
                   <i class="far fa-circle nav-icon"></i>
                   <p>Clientes</p>
                 </a>
@@ -85,5 +99,12 @@
       </div>
     </section>
   </div>
+
+  <footer class="main-footer">
+    <strong>{% block footer_left %}LTAdmin{% endblock %}</strong>
+    <div class="float-right d-none d-sm-inline-block">
+      {% block footer_right %}Sistema de gestión{% endblock %}
+    </div>
+  </footer>
 </div>
 {% endblock %}

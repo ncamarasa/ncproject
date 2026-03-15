@@ -6,24 +6,37 @@ from flask import (
     abort,
     current_app,
     flash,
+    g,
+    jsonify,
     redirect,
     render_template,
     request,
     send_from_directory,
     url_for,
 )
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
 
 from project_manager.auth_utils import login_required
 from project_manager.blueprints.projects import bp
 from project_manager.extensions import db
-from project_manager.models import Client, Project, Stakeholder
+from project_manager.models import Client, ClientContract, Project, Stakeholder, SystemCatalogOptionConfig
 
-PROJECT_TYPES = ["Implementacion", "Mantenimiento", "Soporte", "Consultoria", "Interno"]
+PROJECT_TYPES = ["Implementacion", "Desarrollo", "Soporte evolutivo", "AMS", "Bolsa de horas", "Consultoria"]
 PROJECT_STATUSES = ["Planificado", "En progreso", "En pausa", "Completado", "Cancelado"]
 PROJECT_PRIORITIES = ["Baja", "Media", "Alta", "Critica"]
+PROJECT_COMPLEXITIES = ["Baja", "Media", "Alta"]
+PROJECT_CRITICALITIES = ["Baja", "Media", "Alta", "Critica"]
+PROJECT_METHODOLOGIES = ["Agil", "Hibrida", "Cascada", "Kanban", "Scrum"]
+PROJECT_CLOSE_REASONS = ["Completado", "Cancelado por cliente", "Cancelado interno", "Reemplazado"]
+PROJECT_CLOSE_RESULTS = ["Exitoso", "Parcial", "No logrado"]
+PROJECT_ORIGINS = ["Comercial", "Cliente", "Interno", "Regulatorio", "Soporte"]
+TASK_TYPES = ["Análisis", "Desarrollo", "Testing", "Documentación", "Deploy", "Hito"]
+TASK_STATUSES = ["Pendiente", "En progreso", "Bloqueada", "Completada"]
+TASK_PRIORITIES = ["Baja", "Media", "Alta", "Crítica"]
+TASK_DEPENDENCY_TYPES = ["FS", "SS", "FF", "SF"]
+RISK_CATEGORIES = ["Tecnológico", "Operativo", "Comercial", "Financiero", "Legal"]
 ALLOWED_CONTRACT_EXTENSIONS = {"pdf", "doc", "docx"}
 
 
@@ -33,6 +46,15 @@ def _to_int(value: str, default: int = 1) -> int:
         return converted if converted > 0 else default
     except (TypeError, ValueError):
         return default
+
+
+def _to_decimal(value: str | None):
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
 
 
 def _safe_strip(value: str | None) -> str:
@@ -72,59 +94,137 @@ def _save_contract_file(file_storage):
     return stored_name, original_name, None
 
 
-def _extract_stakeholders(form):
-    names = form.getlist("stakeholder_name[]")
-    roles = form.getlist("stakeholder_role[]")
-    emails = form.getlist("stakeholder_email[]")
-    phones = form.getlist("stakeholder_phone[]")
-    notes_list = form.getlist("stakeholder_notes[]")
-
-    max_len = max(len(names), len(roles), len(emails), len(phones), len(notes_list), 0)
-    stakeholder_rows = []
-    errors = []
-
-    for idx in range(max_len):
-        name = _safe_strip(names[idx] if idx < len(names) else "")
-        role = _safe_strip(roles[idx] if idx < len(roles) else "")
-        email = _safe_strip(emails[idx] if idx < len(emails) else "")
-        phone = _safe_strip(phones[idx] if idx < len(phones) else "")
-        notes = _safe_strip(notes_list[idx] if idx < len(notes_list) else "")
-
-        if not any([name, role, email, phone, notes]):
-            continue
-
-        if len(name) < 2:
-            errors.append(f"El stakeholder #{len(stakeholder_rows) + 1} debe tener nombre válido.")
-
-        stakeholder_rows.append(
-            {
-                "name": name,
-                "role": role,
-                "email": email,
-                "phone": phone,
-                "notes": notes,
-            }
+def _active_contracts_for_client(client_id: int):
+    today = date.today()
+    return db.session.execute(
+        select(ClientContract)
+        .where(
+            ClientContract.client_id == client_id,
+            ClientContract.status.in_(["Vigente", "Activo", "Borrador"]),
+            (ClientContract.end_date.is_(None) | (ClientContract.end_date >= today)),
         )
+        .order_by(ClientContract.start_date.desc().nullslast(), ClientContract.created_at.desc())
+    ).scalars().all()
 
-    normalized_names = [row["name"].lower() for row in stakeholder_rows if row["name"]]
-    if len(normalized_names) != len(set(normalized_names)):
-        errors.append("No puedes repetir nombres de stakeholders dentro del mismo proyecto.")
 
-    return stakeholder_rows, errors
+def _build_project_payload(form):
+    return {
+        "project_code": _safe_strip(form.get("project_code")) or None,
+        "name": _safe_strip(form.get("name")),
+        "description": _safe_strip(form.get("description")),
+        "objective": _safe_strip(form.get("objective")),
+        "project_type": _safe_strip(form.get("project_type")),
+        "status": _safe_strip(form.get("status")),
+        "business_unit": _safe_strip(form.get("business_unit")),
+        "product_solution": _safe_strip(form.get("product_solution")),
+        "service_module": _safe_strip(form.get("service_module")),
+        "category": _safe_strip(form.get("category")),
+        "priority": _safe_strip(form.get("priority")),
+        "complexity_level": _safe_strip(form.get("complexity_level")),
+        "criticality_level": _safe_strip(form.get("criticality_level")),
+        "project_origin": _safe_strip(form.get("project_origin")),
+        "project_manager": _safe_strip(form.get("project_manager")),
+        "commercial_manager": _safe_strip(form.get("commercial_manager")),
+        "functional_manager": _safe_strip(form.get("functional_manager")),
+        "technical_manager": _safe_strip(form.get("technical_manager")),
+        "client_sponsor": _safe_strip(form.get("client_sponsor")),
+        "key_user": _safe_strip(form.get("key_user")),
+        "onboarding_date": _parse_date(form.get("onboarding_date")),
+        "estimated_start_date": _parse_date(form.get("estimated_start_date")),
+        "actual_start_date": _parse_date(form.get("actual_start_date")),
+        "estimated_end_date": _parse_date(form.get("estimated_end_date")),
+        "actual_end_date": _parse_date(form.get("actual_end_date")),
+        "estimated_duration_days": _to_int(form.get("estimated_duration_days"), default=0) or None,
+        "kickoff_date": _parse_date(form.get("kickoff_date")),
+        "close_date": _parse_date(form.get("close_date")),
+        "methodology": _safe_strip(form.get("methodology")),
+        "documentation_repo": _safe_strip(form.get("documentation_repo")),
+        "external_board_url": _safe_strip(form.get("external_board_url")),
+        "committee_frequency": _safe_strip(form.get("committee_frequency")),
+        "communication_channel": _safe_strip(form.get("communication_channel")),
+        "billing_mode": _safe_strip(form.get("billing_mode")),
+        "currency_code": _safe_strip(form.get("currency_code")),
+        "sold_budget": _to_decimal(form.get("sold_budget")),
+        "estimated_cost": _to_decimal(form.get("estimated_cost")),
+        "estimated_margin": _to_decimal(form.get("estimated_margin")),
+        "estimated_hours": _to_decimal(form.get("estimated_hours")),
+        "average_rate": _to_decimal(form.get("average_rate")),
+        "cost_center": _safe_strip(form.get("cost_center")),
+        "erp_psa_code": _safe_strip(form.get("erp_psa_code")),
+        "owner": _safe_strip(form.get("owner")),
+        "observations": _safe_strip(form.get("observations")),
+    }
+
+
+def _stakeholder_payload_from_form(form, project_id: int, current_id: int | None = None):
+    errors = []
+    name = _safe_strip(form.get("name"))
+    if len(name) < 2:
+        errors.append("El stakeholder debe tener nombre válido.")
+
+    duplicate_stmt = select(Stakeholder.id).where(
+        Stakeholder.project_id == project_id,
+        Stakeholder.name.ilike(name),
+    )
+    if current_id:
+        duplicate_stmt = duplicate_stmt.where(Stakeholder.id != current_id)
+    duplicate_id = db.session.execute(duplicate_stmt).scalar_one_or_none()
+    if duplicate_id:
+        errors.append("Ya existe un stakeholder con ese nombre en el proyecto.")
+
+    payload = {
+        "name": name,
+        "role": _safe_strip(form.get("role")),
+        "email": _safe_strip(form.get("email")),
+        "phone": _safe_strip(form.get("phone")),
+        "notes": _safe_strip(form.get("notes")),
+    }
+    return payload, errors
 
 
 def _active_menu_context():
+    def _catalog_values(catalog_key: str, fallback: list[str]):
+        if not g.user:
+            return fallback
+        values = db.session.execute(
+            select(SystemCatalogOptionConfig.name)
+            .where(
+                SystemCatalogOptionConfig.owner_user_id == g.user.id,
+                SystemCatalogOptionConfig.module_key == "projects",
+                SystemCatalogOptionConfig.catalog_key == catalog_key,
+                SystemCatalogOptionConfig.is_active.is_(True),
+            )
+            .order_by(SystemCatalogOptionConfig.name.asc())
+        ).scalars().all()
+        return values or fallback
+
     return {
-        "project_types": PROJECT_TYPES,
-        "project_statuses": PROJECT_STATUSES,
-        "project_priorities": PROJECT_PRIORITIES,
+        "project_types": _catalog_values("project_types", PROJECT_TYPES),
+        "project_statuses": _catalog_values("project_statuses", PROJECT_STATUSES),
+        "project_priorities": _catalog_values("project_priorities", PROJECT_PRIORITIES),
+        "project_complexities": _catalog_values("project_complexities", PROJECT_COMPLEXITIES),
+        "project_criticalities": _catalog_values("project_criticalities", PROJECT_CRITICALITIES),
+        "project_methodologies": _catalog_values("project_methodologies", PROJECT_METHODOLOGIES),
+        "project_close_reasons": _catalog_values("project_close_reasons", PROJECT_CLOSE_REASONS),
+        "project_close_results": _catalog_values("project_close_results", PROJECT_CLOSE_RESULTS),
+        "project_origins": _catalog_values("project_origins", PROJECT_ORIGINS),
+        "task_types": _catalog_values("task_types", TASK_TYPES),
+        "task_statuses": _catalog_values("task_statuses", TASK_STATUSES),
+        "task_priorities": _catalog_values("task_priorities", TASK_PRIORITIES),
+        "task_dependency_types": _catalog_values("task_dependency_types", TASK_DEPENDENCY_TYPES),
+        "risk_categories": _catalog_values("risk_categories", RISK_CATEGORIES),
     }
 
 
 def _load_project_or_404(project_id: int) -> Project:
     stmt = (
         select(Project)
-        .options(selectinload(Project.client), selectinload(Project.stakeholders))
+        .options(
+            selectinload(Project.client),
+            selectinload(Project.client_contract),
+            selectinload(Project.stakeholders),
+            selectinload(Project.tasks),
+        )
         .where(Project.id == project_id)
     )
     project = db.session.execute(stmt).scalar_one_or_none()
@@ -136,13 +236,18 @@ def _load_project_or_404(project_id: int) -> Project:
 @bp.route("/")
 @login_required
 def list_projects():
+    page = _to_int(request.args.get("page"), default=1)
     search = _safe_strip(request.args.get("q"))
     status = _safe_strip(request.args.get("status"))
     priority = _safe_strip(request.args.get("priority"))
     project_type = _safe_strip(request.args.get("project_type"))
-    active = _safe_strip(request.args.get("active", "1"))
+    active = _safe_strip(request.args.get("active", "all"))
     client_id = _to_int(request.args.get("client_id"), default=0)
-    stmt = select(Project).options(selectinload(Project.client)).order_by(Project.updated_at.desc())
+    stmt = (
+        select(Project)
+        .options(selectinload(Project.client), selectinload(Project.client_contract))
+        .order_by(Project.updated_at.desc())
+    )
 
     if search:
         token = f"%{search}%"
@@ -166,15 +271,31 @@ def list_projects():
     if active in {"1", "0"}:
         stmt = stmt.where(Project.is_active.is_(active == "1"))
 
-    projects = db.session.execute(stmt).scalars().all()
+    projects_pagination = db.paginate(stmt, page=page, per_page=10, error_out=False)
 
     clients = db.session.execute(
         select(Client).where(Client.is_active.is_(True)).order_by(Client.name.asc())
-    ).scalars()
+    ).scalars().all()
+
+    filter_args = {}
+    if search:
+        filter_args["q"] = search
+    if status:
+        filter_args["status"] = status
+    if priority:
+        filter_args["priority"] = priority
+    if project_type:
+        filter_args["project_type"] = project_type
+    if active != "all":
+        filter_args["active"] = active
+    if client_id:
+        filter_args["client_id"] = client_id
 
     return render_template(
         "projects/project_list.html",
-        projects=projects,
+        projects=projects_pagination.items,
+        pagination=projects_pagination,
+        filter_args=filter_args,
         clients=clients,
         filters={
             "q": search,
@@ -194,42 +315,55 @@ def create_project():
     clients = db.session.execute(
         select(Client).where(Client.is_active.is_(True)).order_by(Client.name.asc())
     ).scalars().all()
+    parent_projects = db.session.execute(
+        select(Project).where(Project.is_active.is_(True)).order_by(Project.name.asc())
+    ).scalars().all()
 
     if not clients:
         flash("Debes crear al menos un cliente antes de dar de alta un proyecto.", "warning")
-        return redirect(url_for("projects.list_clients"))
+        return redirect(url_for("clients.list_clients"))
 
     if request.method == "POST":
         errors = []
-        name = _safe_strip(request.form.get("name"))
-        description = _safe_strip(request.form.get("description"))
-        project_type = _safe_strip(request.form.get("project_type"))
-        status = _safe_strip(request.form.get("status"))
-        priority = _safe_strip(request.form.get("priority"))
-        owner = _safe_strip(request.form.get("owner"))
-        observations = _safe_strip(request.form.get("observations"))
+        payload = _build_project_payload(request.form)
+        name = payload["name"]
+        project_type = payload["project_type"]
+        status = payload["status"]
+        priority = payload["priority"]
+        owner = payload["owner"]
 
         selected_client_id = _to_int(request.form.get("client_id"), default=0)
-        estimated_start_date = _parse_date(request.form.get("estimated_start_date"))
-        estimated_end_date = _parse_date(request.form.get("estimated_end_date"))
-
-        stakeholder_rows, stakeholder_errors = _extract_stakeholders(request.form)
-        errors.extend(stakeholder_errors)
+        selected_contract_id = _to_int(request.form.get("client_contract_id"), default=0)
+        selected_parent_project_id = _to_int(request.form.get("parent_project_id"), default=0)
+        estimated_start_date = payload["estimated_start_date"]
+        estimated_end_date = payload["estimated_end_date"]
 
         if len(name) < 3:
             errors.append("El nombre del proyecto debe tener al menos 3 caracteres.")
         if not owner:
             errors.append("Debes indicar un responsable.")
-        if project_type not in PROJECT_TYPES:
+        if project_type not in _active_menu_context()["project_types"]:
             errors.append("El tipo seleccionado no es válido.")
-        if status not in PROJECT_STATUSES:
+        if status not in _active_menu_context()["project_statuses"]:
             errors.append("El estado seleccionado no es válido.")
-        if priority not in PROJECT_PRIORITIES:
+        if priority not in _active_menu_context()["project_priorities"]:
             errors.append("La prioridad seleccionada no es válida.")
 
         client = db.session.get(Client, selected_client_id)
         if not client or not client.is_active:
             errors.append("Debes seleccionar un cliente activo.")
+
+        contract = None
+        if selected_contract_id:
+            contract = db.session.get(ClientContract, selected_contract_id)
+            if not contract or contract.client_id != selected_client_id:
+                errors.append("El contrato seleccionado no pertenece al cliente.")
+
+        parent_project = None
+        if selected_parent_project_id:
+            parent_project = db.session.get(Project, selected_parent_project_id)
+            if not parent_project:
+                errors.append("El proyecto padre seleccionado no existe.")
 
         if estimated_start_date and estimated_end_date and estimated_start_date > estimated_end_date:
             errors.append("La fecha estimada de inicio no puede ser posterior a la de fin.")
@@ -247,27 +381,21 @@ def create_project():
                 "projects/project_form.html",
                 project=None,
                 clients=clients,
-                stakeholder_rows=stakeholder_rows or [{}],
+                parent_projects=parent_projects,
+                contract_options=_active_contracts_for_client(selected_client_id) if selected_client_id else [],
                 form_values=request.form,
                 is_edit=False,
                 **_active_menu_context(),
             )
 
         project = Project(
-            name=name,
             client_id=selected_client_id,
-            description=description,
-            project_type=project_type,
-            status=status,
-            priority=priority,
-            estimated_start_date=estimated_start_date,
-            estimated_end_date=estimated_end_date,
-            owner=owner,
-            observations=observations,
+            client_contract_id=contract.id if contract else None,
+            parent_project_id=parent_project.id if parent_project else None,
             contract_file_name=contract_file_name,
             contract_original_name=contract_original_name,
+            **payload,
         )
-        project.stakeholders = [Stakeholder(**row) for row in stakeholder_rows]
         db.session.add(project)
         db.session.commit()
 
@@ -278,10 +406,26 @@ def create_project():
         "projects/project_form.html",
         project=None,
         clients=clients,
-        stakeholder_rows=[{}],
+        parent_projects=parent_projects,
+        contract_options=[],
         form_values={},
         is_edit=False,
         **_active_menu_context(),
+    )
+
+
+@bp.route("/contracts-by-client/<int:client_id>")
+@login_required
+def contracts_by_client(client_id: int):
+    contracts = _active_contracts_for_client(client_id)
+    return jsonify(
+        [
+            {
+                "id": contract.id,
+                "label": f"{contract.contract_code or '-'} - {contract.contract_name or contract.contract_type}",
+            }
+            for contract in contracts
+        ]
     )
 
 
@@ -289,7 +433,28 @@ def create_project():
 @login_required
 def project_detail(project_id: int):
     project = _load_project_or_404(project_id)
-    return render_template("projects/project_detail.html", project=project, **_active_menu_context())
+    today = date.today()
+    task_total = len(project.tasks)
+    task_pending = sum(1 for task in project.tasks if (task.status or "").strip() == "Pendiente")
+    task_completed = sum(1 for task in project.tasks if (task.status or "").strip() == "Completada")
+    task_milestones = sum(1 for task in project.tasks if task.is_milestone)
+    task_blocked = sum(1 for task in project.tasks if (task.status or "").strip() == "Bloqueada")
+    task_overdue = sum(
+        1
+        for task in project.tasks
+        if task.due_date and task.due_date < today and (task.status or "").strip() != "Completada"
+    )
+    return render_template(
+        "projects/project_detail.html",
+        project=project,
+        task_total=task_total,
+        task_pending=task_pending,
+        task_completed=task_completed,
+        task_milestones=task_milestones,
+        task_blocked=task_blocked,
+        task_overdue=task_overdue,
+        **_active_menu_context(),
+    )
 
 
 @bp.route("/<int:project_id>/edit", methods=["GET", "POST"])
@@ -299,38 +464,51 @@ def edit_project(project_id: int):
     clients = db.session.execute(
         select(Client).where(Client.is_active.is_(True)).order_by(Client.name.asc())
     ).scalars().all()
+    parent_projects = db.session.execute(
+        select(Project).where(Project.id != project.id, Project.is_active.is_(True)).order_by(Project.name.asc())
+    ).scalars().all()
 
     if request.method == "POST":
         errors = []
-        name = _safe_strip(request.form.get("name"))
-        description = _safe_strip(request.form.get("description"))
-        project_type = _safe_strip(request.form.get("project_type"))
-        status = _safe_strip(request.form.get("status"))
-        priority = _safe_strip(request.form.get("priority"))
-        owner = _safe_strip(request.form.get("owner"))
-        observations = _safe_strip(request.form.get("observations"))
+        payload = _build_project_payload(request.form)
+        name = payload["name"]
+        project_type = payload["project_type"]
+        status = payload["status"]
+        priority = payload["priority"]
+        owner = payload["owner"]
         selected_client_id = _to_int(request.form.get("client_id"), default=0)
+        selected_contract_id = _to_int(request.form.get("client_contract_id"), default=0)
+        selected_parent_project_id = _to_int(request.form.get("parent_project_id"), default=0)
 
-        estimated_start_date = _parse_date(request.form.get("estimated_start_date"))
-        estimated_end_date = _parse_date(request.form.get("estimated_end_date"))
-
-        stakeholder_rows, stakeholder_errors = _extract_stakeholders(request.form)
-        errors.extend(stakeholder_errors)
+        estimated_start_date = payload["estimated_start_date"]
+        estimated_end_date = payload["estimated_end_date"]
 
         if len(name) < 3:
             errors.append("El nombre del proyecto debe tener al menos 3 caracteres.")
         if not owner:
             errors.append("Debes indicar un responsable.")
-        if project_type not in PROJECT_TYPES:
+        if project_type not in _active_menu_context()["project_types"]:
             errors.append("El tipo seleccionado no es válido.")
-        if status not in PROJECT_STATUSES:
+        if status not in _active_menu_context()["project_statuses"]:
             errors.append("El estado seleccionado no es válido.")
-        if priority not in PROJECT_PRIORITIES:
+        if priority not in _active_menu_context()["project_priorities"]:
             errors.append("La prioridad seleccionada no es válida.")
 
         client = db.session.get(Client, selected_client_id)
         if not client or not client.is_active:
             errors.append("Debes seleccionar un cliente activo.")
+
+        contract = None
+        if selected_contract_id:
+            contract = db.session.get(ClientContract, selected_contract_id)
+            if not contract or contract.client_id != selected_client_id:
+                errors.append("El contrato seleccionado no pertenece al cliente.")
+
+        parent_project = None
+        if selected_parent_project_id:
+            parent_project = db.session.get(Project, selected_parent_project_id)
+            if not parent_project:
+                errors.append("El proyecto padre seleccionado no existe.")
 
         if estimated_start_date and estimated_end_date and estimated_start_date > estimated_end_date:
             errors.append("La fecha estimada de inicio no puede ser posterior a la de fin.")
@@ -348,7 +526,8 @@ def edit_project(project_id: int):
                 "projects/project_form.html",
                 project=project,
                 clients=clients,
-                stakeholder_rows=stakeholder_rows or [{}],
+                parent_projects=parent_projects,
+                contract_options=_active_contracts_for_client(selected_client_id) if selected_client_id else [],
                 form_values=request.form,
                 is_edit=True,
                 **_active_menu_context(),
@@ -364,42 +543,118 @@ def edit_project(project_id: int):
             project.contract_file_name = new_contract_name
             project.contract_original_name = new_contract_original_name
 
-        project.name = name
         project.client_id = selected_client_id
-        project.description = description
-        project.project_type = project_type
-        project.status = status
-        project.priority = priority
-        project.estimated_start_date = estimated_start_date
-        project.estimated_end_date = estimated_end_date
-        project.owner = owner
-        project.observations = observations
-        project.stakeholders = [Stakeholder(**row) for row in stakeholder_rows]
+        project.client_contract_id = contract.id if contract else None
+        project.parent_project_id = parent_project.id if parent_project else None
+        for key, value in payload.items():
+            setattr(project, key, value)
 
         db.session.commit()
         flash("Proyecto actualizado correctamente.", "success")
         return redirect(url_for("projects.project_detail", project_id=project.id))
 
-    stakeholder_rows = [
-        {
-            "name": stakeholder.name,
-            "role": stakeholder.role,
-            "email": stakeholder.email,
-            "phone": stakeholder.phone,
-            "notes": stakeholder.notes,
-        }
-        for stakeholder in project.stakeholders
-    ] or [{}]
-
     return render_template(
         "projects/project_form.html",
         project=project,
         clients=clients,
-        stakeholder_rows=stakeholder_rows,
+        parent_projects=parent_projects,
+        contract_options=_active_contracts_for_client(project.client_id),
         form_values={},
         is_edit=True,
         **_active_menu_context(),
     )
+
+
+@bp.route("/<int:project_id>/stakeholders", methods=["GET", "POST"])
+@login_required
+def manage_stakeholders(project_id: int):
+    project = _load_project_or_404(project_id)
+    page = _to_int(request.args.get("page")) or 1
+
+    if request.method == "POST":
+        payload, errors = _stakeholder_payload_from_form(request.form, project.id)
+        if errors:
+            for err in errors:
+                flash(err, "danger")
+        else:
+            stakeholder = Stakeholder(project_id=project.id, **payload)
+            db.session.add(stakeholder)
+            db.session.commit()
+            flash("Stakeholder agregado.", "success")
+            return redirect(url_for("projects.manage_stakeholders", project_id=project.id, page=page))
+
+    stakeholders_pagination = db.paginate(
+        select(Stakeholder)
+        .where(Stakeholder.project_id == project.id)
+        .order_by(Stakeholder.created_at.desc()),
+        page=page,
+        per_page=10,
+        error_out=False,
+    )
+    return render_template(
+        "projects/project_stakeholders.html",
+        project=project,
+        stakeholders=stakeholders_pagination.items,
+        stakeholders_pagination=stakeholders_pagination,
+        current_page=page,
+        edit_stakeholder=None,
+        form_values={},
+        **_active_menu_context(),
+    )
+
+
+@bp.route("/<int:project_id>/stakeholders/<int:stakeholder_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_stakeholder(project_id: int, stakeholder_id: int):
+    project = _load_project_or_404(project_id)
+    page = _to_int(request.args.get("page")) or 1
+    stakeholder = db.session.get(Stakeholder, stakeholder_id)
+    if not stakeholder or stakeholder.project_id != project.id:
+        abort(404)
+
+    if request.method == "POST":
+        payload, errors = _stakeholder_payload_from_form(request.form, project.id, current_id=stakeholder.id)
+        if errors:
+            for err in errors:
+                flash(err, "danger")
+        else:
+            for key, value in payload.items():
+                setattr(stakeholder, key, value)
+            db.session.commit()
+            flash("Stakeholder actualizado.", "success")
+            return redirect(url_for("projects.manage_stakeholders", project_id=project.id, page=page))
+
+    stakeholders_pagination = db.paginate(
+        select(Stakeholder)
+        .where(Stakeholder.project_id == project.id)
+        .order_by(Stakeholder.created_at.desc()),
+        page=page,
+        per_page=10,
+        error_out=False,
+    )
+    return render_template(
+        "projects/project_stakeholders.html",
+        project=project,
+        stakeholders=stakeholders_pagination.items,
+        stakeholders_pagination=stakeholders_pagination,
+        current_page=page,
+        edit_stakeholder=stakeholder,
+        form_values=request.form if request.method == "POST" else {},
+        **_active_menu_context(),
+    )
+
+
+@bp.route("/<int:project_id>/stakeholders/<int:stakeholder_id>/delete", methods=["POST"])
+@login_required
+def delete_stakeholder(project_id: int, stakeholder_id: int):
+    page = _to_int(request.args.get("page")) or 1
+    stakeholder = db.session.get(Stakeholder, stakeholder_id)
+    if not stakeholder or stakeholder.project_id != project_id:
+        abort(404)
+    db.session.delete(stakeholder)
+    db.session.commit()
+    flash("Stakeholder eliminado.", "info")
+    return redirect(url_for("projects.manage_stakeholders", project_id=project_id, page=page))
 
 
 @bp.route("/<int:project_id>/delete", methods=["POST"])
@@ -429,185 +684,3 @@ def download_contract(project_id: int):
         as_attachment=True,
         download_name=project.contract_original_name or project.contract_file_name,
     )
-
-
-@bp.route("/clients")
-@login_required
-def list_clients():
-    search = _safe_strip(request.args.get("q"))
-    active = _safe_strip(request.args.get("active", "all"))
-    stmt = select(Client).order_by(Client.updated_at.desc())
-    if search:
-        token = f"%{search}%"
-        stmt = stmt.where(
-            or_(
-                Client.name.ilike(token),
-                Client.contact_name.ilike(token),
-                Client.email.ilike(token),
-            )
-        )
-    if active in {"1", "0"}:
-        stmt = stmt.where(Client.is_active.is_(active == "1"))
-
-    clients = db.session.execute(stmt).scalars().all()
-
-    return render_template(
-        "projects/client_list.html",
-        clients=clients,
-        filters={"q": search, "active": active},
-        **_active_menu_context(),
-    )
-
-
-@bp.route("/clients/new", methods=["GET", "POST"])
-@login_required
-def create_client():
-    if request.method == "POST":
-        errors = []
-        name = _safe_strip(request.form.get("name"))
-        contact_name = _safe_strip(request.form.get("contact_name"))
-        email = _safe_strip(request.form.get("email"))
-        phone = _safe_strip(request.form.get("phone"))
-        notes = _safe_strip(request.form.get("notes"))
-
-        if len(name) < 2:
-            errors.append("El nombre del cliente debe tener al menos 2 caracteres.")
-
-        exists = db.session.execute(
-            select(Client).where(func.lower(Client.name) == name.lower())
-        ).scalar_one_or_none()
-        if exists:
-            errors.append("Ya existe un cliente con ese nombre.")
-
-        if errors:
-            for err in errors:
-                flash(err, "danger")
-            return render_template(
-                "projects/client_form.html",
-                client=None,
-                form_values=request.form,
-                is_edit=False,
-                **_active_menu_context(),
-            )
-
-        client = Client(name=name, contact_name=contact_name, email=email, phone=phone, notes=notes)
-        db.session.add(client)
-        db.session.commit()
-        flash("Cliente creado correctamente.", "success")
-        return redirect(url_for("projects.client_detail", client_id=client.id))
-
-    return render_template(
-        "projects/client_form.html",
-        client=None,
-        form_values={},
-        is_edit=False,
-        **_active_menu_context(),
-    )
-
-
-@bp.route("/clients/<int:client_id>")
-@login_required
-def client_detail(client_id: int):
-    client = db.session.get(Client, client_id)
-    if not client:
-        abort(404)
-
-    projects = db.session.execute(
-        select(Project)
-        .where(Project.client_id == client.id)
-        .order_by(Project.updated_at.desc())
-        .limit(8)
-    ).scalars()
-
-    return render_template(
-        "projects/client_detail.html",
-        client=client,
-        projects=projects,
-        **_active_menu_context(),
-    )
-
-
-@bp.route("/clients/<int:client_id>/edit", methods=["GET", "POST"])
-@login_required
-def edit_client(client_id: int):
-    client = db.session.get(Client, client_id)
-    if not client:
-        abort(404)
-
-    if request.method == "POST":
-        errors = []
-        name = _safe_strip(request.form.get("name"))
-        contact_name = _safe_strip(request.form.get("contact_name"))
-        email = _safe_strip(request.form.get("email"))
-        phone = _safe_strip(request.form.get("phone"))
-        notes = _safe_strip(request.form.get("notes"))
-        is_active = request.form.get("is_active") == "1"
-
-        if len(name) < 2:
-            errors.append("El nombre del cliente debe tener al menos 2 caracteres.")
-
-        exists = db.session.execute(
-            select(Client).where(func.lower(Client.name) == name.lower(), Client.id != client.id)
-        ).scalar_one_or_none()
-        if exists:
-            errors.append("Ya existe otro cliente con ese nombre.")
-
-        active_projects = db.session.execute(
-            select(func.count(Project.id)).where(Project.client_id == client.id, Project.is_active.is_(True))
-        ).scalar_one()
-        if not is_active and active_projects > 0:
-            errors.append("No puedes dar de baja un cliente con proyectos activos.")
-
-        if errors:
-            for err in errors:
-                flash(err, "danger")
-            return render_template(
-                "projects/client_form.html",
-                client=client,
-                form_values=request.form,
-                is_edit=True,
-                **_active_menu_context(),
-            )
-
-        client.name = name
-        client.contact_name = contact_name
-        client.email = email
-        client.phone = phone
-        client.notes = notes
-        client.is_active = is_active
-
-        db.session.commit()
-        flash("Cliente actualizado correctamente.", "success")
-        return redirect(url_for("projects.client_detail", client_id=client.id))
-
-    return render_template(
-        "projects/client_form.html",
-        client=client,
-        form_values={},
-        is_edit=True,
-        **_active_menu_context(),
-    )
-
-
-@bp.route("/clients/<int:client_id>/delete", methods=["POST"])
-@login_required
-def delete_client(client_id: int):
-    client = db.session.get(Client, client_id)
-    if not client:
-        abort(404)
-
-    related_projects = db.session.execute(
-        select(func.count(Project.id)).where(Project.client_id == client.id)
-    ).scalar_one()
-    if related_projects > 0:
-        flash(
-            "No puedes eliminar este cliente porque tiene proyectos asociados. "
-            "Elimina primero sus proyectos uno por uno para evitar errores.",
-            "warning",
-        )
-        return redirect(url_for("projects.client_detail", client_id=client.id))
-
-    db.session.delete(client)
-    db.session.commit()
-    flash("Cliente eliminado correctamente. Esta acción no se puede deshacer.", "info")
-    return redirect(url_for("projects.list_clients"))

@@ -1,0 +1,71 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Configuración Proyectos | LTAdmin Flask{% endblock %}
+{% block page_title %}Configuración / Proyectos{% endblock %}
+{% block page_subtitle %}Espacio para catálogos y reglas del módulo de proyectos{% endblock %}
+{% block dashboard_content %}
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>Catálogos del módulo de Proyectos y Tareas</strong></div>
+  <div class="card-body">
+    <div class="form-group">
+      <label for="projectCatalogSearch">Buscar catálogo</label>
+      <input
+        id="projectCatalogSearch"
+        type="text"
+        class="form-control"
+        placeholder="Ej: estados, prioridades, riesgos..."
+      >
+    </div>
+    <div class="row" id="projectCatalogCards">
+      {% for key, label in project_catalog_fields.items() %}
+      <div
+        class="col-12 col-md-6 catalog-card"
+        data-label="{{ label|lower }}"
+        data-desc="{{ project_catalog_descriptions.get(key, '')|lower }}"
+      >
+        <div class="card border mb-3">
+          <div class="card-body">
+            <h3 class="h6">ABM {{ label }}</h3>
+            <p class="small text-secondary mb-3">{{ project_catalog_descriptions.get(key, 'Gestiona los valores disponibles para este catálogo.') }}</p>
+            <a href="{{ url_for('settings.project_catalog', catalog_key=key) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar {{ label|lower }}</a>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <p id="projectCatalogEmpty" class="text-secondary mb-0 d-none">No se encontraron catálogos para ese texto.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (() => {
+    const searchInput = document.getElementById("projectCatalogSearch");
+    const cards = Array.from(document.querySelectorAll(".catalog-card"));
+    const emptyState = document.getElementById("projectCatalogEmpty");
+
+    if (!searchInput || !cards.length || !emptyState) {
+      return;
+    }
+
+    const runFilter = () => {
+      const term = searchInput.value.trim().toLowerCase();
+      let visibleCount = 0;
+
+      cards.forEach((card) => {
+        const label = (card.dataset.label || "").toLowerCase();
+        const desc = (card.dataset.desc || "").toLowerCase();
+        const visible = !term || label.includes(term) || desc.includes(term);
+        card.classList.toggle("d-none", !visible);
+        if (visible) {
+          visibleCount += 1;
+        }
+      });
+
+      emptyState.classList.toggle("d-none", visibleCount > 0);
+    };
+
+    searchInput.addEventListener("input", runFilter);
+  })();
+</script>
+{% endblock %}

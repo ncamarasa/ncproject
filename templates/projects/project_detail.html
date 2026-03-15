@@ -1,35 +1,223 @@
 {% extends 'dashboard/layout.html' %}
 
-{% block title %}Detalle de proyecto | LTAdmin Flask{% endblock %}
+{% block title %}Vista 360 de proyecto | LTAdmin Flask{% endblock %}
 {% block page_title %}{{ project.name }}{% endblock %}
-{% block page_subtitle %}Detalle completo del proyecto{% endblock %}
+{% block page_subtitle %}Vista 360: solo visualización{% endblock %}
 {% block page_actions %}
-<a href="{{ url_for('projects.edit_project', project_id=project.id) }}" class="btn btn-outline-secondary btn-sm">Editar</a>
-<a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-secondary btn-sm">Volver</a>
+<a href="{{ url_for('projects.edit_project', project_id=project.id) }}" class="btn btn-primary btn-sm mr-2 btn-action-standard">
+  <i class="fas fa-pen"></i> Editar proyecto
+</a>
+<a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="btn btn-outline-primary btn-sm btn-action-standard">
+  <i class="fas fa-tasks"></i> Gestionar tareas
+</a>
+<a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="btn btn-outline-info btn-sm btn-action-standard">
+  <i class="fas fa-project-diagram"></i> Ver Gantt
+</a>
+<a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-dark btn-sm btn-action-standard">
+  <i class="fas fa-arrow-left"></i> Volver al listado
+</a>
 {% endblock %}
 
 {% block dashboard_content %}
+<div class="row g-3 mb-2">
+  <div class="col-6 col-lg-2"><div class="small-box bg-info"><div class="inner"><h4>{{ task_total }}</h4><p>Tareas totales</p></div></div></div>
+  <div class="col-6 col-lg-2"><div class="small-box bg-primary"><div class="inner"><h4>{{ task_pending }}</h4><p>Tareas pendientes</p></div></div></div>
+  <div class="col-6 col-lg-2"><div class="small-box bg-danger"><div class="inner"><h4>{{ task_overdue }}</h4><p>Tareas atrasadas</p></div></div></div>
+  <div class="col-6 col-lg-2"><div class="small-box bg-success"><div class="inner"><h4>{{ task_completed }}</h4><p>Completadas</p></div></div></div>
+  <div class="col-6 col-lg-2"><div class="small-box bg-warning"><div class="inner"><h4>{{ task_milestones }}</h4><p>Hitos</p></div></div></div>
+  <div class="col-6 col-lg-2"><div class="small-box bg-secondary"><div class="inner"><h4>{{ task_blocked }}</h4><p>Bloqueadas</p></div></div></div>
+</div>
+
 <div class="row g-3">
-  <div class="col-12 col-xl-8">
+  <div class="col-12 col-xl-6">
     <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>1. Datos generales</strong></div>
       <div class="card-body">
-        <div class="d-flex flex-wrap gap-2 mb-3">
-          <span class="badge badge-light">{{ project.project_type }}</span>
-          <span class="badge badge-light">{{ project.status }}</span>
-          <span class="badge badge-light">Prioridad: {{ project.priority }}</span>
-          {% if not project.is_active %}<span class="badge badge-danger">Inactivo</span>{% endif %}
-        </div>
         <dl class="row mb-0">
-          <dt class="col-sm-4">Cliente</dt><dd class="col-sm-8">{{ project.client.name }}</dd>
-          <dt class="col-sm-4">Responsable</dt><dd class="col-sm-8">{{ project.owner }}</dd>
-          <dt class="col-sm-4">Inicio estimado</dt><dd class="col-sm-8">{{ project.estimated_start_date or '-' }}</dd>
-          <dt class="col-sm-4">Fin estimado</dt><dd class="col-sm-8">{{ project.estimated_end_date or '-' }}</dd>
-          <dt class="col-sm-4">Descripción</dt><dd class="col-sm-8">{{ project.description or '-' }}</dd>
-          <dt class="col-sm-4">Observaciones</dt><dd class="col-sm-8">{{ project.observations or '-' }}</dd>
-          <dt class="col-sm-4">Contrato</dt>
-          <dd class="col-sm-8">
+          <dt class="col-sm-5">Código</dt><dd class="col-sm-7">{{ project.project_code or '-' }}</dd>
+          <dt class="col-sm-5">Cliente</dt><dd class="col-sm-7">{{ project.client.name }}</dd>
+          <dt class="col-sm-5">Contrato asociado</dt>
+          <dd class="col-sm-7">
+            {% if project.client_contract %}
+              {{ project.client_contract.contract_code or '-' }} - {{ project.client_contract.contract_name or project.client_contract.contract_type }}
+            {% else %}-{% endif %}
+          </dd>
+          <dt class="col-sm-5">Tipo</dt><dd class="col-sm-7">{{ project.project_type or '-' }}</dd>
+          <dt class="col-sm-5">Estado</dt><dd class="col-sm-7">{{ project.status or '-' }}</dd>
+          <dt class="col-sm-5">Prioridad</dt><dd class="col-sm-7">{{ project.priority or '-' }}</dd>
+          <dt class="col-sm-5">Objetivo</dt><dd class="col-sm-7">{{ project.objective or '-' }}</dd>
+          <dt class="col-sm-5">Descripción</dt><dd class="col-sm-7">{{ project.description or '-' }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>2. Clasificación</strong></div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-5">Unidad de negocio</dt><dd class="col-sm-7">{{ project.business_unit or '-' }}</dd>
+          <dt class="col-sm-5">Producto / Solución</dt><dd class="col-sm-7">{{ project.product_solution or '-' }}</dd>
+          <dt class="col-sm-5">Módulo / Servicio</dt><dd class="col-sm-7">{{ project.service_module or '-' }}</dd>
+          <dt class="col-sm-5">Categoría</dt><dd class="col-sm-7">{{ project.category or '-' }}</dd>
+          <dt class="col-sm-5">Complejidad</dt><dd class="col-sm-7">{{ project.complexity_level or '-' }}</dd>
+          <dt class="col-sm-5">Criticidad</dt><dd class="col-sm-7">{{ project.criticality_level or '-' }}</dd>
+          <dt class="col-sm-5">Origen</dt><dd class="col-sm-7">{{ project.project_origin or '-' }}</dd>
+          <dt class="col-sm-5">Proyecto padre</dt><dd class="col-sm-7">{{ project.parent_project.name if project.parent_project else '-' }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>3. Responsables</strong></div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-5">Responsable</dt><dd class="col-sm-7">{{ project.owner or '-' }}</dd>
+          <dt class="col-sm-5">Project Manager</dt><dd class="col-sm-7">{{ project.project_manager or '-' }}</dd>
+          <dt class="col-sm-5">Responsable comercial</dt><dd class="col-sm-7">{{ project.commercial_manager or '-' }}</dd>
+          <dt class="col-sm-5">Responsable funcional</dt><dd class="col-sm-7">{{ project.functional_manager or '-' }}</dd>
+          <dt class="col-sm-5">Responsable técnico</dt><dd class="col-sm-7">{{ project.technical_manager or '-' }}</dd>
+          <dt class="col-sm-5">Sponsor del cliente</dt><dd class="col-sm-7">{{ project.client_sponsor or '-' }}</dd>
+          <dt class="col-sm-5">Key user</dt><dd class="col-sm-7">{{ project.key_user or '-' }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>4. Planificación y operación</strong></div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-5">Fecha alta</dt><dd class="col-sm-7">{{ project.onboarding_date or '-' }}</dd>
+          <dt class="col-sm-5">Inicio estimado</dt><dd class="col-sm-7">{{ project.estimated_start_date or '-' }}</dd>
+          <dt class="col-sm-5">Inicio real</dt><dd class="col-sm-7">{{ project.actual_start_date or '-' }}</dd>
+          <dt class="col-sm-5">Fin estimado</dt><dd class="col-sm-7">{{ project.estimated_end_date or '-' }}</dd>
+          <dt class="col-sm-5">Fin real</dt><dd class="col-sm-7">{{ project.actual_end_date or '-' }}</dd>
+          <dt class="col-sm-5">Duración estimada</dt><dd class="col-sm-7">{{ project.estimated_duration_days or '-' }} días</dd>
+          <dt class="col-sm-5">Kick-off</dt><dd class="col-sm-7">{{ project.kickoff_date or '-' }}</dd>
+          <dt class="col-sm-5">Fecha cierre</dt><dd class="col-sm-7">{{ project.close_date or '-' }}</dd>
+          <dt class="col-sm-5">Metodología</dt><dd class="col-sm-7">{{ project.methodology or '-' }}</dd>
+          <dt class="col-sm-5">Frecuencia comité</dt><dd class="col-sm-7">{{ project.committee_frequency or '-' }}</dd>
+          <dt class="col-sm-5">Canal comunicación</dt><dd class="col-sm-7">{{ project.communication_channel or '-' }}</dd>
+          <dt class="col-sm-5">Repositorio documental</dt><dd class="col-sm-7">{{ project.documentation_repo or '-' }}</dd>
+          <dt class="col-sm-5">Tablero externo</dt>
+          <dd class="col-sm-7">
+            {% if project.external_board_url %}<a href="{{ project.external_board_url }}" target="_blank" rel="noopener">{{ project.external_board_url }}</a>{% else %}-{% endif %}
+          </dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 metric-card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>5. Stakeholders</strong>
+        <a href="{{ url_for('projects.manage_stakeholders', project_id=project.id) }}" class="btn btn-warning btn-sm ml-auto btn-manage-action btn-action-standard">Gestionar stakeholders</a>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Rol</th>
+                <th>Canales</th>
+                <th>Notas</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for stakeholder in project.stakeholders %}
+                <tr>
+                  <td><strong>{{ stakeholder.name }}</strong></td>
+                  <td>{{ stakeholder.role or '-' }}</td>
+                  <td>
+                    {{ stakeholder.email or '-' }}
+                    {% if stakeholder.phone %}<br><small class="text-secondary">{{ stakeholder.phone }}</small>{% endif %}
+                  </td>
+                  <td>{{ stakeholder.notes or '-' }}</td>
+                </tr>
+              {% else %}
+                <tr><td colspan="4" class="text-center text-secondary">Sin stakeholders cargados.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 metric-card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>6. Tareas e hitos</strong>
+        <div class="d-flex gap-2 ml-auto">
+          <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="btn btn-success btn-sm btn-manage-action btn-action-standard">Gestionar tareas</a>
+          <a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="btn btn-secondary btn-sm btn-manage-action btn-action-standard">Ver Gantt</a>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered">
+            <thead><tr><th>Tarea</th><th>Tipo</th><th>Estado</th><th>Responsable</th><th>Fechas</th><th>Avance</th></tr></thead>
+            <tbody>
+              {% for task in project.tasks %}
+              <tr>
+                <td>
+                  <strong>{{ task.title }}</strong>
+                  {% if task.parent_task_id %}<span class="badge badge-light">Subtarea #{{ task.parent_task_id }}</span>{% endif %}
+                  {% if task.is_milestone %}<span class="badge badge-warning">Hito</span>{% endif %}
+                </td>
+                <td>{{ task.task_type or '-' }}</td>
+                <td>{{ task.status or '-' }}</td>
+                <td>{{ task.responsible or '-' }}</td>
+                <td><small>{{ task.start_date or '-' }}<br>{{ task.due_date or '-' }}</small></td>
+                <td>{{ task.progress_percent or 0 }}%</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="text-center text-secondary">Sin tareas registradas.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>7. Presupuesto y horas</strong></div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-5">Modalidad facturación</dt><dd class="col-sm-7">{{ project.billing_mode or '-' }}</dd>
+          <dt class="col-sm-5">Moneda</dt><dd class="col-sm-7">{{ project.currency_code or '-' }}</dd>
+          <dt class="col-sm-5">Presupuesto vendido</dt><dd class="col-sm-7">{{ project.sold_budget or '-' }}</dd>
+          <dt class="col-sm-5">Costo estimado</dt><dd class="col-sm-7">{{ project.estimated_cost or '-' }}</dd>
+          <dt class="col-sm-5">Margen estimado</dt><dd class="col-sm-7">{{ project.estimated_margin or '-' }}</dd>
+          <dt class="col-sm-5">Horas estimadas</dt><dd class="col-sm-7">{{ project.estimated_hours or '-' }}</dd>
+          <dt class="col-sm-5">Tarifa promedio</dt><dd class="col-sm-7">{{ project.average_rate or '-' }}</dd>
+          <dt class="col-sm-5">Centro de costos</dt><dd class="col-sm-7">{{ project.cost_center or '-' }}</dd>
+          <dt class="col-sm-5">Código ERP / PSA</dt><dd class="col-sm-7">{{ project.erp_psa_code or '-' }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>8. Cierre y documentos</strong></div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-5">Registro</dt><dd class="col-sm-7">{% if project.is_active %}<span class="badge badge-success">Activo</span>{% else %}<span class="badge badge-secondary">Inactivo</span>{% endif %}</dd>
+          <dt class="col-sm-5">Observaciones</dt><dd class="col-sm-7">{{ project.observations or '-' }}</dd>
+          <dt class="col-sm-5">Contrato adjunto</dt>
+          <dd class="col-sm-7">
             {% if project.contract_file_name %}
-              <a href="{{ url_for('projects.download_contract', project_id=project.id) }}">{{ project.contract_original_name }}</a>
+              <a href="{{ url_for('projects.download_contract', project_id=project.id) }}">{{ project.contract_original_name or 'Descargar contrato' }}</a>
             {% else %}
               -
             {% endif %}
@@ -37,39 +225,6 @@
         </dl>
       </div>
     </div>
-  </div>
-  <div class="col-12 col-xl-4">
-    <div class="card border-0 metric-card">
-      <div class="card-body">
-        <h2 class="h6 mb-3">Stakeholders asociados</h2>
-        <ul class="list-group list-group-flush">
-          {% for stakeholder in project.stakeholders %}
-            <li class="list-group-item px-0">
-              <div class="fw-semibold">{{ stakeholder.name }}</div>
-              <small class="text-secondary">
-                {{ stakeholder.role or 'Sin rol' }}
-                {% if stakeholder.email %} | {{ stakeholder.email }}{% endif %}
-                {% if stakeholder.phone %} | {{ stakeholder.phone }}{% endif %}
-              </small>
-            </li>
-          {% else %}
-            <li class="list-group-item px-0 text-secondary">Sin stakeholders asociados.</li>
-          {% endfor %}
-        </ul>
-      </div>
-    </div>
-
-    {% if project.is_active %}
-    <div class="card border-0 metric-card mt-3">
-      <div class="card-body">
-        <h3 class="h6 text-danger">Baja de proyecto</h3>
-        <p class="small text-secondary mb-2">Solo disponible para proyectos en estado Cancelado o Completado.</p>
-        <form method="post" action="{{ url_for('projects.delete_project', project_id=project.id) }}">
-          <button class="btn btn-outline-danger btn-sm" type="submit">Dar de baja</button>
-        </form>
-      </div>
-    </div>
-    {% endif %}
   </div>
 </div>
 {% endblock %}

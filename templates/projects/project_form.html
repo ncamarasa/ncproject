@@ -2,186 +2,421 @@
 
 {% block title %}{{ 'Editar proyecto' if is_edit else 'Nuevo proyecto' }} | LTAdmin Flask{% endblock %}
 {% block page_title %}{{ 'Editar proyecto' if is_edit else 'Nuevo proyecto' }}{% endblock %}
-{% block page_subtitle %}Datos, planificación y stakeholders{% endblock %}
+{% block page_subtitle %}Formulario integral del proyecto{% endblock %}
 {% block page_actions %}
-<a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-secondary btn-sm">Volver al listado</a>
+<a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al listado</a>
 {% endblock %}
 
 {% block dashboard_content %}
-<div class="card border-0 metric-card">
-  <div class="card-body">
-    <form method="post" enctype="multipart/form-data" class="row g-3">
-      <div class="col-12 col-lg-6">
-        <label class="form-label">Nombre *</label>
-        <input name="name" class="form-control" required value="{{ form_values.get('name', project.name if project else '') }}">
-      </div>
-      <div class="col-12 col-lg-6">
-        <label class="form-label">Cliente *</label>
-        <select name="client_id" class="form-select" required>
-          <option value="">Seleccionar</option>
-          {% for client in clients %}
-            {% set selected = form_values.get('client_id', project.client_id if project else '')|string %}
-            <option value="{{ client.id }}" {% if selected == client.id|string %}selected{% endif %}>{{ client.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="col-12">
-        <label class="form-label">Descripción</label>
-        <textarea name="description" class="form-control" rows="3">{{ form_values.get('description', project.description if project else '') }}</textarea>
-      </div>
-
-      <div class="col-12 col-md-4">
-        <label class="form-label">Tipo *</label>
-        <select name="project_type" class="form-select" required>
+<form method="post" enctype="multipart/form-data" class="row g-3">
+  <div class="col-12">
+    <div class="card border-0 metric-card">
+      <div class="card-header"><strong>1. Identificación</strong></div>
+      <div class="card-body row g-3">
+        <div class="col-12 col-lg-3">
+          <label class="form-label">Código de proyecto</label>
+          <input name="project_code" class="form-control" value="{{ form_values.get('project_code', project.project_code if project else '') }}">
+        </div>
+        <div class="col-12 col-lg-9">
+          <label class="form-label">Nombre *</label>
+          <input name="name" class="form-control" required value="{{ form_values.get('name', project.name if project else '') }}">
+        </div>
+        <div class="col-12 col-lg-4">
+          <label class="form-label">Cliente *</label>
+          <select id="projectClientSelect" name="client_id" class="custom-select" required>
+            <option value="">Seleccionar</option>
+            {% for client in clients %}
+              {% set selected = form_values.get('client_id', project.client_id if project else '')|string %}
+              <option value="{{ client.id }}" {% if selected == client.id|string %}selected{% endif %}>{{ client.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-lg-4">
+          <label class="form-label">Contrato del cliente</label>
+          {% set selected_contract = form_values.get('client_contract_id', project.client_contract_id if project else '')|string %}
+          <select id="projectContractSelect" name="client_contract_id" class="custom-select">
+            <option value="">Sin contrato</option>
+            {% for contract in contract_options %}
+              <option value="{{ contract.id }}" {% if selected_contract == contract.id|string %}selected{% endif %}>{{ contract.contract_code or '-' }} - {{ contract.contract_name or contract.contract_type }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-lg-4">
+          <label class="form-label">Proyecto padre</label>
+          {% set selected_parent = form_values.get('parent_project_id', project.parent_project_id if project else '')|string %}
+          <select name="parent_project_id" class="custom-select">
+            <option value="">Sin proyecto padre</option>
+            {% for parent in parent_projects %}
+              <option value="{{ parent.id }}" {% if selected_parent == parent.id|string %}selected{% endif %}>{{ parent.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-lg-4">
+          <label class="form-label">Tipo *</label>
           {% set current = form_values.get('project_type', project.project_type if project else '') %}
-          <option value="">Seleccionar</option>
-          {% for item in project_types %}
-            <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-12 col-md-4">
-        <label class="form-label">Estado *</label>
-        <select name="status" class="form-select" required>
+          <select name="project_type" class="custom-select" required>
+            <option value="">Seleccionar</option>
+            {% for item in project_types %}
+              <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-lg-4">
+          <label class="form-label">Estado *</label>
           {% set current = form_values.get('status', project.status if project else '') %}
-          <option value="">Seleccionar</option>
-          {% for item in project_statuses %}
-            <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-12 col-md-4">
-        <label class="form-label">Prioridad *</label>
-        <select name="priority" class="form-select" required>
+          <select name="status" class="custom-select" required>
+            <option value="">Seleccionar</option>
+            {% for item in project_statuses %}
+              <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-lg-4">
+          <label class="form-label">Prioridad *</label>
           {% set current = form_values.get('priority', project.priority if project else '') %}
-          <option value="">Seleccionar</option>
-          {% for item in project_priorities %}
-            <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="col-12 col-md-6">
-        <label class="form-label">Fecha estimada de inicio</label>
-        <input type="date" name="estimated_start_date" class="form-control" value="{{ form_values.get('estimated_start_date', project.estimated_start_date.isoformat() if project and project.estimated_start_date else '') }}">
-      </div>
-      <div class="col-12 col-md-6">
-        <label class="form-label">Fecha estimada de fin</label>
-        <input type="date" name="estimated_end_date" class="form-control" value="{{ form_values.get('estimated_end_date', project.estimated_end_date.isoformat() if project and project.estimated_end_date else '') }}">
-      </div>
-
-      <div class="col-12 col-md-6">
-        <label class="form-label">Responsable *</label>
-        <input name="owner" class="form-control" required value="{{ form_values.get('owner', project.owner if project else '') }}">
-      </div>
-      <div class="col-12 col-md-6">
-        <label class="form-label">Contrato adjunto (PDF/DOC/DOCX)</label>
-        <input type="file" name="contract" class="form-control" accept=".pdf,.doc,.docx">
-        {% if project and project.contract_file_name %}
-          <small class="text-secondary">Actual: <a href="{{ url_for('projects.download_contract', project_id=project.id) }}">{{ project.contract_original_name }}</a></small>
-        {% endif %}
-      </div>
-
-      <div class="col-12">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <label class="form-label mb-0">Stakeholders del proyecto</label>
-          <button type="button" id="addStakeholderRow" class="btn btn-sm btn-outline-primary">Agregar stakeholder</button>
+          <select name="priority" class="custom-select" required>
+            <option value="">Seleccionar</option>
+            {% for item in project_priorities %}
+              <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
         </div>
-        <div id="stakeholderRows" class="d-grid gap-2">
-          {% for row in stakeholder_rows %}
-          <div class="border rounded p-2 stakeholder-row">
-            <div class="row g-2">
-              <div class="col-12 col-lg-3">
-                <input name="stakeholder_name[]" class="form-control" placeholder="Nombre" value="{{ row.name or '' }}">
-              </div>
-              <div class="col-12 col-lg-2">
-                <input name="stakeholder_role[]" class="form-control" placeholder="Rol" value="{{ row.role or '' }}">
-              </div>
-              <div class="col-12 col-lg-3">
-                <input name="stakeholder_email[]" type="email" class="form-control" placeholder="Email" value="{{ row.email or '' }}">
-              </div>
-              <div class="col-12 col-lg-2">
-                <input name="stakeholder_phone[]" class="form-control" placeholder="Teléfono" value="{{ row.phone or '' }}">
-              </div>
-              <div class="col-10 col-lg-2">
-                <input name="stakeholder_notes[]" class="form-control" placeholder="Notas" value="{{ row.notes or '' }}">
-              </div>
-              <div class="col-2 col-lg-1 d-grid">
-                <button type="button" class="btn btn-outline-danger remove-row">X</button>
-              </div>
-            </div>
-          </div>
-          {% endfor %}
+        <div class="col-12">
+          <label class="form-label">Descripción</label>
+          <textarea name="description" class="form-control" rows="2">{{ form_values.get('description', project.description if project else '') }}</textarea>
         </div>
-        <small class="text-secondary">Se cargan y editan únicamente dentro de este proyecto.</small>
-      </div>
-
-      <div class="col-12">
-        <label class="form-label">Observaciones</label>
-        <textarea name="observations" class="form-control" rows="3">{{ form_values.get('observations', project.observations if project else '') }}</textarea>
-      </div>
-
-      <div class="col-12 d-flex gap-2">
-        <button type="submit" class="btn btn-primary">{{ 'Guardar cambios' if is_edit else 'Crear proyecto' }}</button>
-        <a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-secondary">Cancelar</a>
-      </div>
-    </form>
-  </div>
-</div>
-
-<template id="stakeholderRowTemplate">
-  <div class="border rounded p-2 stakeholder-row">
-    <div class="row g-2">
-      <div class="col-12 col-lg-3">
-        <input name="stakeholder_name[]" class="form-control" placeholder="Nombre">
-      </div>
-      <div class="col-12 col-lg-2">
-        <input name="stakeholder_role[]" class="form-control" placeholder="Rol">
-      </div>
-      <div class="col-12 col-lg-3">
-        <input name="stakeholder_email[]" type="email" class="form-control" placeholder="Email">
-      </div>
-      <div class="col-12 col-lg-2">
-        <input name="stakeholder_phone[]" class="form-control" placeholder="Teléfono">
-      </div>
-      <div class="col-10 col-lg-2">
-        <input name="stakeholder_notes[]" class="form-control" placeholder="Notas">
-      </div>
-      <div class="col-2 col-lg-1 d-grid">
-        <button type="button" class="btn btn-outline-danger remove-row">X</button>
+        <div class="col-12">
+          <label class="form-label">Objetivo</label>
+          <textarea name="objective" class="form-control" rows="2">{{ form_values.get('objective', project.objective if project else '') }}</textarea>
+        </div>
       </div>
     </div>
   </div>
-</template>
+
+  <div class="col-12">
+    <div class="card border-0 metric-card">
+      <div class="card-header"><strong>2. Clasificación</strong></div>
+      <div class="card-body row g-3">
+        <div class="col-12 col-md-3">
+          <label class="form-label">Complejidad</label>
+          {% set current = form_values.get('complexity_level', project.complexity_level if project else '') %}
+          <select name="complexity_level" class="custom-select">
+            <option value="">Seleccionar</option>
+            {% for item in project_complexities %}
+              <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Criticidad</label>
+          {% set current = form_values.get('criticality_level', project.criticality_level if project else '') %}
+          <select name="criticality_level" class="custom-select">
+            <option value="">Seleccionar</option>
+            {% for item in project_criticalities %}
+              <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Origen del proyecto</label>
+          {% set current = form_values.get('project_origin', project.project_origin if project else '') %}
+          <select name="project_origin" class="custom-select">
+            <option value="">Seleccionar</option>
+            {% for item in project_origins %}
+              <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Categoría</label>
+          <input name="category" class="form-control" value="{{ form_values.get('category', project.category if project else '') }}">
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Unidad de negocio</label>
+          <input name="business_unit" class="form-control" value="{{ form_values.get('business_unit', project.business_unit if project else '') }}">
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Producto / Solución</label>
+          <input name="product_solution" class="form-control" value="{{ form_values.get('product_solution', project.product_solution if project else '') }}">
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Módulo / Servicio</label>
+          <input name="service_module" class="form-control" value="{{ form_values.get('service_module', project.service_module if project else '') }}">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>3. Responsables</strong></div>
+      <div class="card-body row g-3">
+        <div class="col-12 col-md-6">
+          <label class="form-label">Responsable *</label>
+          <input name="owner" class="form-control" required value="{{ form_values.get('owner', project.owner if project else '') }}">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Project Manager</label>
+          <input name="project_manager" class="form-control" value="{{ form_values.get('project_manager', project.project_manager if project else '') }}">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Responsable comercial</label>
+          <input name="commercial_manager" class="form-control" value="{{ form_values.get('commercial_manager', project.commercial_manager if project else '') }}">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Responsable funcional</label>
+          <input name="functional_manager" class="form-control" value="{{ form_values.get('functional_manager', project.functional_manager if project else '') }}">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Responsable técnico</label>
+          <input name="technical_manager" class="form-control" value="{{ form_values.get('technical_manager', project.technical_manager if project else '') }}">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Sponsor del cliente</label>
+          <input name="client_sponsor" class="form-control" value="{{ form_values.get('client_sponsor', project.client_sponsor if project else '') }}">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Key user</label>
+          <input name="key_user" class="form-control" value="{{ form_values.get('key_user', project.key_user if project else '') }}">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>4. Fechas y planificación</strong></div>
+      <div class="card-body row g-3">
+        <div class="col-12 col-md-6">
+          <label class="form-label">Fecha de alta</label>
+          <input type="date" name="onboarding_date" class="form-control" value="{{ form_values.get('onboarding_date', project.onboarding_date.isoformat() if project and project.onboarding_date else '') }}">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Fecha estimada de inicio</label>
+          <input type="date" name="estimated_start_date" class="form-control" value="{{ form_values.get('estimated_start_date', project.estimated_start_date.isoformat() if project and project.estimated_start_date else '') }}">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Fecha real de inicio</label>
+          <input type="date" name="actual_start_date" class="form-control" value="{{ form_values.get('actual_start_date', project.actual_start_date.isoformat() if project and project.actual_start_date else '') }}">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Fecha estimada de fin</label>
+          <input type="date" name="estimated_end_date" class="form-control" value="{{ form_values.get('estimated_end_date', project.estimated_end_date.isoformat() if project and project.estimated_end_date else '') }}">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Fecha real de fin</label>
+          <input type="date" name="actual_end_date" class="form-control" value="{{ form_values.get('actual_end_date', project.actual_end_date.isoformat() if project and project.actual_end_date else '') }}">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Duración estimada (días)</label>
+          <input type="number" name="estimated_duration_days" class="form-control" value="{{ form_values.get('estimated_duration_days', project.estimated_duration_days if project and project.estimated_duration_days is not none else '') }}">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Kick-off</label>
+          <input type="date" name="kickoff_date" class="form-control" value="{{ form_values.get('kickoff_date', project.kickoff_date.isoformat() if project and project.kickoff_date else '') }}">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Fecha de cierre</label>
+          <input type="date" name="close_date" class="form-control" value="{{ form_values.get('close_date', project.close_date.isoformat() if project and project.close_date else '') }}">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 metric-card">
+      <div class="card-header"><strong>5. Operación y economía</strong></div>
+      <div class="card-body row g-3">
+        <div class="col-12 col-md-3">
+          <label class="form-label">Metodología</label>
+          {% set current = form_values.get('methodology', project.methodology if project else '') %}
+          <select name="methodology" class="custom-select">
+            <option value="">Seleccionar</option>
+            {% for item in project_methodologies %}
+              <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Frecuencia comité</label>
+          <input name="committee_frequency" class="form-control" value="{{ form_values.get('committee_frequency', project.committee_frequency if project else '') }}">
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Canal de comunicación</label>
+          <input name="communication_channel" class="form-control" value="{{ form_values.get('communication_channel', project.communication_channel if project else '') }}">
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Repositorio documental</label>
+          <input name="documentation_repo" class="form-control" value="{{ form_values.get('documentation_repo', project.documentation_repo if project else '') }}">
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">URL tablero externo</label>
+          <input name="external_board_url" class="form-control" value="{{ form_values.get('external_board_url', project.external_board_url if project else '') }}">
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Modalidad facturación</label>
+          <input name="billing_mode" class="form-control" value="{{ form_values.get('billing_mode', project.billing_mode if project else '') }}">
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label">Moneda</label>
+          <input name="currency_code" class="form-control" value="{{ form_values.get('currency_code', project.currency_code if project else '') }}">
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Presupuesto vendido</label>
+          <input name="sold_budget" class="form-control" value="{{ form_values.get('sold_budget', project.sold_budget if project and project.sold_budget is not none else '') }}">
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Costo estimado</label>
+          <input name="estimated_cost" class="form-control" value="{{ form_values.get('estimated_cost', project.estimated_cost if project and project.estimated_cost is not none else '') }}">
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Margen estimado</label>
+          <input name="estimated_margin" class="form-control" value="{{ form_values.get('estimated_margin', project.estimated_margin if project and project.estimated_margin is not none else '') }}">
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Horas estimadas</label>
+          <input name="estimated_hours" class="form-control" value="{{ form_values.get('estimated_hours', project.estimated_hours if project and project.estimated_hours is not none else '') }}">
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Tarifa promedio</label>
+          <input name="average_rate" class="form-control" value="{{ form_values.get('average_rate', project.average_rate if project and project.average_rate is not none else '') }}">
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Centro de costos</label>
+          <input name="cost_center" class="form-control" value="{{ form_values.get('cost_center', project.cost_center if project else '') }}">
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Código ERP / PSA</label>
+          <input name="erp_psa_code" class="form-control" value="{{ form_values.get('erp_psa_code', project.erp_psa_code if project else '') }}">
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Contrato adjunto (PDF/DOC/DOCX)</label>
+          <input type="file" name="contract" class="form-control" accept=".pdf,.doc,.docx">
+          {% if project and project.contract_file_name %}
+            <small class="text-secondary">Actual: <a href="{{ url_for('projects.download_contract', project_id=project.id) }}">{{ project.contract_original_name }}</a></small>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 metric-card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>6. Stakeholders</strong>
+        {% if is_edit and project %}
+        <a href="{{ url_for('projects.manage_stakeholders', project_id=project.id) }}" class="btn btn-primary btn-sm ml-auto btn-manage-action btn-action-standard">Gestionar stakeholders</a>
+        {% endif %}
+      </div>
+      <div class="card-body p-3">
+        {% if is_edit and project %}
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered mb-0">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Rol</th>
+                <th>Canales</th>
+                <th>Notas</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for stakeholder in project.stakeholders %}
+              <tr>
+                <td><strong>{{ stakeholder.name }}</strong></td>
+                <td>{{ stakeholder.role or '-' }}</td>
+                <td>
+                  {{ stakeholder.email or '-' }}
+                  {% if stakeholder.phone %}<br><small class="text-secondary">{{ stakeholder.phone }}</small>{% endif %}
+                </td>
+                <td>{{ stakeholder.notes or '-' }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="text-center text-secondary">Sin stakeholders cargados.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-secondary mb-0">Podrás gestionar stakeholders una vez creado el proyecto.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <div class="card border-0 metric-card">
+      <div class="card-header"><strong>7. Observaciones</strong></div>
+      <div class="card-body row g-3">
+        <div class="col-12">
+          <label class="form-label">Observaciones</label>
+          <textarea name="observations" class="form-control" rows="3">{{ form_values.get('observations', project.observations if project else '') }}</textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 d-flex gap-2">
+    <button type="submit" class="btn btn-primary btn-action-standard">{{ 'Guardar cambios' if is_edit else 'Crear proyecto' }}</button>
+    <a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-secondary btn-action-standard">Cancelar</a>
+  </div>
+</form>
+
+{% if is_edit and project and project.is_active %}
+<div class="card border border-danger mt-3">
+  <div class="card-body">
+    <h3 class="h6 text-danger mb-2">Eliminar proyecto</h3>
+    <p class="small text-secondary mb-3">
+      La eliminación es lógica (se marca como inactivo). Solo disponible para proyectos en estado Cancelado o Completado.
+    </p>
+    <form method="post" action="{{ url_for('projects.delete_project', project_id=project.id) }}" class="m-0" onsubmit="return confirm('Vas a dar de baja este proyecto. ¿Deseas continuar?');">
+      <button class="btn btn-outline-danger btn-sm" type="submit">Eliminar proyecto</button>
+    </form>
+  </div>
+</div>
+{% endif %}
 
 <script>
   (() => {
-    const container = document.getElementById("stakeholderRows");
-    const addBtn = document.getElementById("addStakeholderRow");
-    const template = document.getElementById("stakeholderRowTemplate");
+    const clientSelect = document.getElementById("projectClientSelect");
+    const contractSelect = document.getElementById("projectContractSelect");
 
-    const bindRemove = (scope) => {
-      scope.querySelectorAll(".remove-row").forEach((btn) => {
-        btn.onclick = () => {
-          if (container.children.length <= 1) {
-            btn.closest(".stakeholder-row").querySelectorAll("input").forEach((input) => {
-              input.value = "";
-            });
-            return;
+    const loadContractsByClient = async () => {
+      if (!clientSelect || !contractSelect) {
+        return;
+      }
+      const clientId = clientSelect.value;
+      const currentValue = contractSelect.value;
+      contractSelect.innerHTML = '<option value="">Sin contrato</option>';
+      if (!clientId) {
+        return;
+      }
+      try {
+        const response = await fetch(`{{ url_for('projects.contracts_by_client', client_id=0) }}`.replace("0", clientId));
+        const contracts = await response.json();
+        contracts.forEach((item) => {
+          const option = document.createElement("option");
+          option.value = item.id;
+          option.textContent = item.label;
+          if (String(item.id) === String(currentValue)) {
+            option.selected = true;
           }
-          btn.closest(".stakeholder-row").remove();
-        };
+          contractSelect.appendChild(option);
+        });
+      } catch (_) {
+        // no-op
+      }
+    };
+
+    if (clientSelect && contractSelect) {
+      clientSelect.addEventListener("change", () => {
+        contractSelect.value = "";
+        loadContractsByClient();
       });
-    };
-
-    bindRemove(document);
-
-    addBtn.onclick = () => {
-      const node = template.content.firstElementChild.cloneNode(true);
-      container.appendChild(node);
-      bindRemove(node);
-    };
+      if (clientSelect.value && contractSelect.options.length <= 1) {
+        loadContractsByClient();
+      }
+    }
   })();
 </script>
 {% endblock %}
