@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}LTAdmin Flask{% endblock %}</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css">
@@ -17,6 +18,35 @@
   <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
+  <script>
+    (function () {
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
+      if (!csrfToken) return;
+
+      document.querySelectorAll('form[method="post"], form[method="POST"]').forEach((form) => {
+        let input = form.querySelector('input[name="csrf_token"]');
+        if (!input) {
+          input = document.createElement("input");
+          input.type = "hidden";
+          input.name = "csrf_token";
+          form.appendChild(input);
+        }
+        input.value = csrfToken;
+      });
+
+      const originalFetch = window.fetch;
+      if (originalFetch) {
+        window.fetch = function (resource, init = {}) {
+          const options = { ...init };
+          options.headers = new Headers(options.headers || {});
+          if (!options.headers.has("X-CSRF-Token")) {
+            options.headers.set("X-CSRF-Token", csrfToken);
+          }
+          return originalFetch(resource, options);
+        };
+      }
+    })();
+  </script>
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>

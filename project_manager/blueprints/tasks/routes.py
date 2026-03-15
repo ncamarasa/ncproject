@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
 
-from project_manager.auth_utils import login_required
+from project_manager.auth_utils import allowed_project_ids, has_permission, login_required
 from project_manager.blueprints.tasks import bp
 from project_manager.extensions import db
 from project_manager.models import Project, Task, TaskAssignee, TaskAttachment, TaskComment, TaskDependency
@@ -25,6 +25,21 @@ TASK_ALLOWED_ATTACHMENT_EXTENSIONS = {
     "jpeg",
     "txt",
 }
+
+
+@bp.before_request
+def _authorize_tasks_module():
+    if g.get("user") is None:
+        flash("Debes iniciar sesión para continuar.", "warning")
+        return redirect(url_for("auth.login"))
+    is_write = request.method not in {"GET", "HEAD", "OPTIONS"}
+    needed_permission = "tasks.edit" if is_write else "tasks.view"
+    if is_write and g.user.read_only:
+        flash("Tu usuario es de solo lectura.", "danger")
+        return redirect(url_for("main.home"))
+    if not has_permission(g.user, needed_permission):
+        flash("No tienes permisos para acceder al módulo de tareas.", "danger")
+        return redirect(url_for("main.home"))
 
 
 def _safe_strip(value: str | None) -> str:
@@ -57,6 +72,10 @@ def _parse_date(value: str | None):
 
 
 def _load_project_or_404(project_id: int) -> Project:
+    if project_id and not g.user.full_access and g.user.username != "admin":
+        allowed_ids = allowed_project_ids(g.user)
+        if allowed_ids is not None and project_id not in set(allowed_ids):
+            abort(403)
     stmt = select(Project).options(selectinload(Project.client)).where(Project.id == project_id)
     project = db.session.execute(stmt).scalar_one_or_none()
     if not project:

@@ -1,0 +1,93 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Usuarios | LTAdmin Flask{% endblock %}
+{% block page_title %}Usuarios{% endblock %}
+{% block page_subtitle %}Administración de usuarios y roles{% endblock %}
+{% block page_actions %}
+<a href="{{ url_for('administration.list_roles') }}" class="btn btn-outline-primary btn-sm btn-action-standard mr-2">Roles</a>
+<a href="{{ url_for('administration.create_user') }}" class="btn btn-primary btn-sm btn-action-standard"><i class="bi bi-plus-circle"></i> Nuevo usuario</a>
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-12 col-md-4">
+        <label class="form-label">Buscar</label>
+        <input name="q" class="form-control" placeholder="Nombre, usuario, email..." value="{{ filters.q }}">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label">Rol</label>
+        <select name="role_id" class="custom-select">
+          <option value="">Todos</option>
+          {% for role in roles %}
+          <option value="{{ role.id }}" {% if filters.role_id == role.id %}selected{% endif %}>{{ role.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label">Estado</label>
+        <select name="status" class="custom-select">
+          <option value="">Todos</option>
+          <option value="1" {% if filters.status == '1' %}selected{% endif %}>Activos</option>
+          <option value="0" {% if filters.status == '0' %}selected{% endif %}>Inactivos</option>
+        </select>
+      </div>
+      <div class="col-12 col-md-2 d-flex gap-2">
+        <button class="btn btn-outline-primary btn-sm btn-action-standard" type="submit">Filtrar</button>
+        <a class="btn btn-outline-secondary btn-sm btn-action-standard" href="{{ url_for('administration.list_users') }}">Limpiar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 metric-card">
+  <div class="card-body p-3">
+    <div class="table-responsive">
+      <table class="table table-bordered table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Usuario</th>
+            <th>Rol</th>
+            <th>Acceso</th>
+            <th>Último acceso</th>
+            <th>Estado</th>
+            <th class="text-end">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for user in users %}
+          <tr>
+            <td>
+              <strong>{{ user.display_name }}</strong><br>
+              <small class="text-secondary">{{ user.username }}{% if user.email %} | {{ user.email }}{% endif %}</small>
+            </td>
+            <td>{{ user.role.name if user.role else '-' }}</td>
+            <td>
+              {% if user.full_access %}<span class="badge badge-success">Total</span>{% else %}<span class="badge badge-secondary">Restringido</span>{% endif %}
+              {% if user.read_only %}<span class="badge badge-warning">Solo lectura</span>{% endif %}
+            </td>
+            <td>{{ user.last_login_at or '-' }}</td>
+            <td>{% if user.is_active %}<span class="badge badge-success">Activo</span>{% else %}<span class="badge badge-secondary">Inactivo</span>{% endif %}</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-secondary btn-action-icon" href="{{ url_for('administration.edit_user', user_id=user.id) }}" title="Editar"><i class="fas fa-pen"></i></a>
+              <form method="post" class="d-inline" action="{{ url_for('administration.toggle_user', user_id=user.id) }}">
+                <button class="btn btn-sm btn-outline-warning btn-action-icon" type="submit" title="Activar/Desactivar"><i class="fas fa-power-off"></i></button>
+              </form>
+              <form method="post" class="d-inline" action="{{ url_for('administration.reset_password', user_id=user.id) }}" onsubmit="const nextPassword = prompt('Ingresá la nueva contraseña temporal (mínimo 8 caracteres):'); if (!nextPassword) { return false; } if (nextPassword.length < 8) { alert('La contraseña debe tener al menos 8 caracteres.'); return false; } this.querySelector('input[name=new_password]').value = nextPassword; return confirm('¿Confirmás el reseteo de contraseña?');">
+                <input type="hidden" name="new_password" value="">
+                <button class="btn btn-sm btn-outline-danger btn-action-icon" type="submit" title="Reset password"><i class="fas fa-key"></i></button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" class="text-center py-4 text-secondary">No hay usuarios para los filtros aplicados.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card-body pt-2">
+    {% include 'administration/_pagination.html' %}
+  </div>
+</div>
+{% endblock %}

@@ -11,6 +11,16 @@
 
     <ul class="navbar-nav ml-auto align-items-center">
       {% block page_actions %}{% endblock %}
+      {% if current_user %}
+      <li class="nav-item ml-2">
+        <form method="post" action="{{ url_for('auth.logout') }}" class="m-0">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-outline-danger btn-sm btn-action-standard">
+            <i class="fas fa-sign-out-alt"></i> Logout
+          </button>
+        </form>
+      </li>
+      {% endif %}
     </ul>
   </nav>
 
@@ -44,6 +54,73 @@
             </a>
           </li>
 
+          {% if user_can('users.manage') or user_can('audit.view') %}
+          {% set admin_section_active = request.endpoint and request.endpoint.startswith('administration.') %}
+          <li class="nav-item {% if admin_section_active %}menu-open{% endif %}">
+            <a href="#" class="nav-link {% if admin_section_active %}active{% endif %}">
+              <i class="nav-icon fas fa-user-shield"></i>
+              <p>
+                Administración
+                <i class="fas fa-angle-left right"></i>
+              </p>
+            </a>
+            <ul class="nav nav-treeview">
+              {% if user_can('users.manage') %}
+              {% set users_section_active = request.endpoint in ['administration.list_users', 'administration.create_user', 'administration.edit_user', 'administration.reset_password', 'administration.toggle_user', 'administration.list_roles', 'administration.edit_role', 'administration.toggle_role'] %}
+              <li class="nav-item {% if users_section_active %}menu-open{% endif %}">
+                <a href="#" class="nav-link {% if users_section_active %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>
+                    Usuarios
+                    <i class="fas fa-angle-left right"></i>
+                  </p>
+                </a>
+                <ul class="nav nav-treeview">
+                  <li class="nav-item">
+                    <a href="{{ url_for('administration.list_users') }}" class="nav-link {% if request.endpoint in ['administration.list_users', 'administration.create_user', 'administration.edit_user', 'administration.reset_password', 'administration.toggle_user'] %}active{% endif %}">
+                      <i class="far fa-dot-circle nav-icon"></i>
+                      <p>Gestión de Usuarios</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="{{ url_for('administration.list_roles') }}" class="nav-link {% if request.endpoint in ['administration.list_roles', 'administration.edit_role', 'administration.toggle_role'] %}active{% endif %}">
+                      <i class="far fa-dot-circle nav-icon"></i>
+                      <p>Roles</p>
+                    </a>
+                  </li>
+                </ul>
+              </li>
+              {% endif %}
+              {% if user_can('audit.view') %}
+              <li class="nav-item {% if request.endpoint in ['administration.access_audit', 'administration.trail_audit'] %}menu-open{% endif %}">
+                <a href="#" class="nav-link {% if request.endpoint in ['administration.access_audit', 'administration.trail_audit'] %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>
+                    Auditoría
+                    <i class="fas fa-angle-left right"></i>
+                  </p>
+                </a>
+                <ul class="nav nav-treeview">
+                  <li class="nav-item">
+                    <a href="{{ url_for('administration.access_audit') }}" class="nav-link {% if request.endpoint == 'administration.access_audit' %}active{% endif %}">
+                      <i class="far fa-dot-circle nav-icon"></i>
+                      <p>Logins</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="{{ url_for('administration.trail_audit') }}" class="nav-link {% if request.endpoint == 'administration.trail_audit' %}active{% endif %}">
+                      <i class="far fa-dot-circle nav-icon"></i>
+                      <p>Audit trail</p>
+                    </a>
+                  </li>
+                </ul>
+              </li>
+              {% endif %}
+            </ul>
+          </li>
+          {% endif %}
+
+          {% if user_can('settings.view') %}
           {% set settings_section_active = request.endpoint and request.endpoint.startswith('settings.') %}
           <li class="nav-item {% if settings_section_active %}menu-open{% endif %}">
             <a href="{{ url_for('settings.projects_settings') }}" class="nav-link {% if settings_section_active %}active{% endif %}">
@@ -68,6 +145,7 @@
               </li>
             </ul>
           </li>
+          {% endif %}
         </ul>
       </nav>
     </div>

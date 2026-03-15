@@ -18,10 +18,16 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
 
-from project_manager.auth_utils import login_required
+from project_manager.auth_utils import (
+    allowed_client_ids,
+    allowed_project_ids,
+    has_permission,
+    login_required,
+)
 from project_manager.blueprints.projects import bp
 from project_manager.extensions import db
 from project_manager.models import Client, ClientContract, Project, Stakeholder, SystemCatalogOptionConfig
+from project_manager.models import UserProjectAssignment
 
 PROJECT_TYPES = ["Implementacion", "Desarrollo", "Soporte evolutivo", "AMS", "Bolsa de horas", "Consultoria"]
 PROJECT_STATUSES = ["Planificado", "En progreso", "En pausa", "Completado", "Cancelado"]
@@ -38,6 +44,21 @@ TASK_PRIORITIES = ["Baja", "Media", "Alta", "Crítica"]
 TASK_DEPENDENCY_TYPES = ["FS", "SS", "FF", "SF"]
 RISK_CATEGORIES = ["Tecnológico", "Operativo", "Comercial", "Financiero", "Legal"]
 ALLOWED_CONTRACT_EXTENSIONS = {"pdf", "doc", "docx"}
+
+
+@bp.before_request
+def _authorize_projects_module():
+    if g.get("user") is None:
+        flash("Debes iniciar sesión para continuar.", "warning")
+        return redirect(url_for("auth.login"))
+    is_write = request.method not in {"GET", "HEAD", "OPTIONS"}
+    needed_permission = "projects.edit" if is_write else "projects.view"
+    if is_write and g.user.read_only:
+        flash("Tu usuario es de solo lectura.", "danger")
+        return redirect(url_for("main.home"))
+    if not has_permission(g.user, needed_permission):
+        flash("No tienes permisos para acceder al módulo de proyectos.", "danger")
+        return redirect(url_for("main.home"))
 
 
 def _to_int(value: str, default: int = 1) -> int:
@@ -217,6 +238,11 @@ def _active_menu_context():
 
 
 def _load_project_or_404(project_id: int) -> Project:
+    if project_id and not g.user.full_access and g.user.username != "admin":
+        allowed_ids = allowed_project_ids(g.user)
+        if allowed_ids is not None and project_id not in set(allowed_ids):
+            abort(403)
+
     stmt = (
         select(Project)
         .options(
@@ -248,6 +274,9 @@ def list_projects():
         .options(selectinload(Project.client), selectinload(Project.client_contract))
         .order_by(Project.updated_at.desc())
     )
+    allowed_ids = allowed_project_ids(g.user)
+    if allowed_ids is not None:
+        stmt = stmt.where(Project.id.in_(allowed_ids))
 
     if search:
         token = f"%{search}%"
@@ -273,9 +302,11 @@ def list_projects():
 
     projects_pagination = db.paginate(stmt, page=page, per_page=10, error_out=False)
 
-    clients = db.session.execute(
-        select(Client).where(Client.is_active.is_(True)).order_by(Client.name.asc())
-    ).scalars().all()
+    clients_stmt = select(Client).where(Client.is_active.is_(True)).order_by(Client.name.asc())
+    allowed_client_scope = allowed_client_ids(g.user)
+    if allowed_client_scope is not None:
+        clients_stmt = clients_stmt.where(Client.id.in_(allowed_client_scope))
+    clients = db.session.execute(clients_stmt).scalars().all()
 
     filter_args = {}
     if search:
@@ -312,12 +343,17 @@ def list_projects():
 @bp.route("/new", methods=["GET", "POST"])
 @login_required
 def create_project():
-    clients = db.session.execute(
-        select(Client).where(Client.is_active.is_(True)).order_by(Client.name.asc())
-    ).scalars().all()
-    parent_projects = db.session.execute(
-        select(Project).where(Project.is_active.is_(True)).order_by(Project.name.asc())
-    ).scalars().all()
+    clients_stmt = select(Client).where(Client.is_active.is_(True)).order_by(Client.name.asc())
+    allowed_client_scope = allowed_client_ids(g.user)
+    if allowed_client_scope is not None:
+        clients_stmt = clients_stmt.where(Client.id.in_(allowed_client_scope))
+    clients = db.session.execute(clients_stmt).scalars().all()
+
+    parent_stmt = select(Project).where(Project.is_active.is_(True)).order_by(Project.name.asc())
+    allowed_project_scope = allowed_project_ids(g.user)
+    if allowed_project_scope is not None:
+        parent_stmt = parent_stmt.where(Project.id.in_(allowed_project_scope))
+    parent_projects = db.session.execute(parent_stmt).scalars().all()
 
     if not clients:
         flash("Debes crear al menos un cliente antes de dar de alta un proyecto.", "warning")
@@ -349,9 +385,14 @@ def create_project():
         if priority not in _active_menu_context()["project_priorities"]:
             errors.append("La prioridad seleccionada no es válida.")
 
+        allowed_client_scope_set = set(allowed_client_scope) if allowed_client_scope is not None else None
+        allowed_project_scope_set = set(allowed_project_scope) if allowed_project_scope is not None else None
+
         client = db.session.get(Client, selected_client_id)
         if not client or not client.is_active:
             errors.append("Debes seleccionar un cliente activo.")
+        elif allowed_client_scope_set is not None and selected_client_id not in allowed_client_scope_set:
+            errors.append("No tienes alcance sobre el cliente seleccionado.")
 
         contract = None
         if selected_contract_id:
@@ -364,6 +405,11 @@ def create_project():
             parent_project = db.session.get(Project, selected_parent_project_id)
             if not parent_project:
                 errors.append("El proyecto padre seleccionado no existe.")
+            elif (
+                allowed_project_scope_set is not None
+                and selected_parent_project_id not in allowed_project_scope_set
+            ):
+                errors.append("No tienes alcance sobre el proyecto padre seleccionado.")
 
         if estimated_start_date and estimated_end_date and estimated_start_date > estimated_end_date:
             errors.append("La fecha estimada de inicio no puede ser posterior a la de fin.")
@@ -397,6 +443,16 @@ def create_project():
             **payload,
         )
         db.session.add(project)
+        db.session.flush()
+        if g.user and not g.user.full_access and g.user.username != "admin":
+            assigned = db.session.execute(
+                select(UserProjectAssignment.id).where(
+                    UserProjectAssignment.user_id == g.user.id,
+                    UserProjectAssignment.project_id == project.id,
+                )
+            ).scalar_one_or_none()
+            if not assigned:
+                db.session.add(UserProjectAssignment(user_id=g.user.id, project_id=project.id))
         db.session.commit()
 
         flash("Proyecto creado correctamente.", "success")
@@ -461,12 +517,19 @@ def project_detail(project_id: int):
 @login_required
 def edit_project(project_id: int):
     project = _load_project_or_404(project_id)
-    clients = db.session.execute(
-        select(Client).where(Client.is_active.is_(True)).order_by(Client.name.asc())
-    ).scalars().all()
-    parent_projects = db.session.execute(
+    clients_stmt = select(Client).where(Client.is_active.is_(True)).order_by(Client.name.asc())
+    allowed_client_scope = allowed_client_ids(g.user)
+    if allowed_client_scope is not None:
+        clients_stmt = clients_stmt.where(Client.id.in_(allowed_client_scope))
+    clients = db.session.execute(clients_stmt).scalars().all()
+
+    parent_stmt = (
         select(Project).where(Project.id != project.id, Project.is_active.is_(True)).order_by(Project.name.asc())
-    ).scalars().all()
+    )
+    allowed_project_scope = allowed_project_ids(g.user)
+    if allowed_project_scope is not None:
+        parent_stmt = parent_stmt.where(Project.id.in_(allowed_project_scope))
+    parent_projects = db.session.execute(parent_stmt).scalars().all()
 
     if request.method == "POST":
         errors = []
@@ -494,9 +557,14 @@ def edit_project(project_id: int):
         if priority not in _active_menu_context()["project_priorities"]:
             errors.append("La prioridad seleccionada no es válida.")
 
+        allowed_client_scope_set = set(allowed_client_scope) if allowed_client_scope is not None else None
+        allowed_project_scope_set = set(allowed_project_scope) if allowed_project_scope is not None else None
+
         client = db.session.get(Client, selected_client_id)
         if not client or not client.is_active:
             errors.append("Debes seleccionar un cliente activo.")
+        elif allowed_client_scope_set is not None and selected_client_id not in allowed_client_scope_set:
+            errors.append("No tienes alcance sobre el cliente seleccionado.")
 
         contract = None
         if selected_contract_id:
@@ -509,6 +577,11 @@ def edit_project(project_id: int):
             parent_project = db.session.get(Project, selected_parent_project_id)
             if not parent_project:
                 errors.append("El proyecto padre seleccionado no existe.")
+            elif (
+                allowed_project_scope_set is not None
+                and selected_parent_project_id not in allowed_project_scope_set
+            ):
+                errors.append("No tienes alcance sobre el proyecto padre seleccionado.")
 
         if estimated_start_date and estimated_end_date and estimated_start_date > estimated_end_date:
             errors.append("La fecha estimada de inicio no puede ser posterior a la de fin.")

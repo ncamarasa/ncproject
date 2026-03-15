@@ -1,7 +1,7 @@
 from flask import abort, g, flash, redirect, render_template, request, url_for
 from sqlalchemy import select
 
-from project_manager.auth_utils import login_required
+from project_manager.auth_utils import has_permission, login_required
 from project_manager.blueprints.settings import bp
 from project_manager.extensions import db
 from project_manager.models import (
@@ -85,6 +85,21 @@ def _validate_unique_name(model, owner_user_id: int, name: str, current_id: int 
     if current_id:
         stmt = stmt.where(model.id != current_id)
     return db.session.execute(stmt).scalar_one_or_none() is None
+
+
+@bp.before_request
+def _authorize_settings_module():
+    if g.get("user") is None:
+        flash("Debes iniciar sesión para continuar.", "warning")
+        return redirect(url_for("auth.login"))
+    is_write = request.method not in {"GET", "HEAD", "OPTIONS"}
+    needed_permission = "settings.edit" if is_write else "settings.view"
+    if is_write and g.user.read_only:
+        flash("Tu usuario es de solo lectura.", "danger")
+        return redirect(url_for("main.home"))
+    if not has_permission(g.user, needed_permission):
+        flash("No tienes permisos para configuración.", "danger")
+        return redirect(url_for("main.home"))
 
 
 @bp.route("/")

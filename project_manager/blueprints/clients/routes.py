@@ -8,7 +8,12 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
 
-from project_manager.auth_utils import login_required
+from project_manager.auth_utils import (
+    allowed_client_ids,
+    allowed_project_ids,
+    has_permission,
+    login_required,
+)
 from project_manager.blueprints.clients import bp
 from project_manager.extensions import db
 from project_manager.models import (
@@ -21,6 +26,7 @@ from project_manager.models import (
     CompanyTypeConfig,
     PaymentTypeConfig,
     Project,
+    UserClientAssignment,
 )
 
 CLIENT_TYPES = ["Empresa", "Gobierno", "ONG", "Startup", "Otro"]
@@ -43,6 +49,30 @@ INTEREST_LEVELS = ["Bajo", "Medio", "Alto"]
 CONTRACT_STATUSES = ["Borrador", "Vigente", "Vencido", "Rescindido"]
 INTERACTION_TYPES = ["Nota", "Llamada", "Email", "Reunion", "Soporte", "Riesgo"]
 ALLOWED_ATTACHMENT_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "png", "jpg", "jpeg", "txt"}
+CONTRACT_ENDPOINTS = {
+    "clients.manage_contracts",
+    "clients.edit_contract",
+    "clients.download_contract_attachment",
+    "clients.delete_contract",
+}
+
+
+@bp.before_request
+def _authorize_clients_module():
+    if g.get("user") is None:
+        flash("Debes iniciar sesión para continuar.", "warning")
+        return redirect(url_for("auth.login"))
+
+    endpoint = request.endpoint or ""
+    module_key = "contracts" if endpoint in CONTRACT_ENDPOINTS else "clients"
+    is_write = request.method not in {"GET", "HEAD", "OPTIONS"}
+    needed_permission = f"{module_key}.edit" if is_write else f"{module_key}.view"
+    if is_write and g.user.read_only:
+        flash("Tu usuario es de solo lectura.", "danger")
+        return redirect(url_for("main.home"))
+    if not has_permission(g.user, needed_permission):
+        flash("No tienes permisos para acceder al módulo de clientes.", "danger")
+        return redirect(url_for("main.home"))
 
 
 def _safe_strip(value: str | None) -> str:
@@ -153,6 +183,11 @@ def _catalog_options(field_key: str, fallback: list[str]):
 
 
 def _load_client_or_404(client_id: int) -> Client:
+    if client_id and not g.user.full_access and g.user.username != "admin":
+        allowed_ids = allowed_client_ids(g.user)
+        if allowed_ids is not None and client_id not in set(allowed_ids):
+            abort(403)
+
     stmt = (
         select(Client)
         .options(
@@ -387,6 +422,9 @@ def list_clients():
     risk = _safe_strip(request.args.get("risk"))
 
     stmt = select(Client).order_by(Client.updated_at.desc())
+    allowed_ids = allowed_client_ids(g.user)
+    if allowed_ids is not None:
+        stmt = stmt.where(Client.id.in_(allowed_ids))
 
     if search:
         token = f"%{search}%"
@@ -460,6 +498,16 @@ def create_client():
 
         client = Client(**result["payload"])
         db.session.add(client)
+        db.session.flush()
+        if g.user and not g.user.full_access and g.user.username != "admin":
+            assigned = db.session.execute(
+                select(UserClientAssignment.id).where(
+                    UserClientAssignment.user_id == g.user.id,
+                    UserClientAssignment.client_id == client.id,
+                )
+            ).scalar_one_or_none()
+            if not assigned:
+                db.session.add(UserClientAssignment(user_id=g.user.id, client_id=client.id))
         db.session.commit()
 
         flash("Cliente creado correctamente.", "success")
@@ -511,8 +559,12 @@ def client_detail(client_id: int):
         per_page=8,
         error_out=False,
     )
+    project_stmt = select(Project).where(Project.client_id == client.id).order_by(Project.updated_at.desc())
+    allowed_projects = allowed_project_ids(g.user)
+    if allowed_projects is not None:
+        project_stmt = project_stmt.where(Project.id.in_(allowed_projects))
     projects_pagination = db.paginate(
-        select(Project).where(Project.client_id == client.id).order_by(Project.updated_at.desc()),
+        project_stmt,
         page=projects_page,
         per_page=8,
         error_out=False,

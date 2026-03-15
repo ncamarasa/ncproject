@@ -20,7 +20,16 @@ from project_manager.models.settings import (
     PaymentTypeConfig,
     SystemCatalogOptionConfig,
 )
-from project_manager.models.user import User
+from project_manager.models.user import (
+    AccessAuditLog,
+    AuditTrailLog,
+    Permission,
+    Role,
+    RolePermission,
+    User,
+    UserClientAssignment,
+    UserProjectAssignment,
+)
 
 __all__ = [
     "Client",
@@ -39,5 +48,12 @@ __all__ = [
     "CompanyTypeConfig",
     "PaymentTypeConfig",
     "SystemCatalogOptionConfig",
+    "Role",
+    "Permission",
+    "RolePermission",
+    "UserClientAssignment",
+    "UserProjectAssignment",
+    "AccessAuditLog",
+    "AuditTrailLog",
     "User",
 ]

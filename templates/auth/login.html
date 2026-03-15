@@ -22,6 +22,7 @@
       {% endwith %}
 
       <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="input-group mb-3">
           <input id="username" name="username" class="form-control" placeholder="Usuario" required autofocus>
           <div class="input-group-append">
