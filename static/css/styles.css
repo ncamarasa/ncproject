@@ -124,6 +124,159 @@ table.dataTable.table-hover tbody tr:hover > td {
   width: auto;
 }
 
+.entity-code-muted {
+  color: #8f8a80;
+  font-size: 0.74em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.form-mode-card {
+  border-left: 4px solid transparent;
+}
+
+.form-mode-card .form-mode-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.form-mode-create {
+  border-left-color: #b7d6bf;
+}
+
+.form-mode-create > .card-header,
+.form-mode-create > .card-body {
+  background-color: #fbfefc;
+}
+
+.form-mode-create > .card-header {
+  background-color: #f4faf6;
+}
+
+.form-mode-create .form-mode-badge {
+  background-color: #86b894;
+  color: #fff;
+}
+
+.form-mode-edit {
+  border-left-color: #e1c6a4;
+}
+
+.form-mode-edit > .card-header {
+  background-color: #fbf3e8;
+}
+
+.form-mode-edit > .card-body {
+  background-color: #fef9f2;
+}
+
+.form-mode-edit .form-mode-badge {
+  background-color: #bfa07a;
+  color: #fff;
+}
+
+.search-panel-card {
+  border-left: 4px solid #e6c86a;
+}
+
+.search-panel-card > .card-header {
+  background-color: #fff7e6;
+}
+
+.search-panel-card > .card-body {
+  background-color: #fffbf1;
+}
+
+.view360-client .view360-tone-1,
+.view360-client .view360-tone-2,
+.view360-client .view360-tone-3,
+.view360-client .view360-tone-4,
+.view360-client .view360-tone-5,
+.view360-client .view360-tone-6,
+.view360-client .view360-tone-7,
+.view360-client .view360-tone-8,
+.view360-client .view360-tone-9,
+.view360-project .view360-tone-1,
+.view360-project .view360-tone-2,
+.view360-project .view360-tone-3,
+.view360-project .view360-tone-4,
+.view360-project .view360-tone-5,
+.view360-project .view360-tone-6,
+.view360-project .view360-tone-7,
+.view360-project .view360-tone-8 {
+  background-color: #fff;
+}
+
+.task-row-subtask {
+  background-color: #fbfcfe;
+}
+
+.task-title-subtree {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.task-tree-marker {
+  color: #6c757d;
+  margin-top: 0.12rem;
+  min-width: 0.9rem;
+}
+
+.task-subtask-toggle {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.task-subtask-toggle i {
+  margin-right: 0;
+  transition: transform 0.15s ease-in-out;
+}
+
+.task-subtask-toggle.is-expanded i {
+  transform: rotate(90deg);
+}
+
+input[type="file"].form-control {
+  padding: 0.2rem 0.5rem;
+  height: auto;
+}
+
+input[type="file"].form-control::file-selector-button {
+  margin: -0.2rem 0.75rem -0.2rem -0.5rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid #6c757d;
+  border-radius: 0.2rem;
+  background-color: transparent;
+  color: #6c757d;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+input[type="file"].form-control::-webkit-file-upload-button {
+  margin: -0.2rem 0.75rem -0.2rem -0.5rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid #6c757d;
+  border-radius: 0.2rem;
+  background-color: transparent;
+  color: #6c757d;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+input[type="file"].form-control:hover::file-selector-button,
+input[type="file"].form-control:hover::-webkit-file-upload-button {
+  background-color: #6c757d;
+  color: #fff;
+}
+
 @media (max-width: 991.98px) {
   .main-header .btn {
     margin-top: 0.25rem;

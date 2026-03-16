@@ -1,6 +1,6 @@
 {% extends 'dashboard/layout.html' %}
 
-{% block title %}Stakeholders | LTAdmin Flask{% endblock %}
+{% block title %}Stakeholders | NCProject{% endblock %}
 {% block page_title %}Stakeholders - {{ project.name }}{% endblock %}
 {% block page_subtitle %}ABM de stakeholders del proyecto{% endblock %}
 {% block page_actions %}
@@ -8,8 +8,12 @@
 {% endblock %}
 
 {% block dashboard_content %}
-<div class="card border-0 metric-card mb-3">
-  <div class="card-header"><strong>{{ 'Editar stakeholder' if edit_stakeholder else 'Nuevo stakeholder' }}</strong></div>
+{% set stakeholder_form_mode = 'edit' if edit_stakeholder else 'create' %}
+<div class="card border-0 metric-card mb-3 form-mode-card form-mode-{{ stakeholder_form_mode }}">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>{{ 'Editar stakeholder' if edit_stakeholder else 'Nuevo stakeholder' }}</strong>
+    <span class="badge form-mode-badge">{{ 'Modo edición' if edit_stakeholder else 'Modo alta' }}</span>
+  </div>
   <div class="card-body">
     <form method="post" action="{{ url_for('projects.edit_stakeholder', project_id=project.id, stakeholder_id=edit_stakeholder.id, page=current_page) if edit_stakeholder else url_for('projects.manage_stakeholders', project_id=project.id, page=current_page) }}" class="row g-3">
       <div class="col-12 col-lg-4">
@@ -33,9 +37,9 @@
         <input name="notes" class="form-control" value="{{ form_values.get('notes', edit_stakeholder.notes if edit_stakeholder else '') }}">
       </div>
       <div class="col-12 d-flex gap-2 mt-2">
-        <button class="btn btn-primary btn-action-standard" type="submit">{{ 'Guardar cambios' if edit_stakeholder else 'Agregar stakeholder' }}</button>
+        <button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar cambios' if edit_stakeholder else 'Agregar stakeholder' }}</button>
         {% if edit_stakeholder %}
-          <a class="btn btn-outline-secondary btn-action-standard" href="{{ url_for('projects.manage_stakeholders', project_id=project.id, page=current_page) }}">Cancelar edición</a>
+          <a class="btn btn-outline-secondary btn-sm btn-action-standard" href="{{ url_for('projects.manage_stakeholders', project_id=project.id, page=current_page) }}">Cancelar edición</a>
         {% endif %}
       </div>
     </form>
@@ -46,7 +50,7 @@
   <div class="card-header"><strong>Listado de stakeholders</strong></div>
   <div class="card-body p-3">
     <div class="table-responsive">
-      <table class="table table-sm table-bordered mb-0">
+      <table class="table table-sm table-hover mb-0">
         <thead>
           <tr>
             <th>Nombre</th>

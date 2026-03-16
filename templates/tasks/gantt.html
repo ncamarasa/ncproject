@@ -1,5 +1,5 @@
 {% extends 'dashboard/layout.html' %}
-{% block title %}Gantt | LTAdmin Flask{% endblock %}
+{% block title %}Gantt | NCProject{% endblock %}
 {% block page_title %}Cronograma / Gantt - {{ project.name }}{% endblock %}
 {% block page_subtitle %}Visualización gráfica y tabla de planificación{% endblock %}
 {% block page_actions %}
@@ -27,7 +27,7 @@
       Vista base de planificación. Muestra tareas, hitos y rango de fechas para seguimiento operativo.
     </p>
     <div class="table-responsive">
-      <table class="table table-sm table-bordered">
+      <table class="table table-sm table-hover">
         <thead>
           <tr>
             <th>Tarea</th>

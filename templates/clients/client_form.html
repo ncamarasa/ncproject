@@ -1,6 +1,6 @@
 {% extends 'dashboard/layout.html' %}
 
-{% block title %}{{ 'Editar cliente' if is_edit else 'Nuevo cliente' }} | LTAdmin Flask{% endblock %}
+{% block title %}{{ 'Editar cliente' if is_edit else 'Nuevo cliente' }} | NCProject{% endblock %}
 {% block page_title %}{{ 'Editar cliente' if is_edit else 'Nuevo cliente' }}{% endblock %}
 {% block page_subtitle %}Entidad base para proyectos, soporte, contratos e interacciones{% endblock %}
 {% block page_actions %}
@@ -13,6 +13,11 @@
     <div class="card border-0 metric-card">
       <div class="card-header"><strong>1. Datos generales</strong></div>
       <div class="card-body row g-3">
+        <div class="col-12 col-lg-4">
+          <label class="form-label">Código de cliente</label>
+          <input name="client_code" class="form-control" readonly value="{{ form_values.get('client_code', client.client_code if client else '') }}" placeholder="Se genera automáticamente">
+          {% if not is_edit %}<small class="text-secondary">Formato automático: AAAyy-NNN</small>{% endif %}
+        </div>
         <div class="col-12 col-lg-4">
           <label class="form-label">Nombre interno *</label>
           <input name="name" class="form-control" required value="{{ form_values.get('name', client.name if client else '') }}">
@@ -162,11 +167,25 @@
 
         <div class="col-12 col-lg-3">
           <label class="form-label">Ejecutivo comercial</label>
-          <input name="sales_executive" class="form-control" value="{{ form_values.get('sales_executive', client.sales_executive if client else '') }}">
+          {% set current = form_values.get('sales_executive_resource_id', client.sales_executive_resource_id if client else '')|string %}
+          <select name="sales_executive_resource_id" class="custom-select">
+            <option value="">Seleccionar</option>
+            {% for resource in active_resources %}
+              <option value="{{ resource.id }}" {% if current == resource.id|string %}selected{% endif %}>{{ resource.full_name }}</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="sales_executive" value="{{ form_values.get('sales_executive', client.sales_executive if client else '') }}">
         </div>
         <div class="col-12 col-lg-3">
           <label class="form-label">Account manager</label>
-          <input name="account_manager" class="form-control" value="{{ form_values.get('account_manager', client.account_manager if client else '') }}">
+          {% set current = form_values.get('account_manager_resource_id', client.account_manager_resource_id if client else '')|string %}
+          <select name="account_manager_resource_id" class="custom-select">
+            <option value="">Seleccionar</option>
+            {% for resource in active_resources %}
+              <option value="{{ resource.id }}" {% if current == resource.id|string %}selected{% endif %}>{{ resource.full_name }}</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="account_manager" value="{{ form_values.get('account_manager', client.account_manager if client else '') }}">
         </div>
         <div class="col-12 col-lg-3">
           <label class="form-label">Potencial facturación</label>
@@ -288,7 +307,14 @@
         </div>
         <div class="col-12 col-lg-6">
           <label class="form-label">Responsable delivery</label>
-          <input name="delivery_manager" class="form-control" value="{{ form_values.get('delivery_manager', client.delivery_manager if client else '') }}">
+          {% set current = form_values.get('delivery_manager_resource_id', client.delivery_manager_resource_id if client else '')|string %}
+          <select name="delivery_manager_resource_id" class="custom-select">
+            <option value="">Seleccionar</option>
+            {% for resource in active_resources %}
+              <option value="{{ resource.id }}" {% if current == resource.id|string %}selected{% endif %}>{{ resource.full_name }}</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="delivery_manager" value="{{ form_values.get('delivery_manager', client.delivery_manager if client else '') }}">
         </div>
         <div class="col-12 col-lg-4">
           <label class="form-label">Criticidad</label>
@@ -306,7 +332,13 @@
         </div>
         <div class="col-12 col-lg-4">
           <label class="form-label">Modalidad facturación</label>
-          <input name="billing_mode" class="form-control" value="{{ form_values.get('billing_mode', client.billing_mode if client else '') }}">
+          {% set current = form_values.get('billing_mode', client.billing_mode if client else '') %}
+          <select name="billing_mode" class="custom-select">
+            <option value="">Seleccionar</option>
+            {% for item in billing_modes %}
+              <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
         </div>
         <div class="col-12 col-lg-6">
           <label class="form-label">Tarifa por defecto</label>

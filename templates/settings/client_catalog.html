@@ -1,39 +1,52 @@
 {% extends 'dashboard/layout.html' %}
-{% block title %}ABM {{ field_label }} | LTAdmin Flask{% endblock %}
+{% block title %}ABM {{ field_label }} | NCProject{% endblock %}
 {% block page_title %}Configuración / Clientes / {{ field_label }}{% endblock %}
 {% block page_actions %}
 <a href="{{ url_for('settings.clients_settings') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
 {% endblock %}
 {% block dashboard_content %}
-<div class="card border-0 metric-card mb-3">
+<div class="card border-0 metric-card mb-3 form-mode-card form-mode-create">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Nuevo valor</strong>
+    <span class="badge form-mode-badge">Modo alta</span>
+  </div>
   <div class="card-body">
     <form method="post" class="form-inline">
-      <label class="mr-2">Nuevo valor</label>
+      <label class="mr-2">Nombre</label>
       <input name="name" class="form-control mr-2" placeholder="Ejemplo" required>
-      <button class="btn btn-primary btn-action-standard" type="submit">Agregar</button>
+      <button class="btn btn-primary btn-sm btn-action-standard" type="submit">Agregar</button>
     </form>
   </div>
 </div>
 
 <div class="card border-0 metric-card">
-  <div class="card-body table-responsive p-0">
+  <div class="card-header"><strong>Listado</strong></div>
+  <div class="card-body table-responsive p-3">
     <table class="table table-hover mb-0">
       <thead>
-        <tr><th>Nombre</th><th class="text-end">Acciones</th></tr>
+        <tr><th>Nombre</th><th>Tipo</th><th class="text-end">Acciones</th></tr>
       </thead>
       <tbody>
         {% for item in items %}
         <tr>
           <td>{{ item.name }}</td>
+          <td>{% if item.is_system %}<span class="badge badge-secondary">Sistema</span>{% else %}<span class="badge badge-light">Configurable</span>{% endif %}</td>
           <td class="text-end">
-            <a class="btn btn-sm btn-outline-secondary btn-action-icon mr-1" href="{{ url_for('settings.edit_client_catalog', field_key=field_key, item_id=item.id) }}" title="Editar"><i class="fas fa-pen"></i></a>
-            <form method="post" action="{{ url_for('settings.delete_client_catalog', field_key=field_key, item_id=item.id) }}" class="d-inline" onsubmit="return confirm('¿Eliminar valor?');">
-              <button class="btn btn-sm btn-outline-danger btn-action-icon" type="submit"><i class="fas fa-trash"></i></button>
-            </form>
+            {% if item.is_editable %}
+              <a class="btn btn-sm btn-outline-secondary btn-action-icon mr-1" href="{{ url_for('settings.edit_client_catalog', field_key=field_key, item_id=item.id) }}" title="Editar"><i class="fas fa-pen"></i></a>
+            {% endif %}
+            {% if item.is_deletable %}
+              <form method="post" action="{{ url_for('settings.delete_client_catalog', field_key=field_key, item_id=item.id) }}" class="d-inline" onsubmit="return confirm('¿Eliminar valor?');">
+                <button class="btn btn-sm btn-outline-danger btn-action-icon" type="submit"><i class="fas fa-trash"></i></button>
+              </form>
+            {% endif %}
+            {% if not item.is_editable and not item.is_deletable %}
+              <span class="text-secondary small">Protegido</span>
+            {% endif %}
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="2" class="text-center text-secondary py-4">No hay valores configurados.</td></tr>
+        <tr><td colspan="3" class="text-center text-secondary py-4">No hay valores configurados.</td></tr>
         {% endfor %}
       </tbody>
     </table>

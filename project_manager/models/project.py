@@ -39,9 +39,13 @@ class Project(TimestampMixin, db.Model):
     project_origin = db.Column(db.String(80), nullable=True)
     parent_project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=True, index=True)
     project_manager = db.Column(db.String(120), nullable=True)
+    project_manager_resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=True, index=True)
     commercial_manager = db.Column(db.String(120), nullable=True)
+    commercial_manager_resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=True, index=True)
     functional_manager = db.Column(db.String(120), nullable=True)
+    functional_manager_resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=True, index=True)
     technical_manager = db.Column(db.String(120), nullable=True)
+    technical_manager_resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=True, index=True)
     client_sponsor = db.Column(db.String(120), nullable=True)
     key_user = db.Column(db.String(120), nullable=True)
     onboarding_date = db.Column(db.Date, nullable=True)
@@ -74,10 +78,20 @@ class Project(TimestampMixin, db.Model):
 
     client = db.relationship("Client", back_populates="projects")
     client_contract = db.relationship("ClientContract", back_populates="projects")
+    project_manager_resource = db.relationship("Resource", foreign_keys=[project_manager_resource_id], lazy="joined")
+    commercial_manager_resource = db.relationship("Resource", foreign_keys=[commercial_manager_resource_id], lazy="joined")
+    functional_manager_resource = db.relationship("Resource", foreign_keys=[functional_manager_resource_id], lazy="joined")
+    technical_manager_resource = db.relationship("Resource", foreign_keys=[technical_manager_resource_id], lazy="joined")
     parent_project = db.relationship(
         "Project",
         remote_side=[id],
         backref=db.backref("child_projects", lazy="selectin"),
+    )
+    resource_assignments = db.relationship(
+        "ProjectResource",
+        back_populates="project",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
     stakeholders = db.relationship(
         "Stakeholder",
@@ -105,6 +119,7 @@ class Task(TimestampMixin, db.Model):
     status = db.Column(db.String(40), nullable=True)
     priority = db.Column(db.String(20), nullable=True)
     responsible = db.Column(db.String(120), nullable=True)
+    responsible_resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=True, index=True)
     creator = db.Column(db.String(120), nullable=True)
     start_date = db.Column(db.Date, nullable=True)
     due_date = db.Column(db.Date, nullable=True)
@@ -114,6 +129,7 @@ class Task(TimestampMixin, db.Model):
     estimated_hours = db.Column(db.Numeric(10, 2), nullable=True)
     logged_hours = db.Column(db.Numeric(10, 2), nullable=True)
     progress_percent = db.Column(db.Integer, nullable=True, default=0)
+    rollup_updated_at = db.Column(db.DateTime, nullable=True)
     sort_order = db.Column(db.Integer, nullable=True, default=0)
     tags = db.Column(db.String(255), nullable=True)
     is_milestone = db.Column(db.Boolean, default=False, nullable=False)
@@ -124,6 +140,13 @@ class Task(TimestampMixin, db.Model):
         "Task",
         remote_side=[id],
         backref=db.backref("subtasks", lazy="selectin"),
+    )
+    responsible_resource = db.relationship("Resource", foreign_keys=[responsible_resource_id], lazy="joined")
+    resource_assignments = db.relationship(
+        "TaskResource",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        lazy="selectin",
     )
     additional_assignees = db.relationship(
         "TaskAssignee",

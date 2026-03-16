@@ -1,13 +1,11 @@
 {% extends 'dashboard/layout.html' %}
-{% block title %}Proyectos | LTAdmin Flask{% endblock %}
+{% block title %}Proyectos | NCProject{% endblock %}
 {% block page_title %}Proyectos{% endblock %}
 {% block page_subtitle %}Listado y seguimiento del ciclo de vida{% endblock %}
-{% block page_actions %}
-<a href="{{ url_for('projects.create_project') }}" class="btn btn-primary btn-sm btn-action-standard"><i class="bi bi-plus-circle"></i> Nuevo proyecto</a>
-{% endblock %}
 
 {% block dashboard_content %}
-<div class="card mb-3">
+<div class="card mb-3 search-panel-card">
+  <div class="card-header"><strong>Filtros de búsqueda</strong></div>
   <div class="card-body">
     <form method="get" class="row g-2 align-items-end">
       <div class="col-12 col-md-4">
@@ -17,9 +15,9 @@
       <div class="col-6 col-md-2">
         <label class="form-label">Estado</label>
         <select name="status" class="custom-select">
-          <option value="">Todos</option>
+          <option value="">[Activos]</option>
           {% for item in project_statuses %}
-            <option value="{{ item }}" {% if filters.status == item %}selected{% endif %}>{{ item }}</option>
+            <option value="{{ item }}" {% if filters.status == item %}selected{% endif %}>{{ '[Cancelados]' if item == 'Cancelado' else item }}</option>
           {% endfor %}
         </select>
       </div>
@@ -67,9 +65,15 @@
 </div>
 
 <div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Listado de proyectos</strong>
+    <div class="d-flex gap-2 ml-auto justify-content-end">
+      <a href="{{ url_for('projects.create_project') }}" class="btn btn-primary btn-sm btn-action-standard"><i class="bi bi-plus-circle"></i> Nuevo proyecto</a>
+    </div>
+  </div>
   <div class="card-body">
     <div class="table-responsive">
-      <table class="table table-bordered table-hover">
+      <table class="table table-hover">
         <thead>
           <tr>
             <th>Proyecto</th>

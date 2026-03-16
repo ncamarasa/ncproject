@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from flask import g, has_request_context
 from sqlalchemy import event, inspect
@@ -13,10 +14,18 @@ from project_manager.models import (
     ClientContract,
     CompanyTypeConfig,
     PaymentTypeConfig,
+    Resource,
+    ResourceAvailability,
+    ResourceCost,
+    ResourceRole,
     Project,
     Role,
     SystemCatalogOptionConfig,
     Task,
+    TeamRole,
+    ClientResource,
+    ProjectResource,
+    TaskResource,
     User,
 )
 
@@ -32,6 +41,14 @@ AUDITED_MODELS = [
     PaymentTypeConfig,
     ClientCatalogOptionConfig,
     SystemCatalogOptionConfig,
+    Resource,
+    TeamRole,
+    ResourceRole,
+    ResourceAvailability,
+    ResourceCost,
+    ClientResource,
+    ProjectResource,
+    TaskResource,
 ]
 
 
@@ -45,6 +62,8 @@ def _actor_user_id() -> int | None:
 
 
 def _serialize_value(value):
+    if isinstance(value, Decimal):
+        return float(value)
     if hasattr(value, "isoformat"):
         return value.isoformat()
     return value

@@ -3,14 +3,36 @@ from datetime import date, timedelta
 from uuid import uuid4
 
 from flask import abort, current_app, flash, g, redirect, render_template, request, send_from_directory, url_for
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import selectinload
 from werkzeug.utils import secure_filename
 
 from project_manager.auth_utils import allowed_project_ids, has_permission, login_required
 from project_manager.blueprints.tasks import bp
 from project_manager.extensions import db
-from project_manager.models import Project, Task, TaskAssignee, TaskAttachment, TaskComment, TaskDependency
+from project_manager.models import (
+    Project,
+    Resource,
+    SystemCatalogOptionConfig,
+    Task,
+    TaskAssignee,
+    TaskAttachment,
+    TaskComment,
+    TaskDependency,
+    TaskResource,
+)
+from project_manager.services.task_business_rules import (
+    CLOSED_STATUSES,
+    has_open_subtasks,
+    is_closed_status,
+    recalculate_parent_task,
+    task_has_subtasks,
+    validate_parent_assignment,
+)
+from project_manager.services.team_business_rules import (
+    validate_assignment,
+    validate_task_assignment_project_consistency,
+)
 
 TASK_ALLOWED_ATTACHMENT_EXTENSIONS = {
     "pdf",
@@ -83,6 +105,49 @@ def _load_project_or_404(project_id: int) -> Project:
     return project
 
 
+def _task_list_stmt(project_id: int):
+    root_task_id = case(
+        (Task.parent_task_id.is_(None), Task.id),
+        else_=Task.parent_task_id,
+    )
+
+
+def _task_status_options() -> list[str]:
+    if not g.get("user"):
+        return []
+    return db.session.execute(
+        select(SystemCatalogOptionConfig.name)
+        .where(
+            SystemCatalogOptionConfig.owner_user_id == g.user.id,
+            SystemCatalogOptionConfig.module_key == "projects",
+            SystemCatalogOptionConfig.catalog_key == "task_statuses",
+            SystemCatalogOptionConfig.is_active.is_(True),
+        )
+        .order_by(SystemCatalogOptionConfig.is_system.asc(), SystemCatalogOptionConfig.name.asc())
+    ).scalars().all()
+    parent_first = case((Task.parent_task_id.is_(None), 0), else_=1)
+    return (
+        select(Task)
+        .where(Task.project_id == project_id)
+        .options(selectinload(Task.parent_task))
+        .order_by(
+            Task.sort_order.asc(),
+            root_task_id.asc(),
+            parent_first.asc(),
+            Task.id.asc(),
+        )
+    )
+
+
+def _task_children_metadata(tasks: list[Task]):
+    child_count_by_parent = {}
+    for task in tasks:
+        if task.parent_task_id:
+            child_count_by_parent[task.parent_task_id] = child_count_by_parent.get(task.parent_task_id, 0) + 1
+    parent_task_ids = sorted(child_count_by_parent.keys())
+    return parent_task_ids, child_count_by_parent
+
+
 def _ensure_same_project_task_or_none(project_id: int, task_id: int | None):
     if not task_id:
         return None
@@ -92,7 +157,7 @@ def _ensure_same_project_task_or_none(project_id: int, task_id: int | None):
     return task
 
 
-def _validate_task_payload(project_id: int, form, current_task_id: int | None = None):
+def _validate_task_payload(project_id: int, form, current_task_id: int | None = None, current_task: Task | None = None):
     errors = []
     title = _safe_strip(form.get("title"))
     if len(title) < 3:
@@ -130,19 +195,37 @@ def _validate_task_payload(project_id: int, form, current_task_id: int | None = 
         errors.append("El porcentaje de avance debe estar entre 0 y 100.")
 
     parent_task_id = _to_int(form.get("parent_task_id"))
-    parent_task = _ensure_same_project_task_or_none(project_id, parent_task_id)
-    if parent_task_id and not parent_task:
-        errors.append("La tarea padre no pertenece al proyecto.")
-    if current_task_id and parent_task_id == current_task_id:
-        errors.append("Una tarea no puede ser padre de sí misma.")
+    errors.extend(validate_parent_assignment(project_id, parent_task_id, current_task_id))
+
+    status_value = _safe_strip(form.get("status"))
+    if current_task and task_has_subtasks(current_task.id):
+        # Campos calculados: no pueden editarse manualmente si la tarea es padre.
+        if start_date != current_task.start_date or due_date != current_task.due_date:
+            errors.append("Las fechas del padre se calculan automáticamente a partir de sus subtareas.")
+        if (progress_percent if progress_percent is not None else 0) != (current_task.progress_percent or 0):
+            errors.append("El avance del padre se calcula automáticamente a partir de sus subtareas.")
+        if logged_hours not in (None, 0):
+            errors.append("No se permite imputación directa de horas en tareas padre con subtareas.")
+        if is_closed_status(status_value) and has_open_subtasks(current_task.id):
+            errors.append("No se puede cerrar una tarea padre con subtareas abiertas.")
+
+    responsible_resource_id = _to_int(form.get("responsible_resource_id"))
+    responsible_name = _safe_strip(form.get("responsible"))
+    if responsible_resource_id:
+        resource = db.session.get(Resource, responsible_resource_id)
+        if not resource or not resource.is_active:
+            errors.append("El responsable seleccionado no es válido.")
+        else:
+            responsible_name = resource.full_name
 
     payload = {
         "title": title,
         "description": _safe_strip(form.get("description")),
         "task_type": _safe_strip(form.get("task_type")),
-        "status": _safe_strip(form.get("status")),
+        "status": status_value,
         "priority": _safe_strip(form.get("priority")),
-        "responsible": _safe_strip(form.get("responsible")),
+        "responsible": responsible_name,
+        "responsible_resource_id": responsible_resource_id,
         "creator": _safe_strip(form.get("creator")) or (g.user.username if g.user else None),
         "parent_task_id": parent_task_id,
         "start_date": start_date,
@@ -225,18 +308,24 @@ def manage_tasks(project_id: int):
         else:
             task = Task(project_id=project.id, **payload)
             db.session.add(task)
+            db.session.flush()
+            if task.parent_task_id:
+                recalculate_parent_task(
+                    task.parent_task_id,
+                    reason="subtask_created",
+                    trigger_task_id=task.id,
+                )
             db.session.commit()
             flash("Tarea creada.", "success")
             return redirect(url_for("tasks.manage_tasks", project_id=project.id, page=page))
 
-    tasks_pagination = db.paginate(
-        select(Task).where(Task.project_id == project.id).order_by(Task.sort_order.asc(), Task.created_at.desc()),
-        page=page,
-        per_page=15,
-        error_out=False,
-    )
+    tasks_pagination = db.paginate(_task_list_stmt(project.id), page=page, per_page=15, error_out=False)
+    parent_task_ids, child_count_by_parent = _task_children_metadata(tasks_pagination.items)
     parent_candidates = db.session.execute(
-        select(Task).where(Task.project_id == project.id).order_by(Task.title.asc())
+        select(Task).where(Task.project_id == project.id, Task.parent_task_id.is_(None)).order_by(Task.title.asc())
+    ).scalars().all()
+    active_resources = db.session.execute(
+        select(Resource).where(Resource.is_active.is_(True)).order_by(Resource.full_name.asc())
     ).scalars().all()
     return render_template(
         "tasks/task_list.html",
@@ -247,6 +336,13 @@ def manage_tasks(project_id: int):
         edit_task=edit_task,
         form_values=request.form if request.method == "POST" else {},
         current_page=page,
+        parent_task_ids=parent_task_ids,
+        child_count_by_parent=child_count_by_parent,
+        edit_task_has_subtasks=task_has_subtasks(edit_task.id) if edit_task else False,
+        edit_task_open_subtasks=has_open_subtasks(edit_task.id) if edit_task else False,
+        task_statuses=_task_status_options(),
+        closed_statuses=sorted(CLOSED_STATUSES),
+        active_resources=active_resources,
     )
 
 
@@ -260,25 +356,32 @@ def edit_task(project_id: int, task_id: int):
 
     page = _to_int(request.args.get("page")) or 1
     if request.method == "POST":
-        payload, errors = _validate_task_payload(project.id, request.form, current_task_id=task.id)
+        old_parent_id = task.parent_task_id
+        payload, errors = _validate_task_payload(project.id, request.form, current_task_id=task.id, current_task=task)
         if errors:
             for err in errors:
                 flash(err, "danger")
         else:
             for key, value in payload.items():
                 setattr(task, key, value)
+            db.session.flush()
+            if old_parent_id and old_parent_id != task.parent_task_id:
+                recalculate_parent_task(old_parent_id, reason="subtask_moved", trigger_task_id=task.id)
+            if task.parent_task_id:
+                recalculate_parent_task(task.parent_task_id, reason="subtask_updated", trigger_task_id=task.id)
             db.session.commit()
             flash("Tarea actualizada.", "success")
             return redirect(url_for("tasks.manage_tasks", project_id=project.id, page=page))
 
-    tasks_pagination = db.paginate(
-        select(Task).where(Task.project_id == project.id).order_by(Task.sort_order.asc(), Task.created_at.desc()),
-        page=page,
-        per_page=15,
-        error_out=False,
-    )
+    tasks_pagination = db.paginate(_task_list_stmt(project.id), page=page, per_page=15, error_out=False)
+    parent_task_ids, child_count_by_parent = _task_children_metadata(tasks_pagination.items)
     parent_candidates = db.session.execute(
-        select(Task).where(Task.project_id == project.id, Task.id != task.id).order_by(Task.title.asc())
+        select(Task)
+        .where(Task.project_id == project.id, Task.parent_task_id.is_(None), Task.id != task.id)
+        .order_by(Task.title.asc())
+    ).scalars().all()
+    active_resources = db.session.execute(
+        select(Resource).where(Resource.is_active.is_(True)).order_by(Resource.full_name.asc())
     ).scalars().all()
     return render_template(
         "tasks/task_list.html",
@@ -289,6 +392,13 @@ def edit_task(project_id: int, task_id: int):
         edit_task=task,
         form_values=request.form if request.method == "POST" else {},
         current_page=page,
+        parent_task_ids=parent_task_ids,
+        child_count_by_parent=child_count_by_parent,
+        edit_task_has_subtasks=task_has_subtasks(task.id),
+        edit_task_open_subtasks=has_open_subtasks(task.id),
+        task_statuses=_task_status_options(),
+        closed_statuses=sorted(CLOSED_STATUSES),
+        active_resources=active_resources,
     )
 
 
@@ -299,7 +409,11 @@ def delete_task(project_id: int, task_id: int):
     task = _ensure_same_project_task_or_none(project_id, task_id)
     if not task:
         abort(404)
+    parent_id = task.parent_task_id
     db.session.delete(task)
+    db.session.flush()
+    if parent_id:
+        recalculate_parent_task(parent_id, reason="subtask_deleted", trigger_task_id=task_id)
     db.session.commit()
     flash("Tarea eliminada.", "info")
     return redirect(url_for("tasks.manage_tasks", project_id=project_id, page=page))
@@ -417,13 +531,103 @@ def task_detail(project_id: int, task_id: int):
             selectinload(TaskDependency.successor_task),
         )
     ).scalars().all()
+    collaborators = db.session.execute(
+        select(TaskResource)
+        .where(TaskResource.task_id == task.id, TaskResource.is_active.is_(True))
+        .options(selectinload(TaskResource.resource))
+        .order_by(TaskResource.id.desc())
+    ).scalars().all()
+    available_resources = db.session.execute(
+        select(Resource).where(Resource.is_active.is_(True)).order_by(Resource.full_name.asc())
+    ).scalars().all()
     return render_template(
         "tasks/task_detail.html",
         project=project,
         task=task,
         predecessor_candidates=predecessor_candidates,
         dependencies=dependencies,
+        task_statuses=_task_status_options(),
+        closed_statuses=sorted(CLOSED_STATUSES),
+        task_has_open_subtasks=has_open_subtasks(task.id),
+        collaborators=collaborators,
+        available_resources=available_resources,
     )
+
+
+@bp.route("/<int:task_id>/collaborators/add", methods=["POST"])
+@login_required
+def add_task_collaborator(project_id: int, task_id: int):
+    task = _ensure_same_project_task_or_none(project_id, task_id)
+    if not task:
+        abort(404)
+
+    resource_id = _to_int(request.form.get("resource_id"))
+    if not resource_id:
+        flash("Selecciona un recurso.", "danger")
+        return redirect(url_for("tasks.task_detail", project_id=project_id, task_id=task_id))
+
+    errors = validate_assignment(resource_id, role_id=None)
+    errors.extend(validate_task_assignment_project_consistency(task.id, resource_id))
+    if errors:
+        for error in errors:
+            flash(error, "danger")
+        return redirect(url_for("tasks.task_detail", project_id=project_id, task_id=task_id))
+
+    exists = db.session.execute(
+        select(TaskResource.id).where(
+            TaskResource.task_id == task.id,
+            TaskResource.resource_id == resource_id,
+            TaskResource.is_active.is_(True),
+        )
+    ).scalar_one_or_none()
+    if exists:
+        flash("El colaborador ya está asignado.", "warning")
+    else:
+        db.session.add(TaskResource(task_id=task.id, resource_id=resource_id, is_primary=False, is_active=True))
+        db.session.commit()
+        flash("Colaborador agregado.", "success")
+    return redirect(url_for("tasks.task_detail", project_id=project_id, task_id=task_id))
+
+
+@bp.route("/collaborators/<int:assignment_id>/delete", methods=["POST"])
+@login_required
+def delete_task_collaborator(project_id: int, assignment_id: int):
+    assignment = db.session.get(TaskResource, assignment_id)
+    if not assignment:
+        abort(404)
+    task = db.session.get(Task, assignment.task_id)
+    if not task or task.project_id != project_id:
+        abort(404)
+    db.session.delete(assignment)
+    db.session.commit()
+    flash("Colaborador removido.", "info")
+    return redirect(url_for("tasks.task_detail", project_id=project_id, task_id=task.id))
+
+
+@bp.route("/<int:task_id>/status", methods=["POST"])
+@login_required
+def update_task_status(project_id: int, task_id: int):
+    task = _ensure_same_project_task_or_none(project_id, task_id)
+    if not task:
+        abort(404)
+
+    next_status = _safe_strip(request.form.get("status"))
+    if not next_status:
+        flash("Debes seleccionar un estado.", "warning")
+        return redirect(url_for("tasks.task_detail", project_id=project_id, task_id=task_id))
+
+    if task_has_subtasks(task.id) and is_closed_status(next_status) and has_open_subtasks(task.id):
+        flash("No se puede cerrar la tarea mientras tenga subtareas abiertas.", "danger")
+        return redirect(url_for("tasks.task_detail", project_id=project_id, task_id=task_id))
+
+    previous_status = task.status
+    task.status = next_status
+    db.session.flush()
+    if task.parent_task_id and previous_status != next_status:
+        recalculate_parent_task(task.parent_task_id, reason="subtask_status_updated", trigger_task_id=task.id)
+    db.session.commit()
+    flash("Estado actualizado.", "success")
+    return redirect(url_for("tasks.task_detail", project_id=project_id, task_id=task_id))
 
 
 @bp.route("/attachments/<int:attachment_id>/download")

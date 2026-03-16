@@ -1,5 +1,5 @@
 {% extends 'dashboard/layout.html' %}
-{% block title %}Editar rol | LTAdmin Flask{% endblock %}
+{% block title %}Editar rol | NCProject{% endblock %}
 {% block page_title %}Editar rol{% endblock %}
 {% block page_actions %}
 <a href="{{ url_for('administration.list_roles') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver a roles</a>
@@ -9,6 +9,7 @@
 <div class="card border-0 metric-card">
   <div class="card-body">
     <form method="post" class="row g-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="col-12 col-md-4"><label class="form-label">Nombre *</label><input required name="name" class="form-control" value="{{ role.name }}"></div>
       <div class="col-12 col-md-5"><label class="form-label">Descripción</label><input name="description" class="form-control" value="{{ role.description or '' }}"></div>
       <div class="col-12 col-md-3">

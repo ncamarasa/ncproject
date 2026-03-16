@@ -1,5 +1,5 @@
 {% extends 'dashboard/layout.html' %}
-{% block title %}Configuración Proyectos | LTAdmin Flask{% endblock %}
+{% block title %}Configuración Proyectos | NCProject{% endblock %}
 {% block page_title %}Configuración / Proyectos{% endblock %}
 {% block page_subtitle %}Espacio para catálogos y reglas del módulo de proyectos{% endblock %}
 {% block dashboard_content %}
@@ -35,6 +35,30 @@
     <p id="projectCatalogEmpty" class="text-secondary mb-0 d-none">No se encontraron catálogos para ese texto.</p>
   </div>
 </div>
+
+{% if shared_catalog_fields %}
+<div class="card border-0 metric-card mt-3">
+  <div class="card-header"><strong>Catálogos compartidos (usados en Proyectos)</strong></div>
+  <div class="card-body">
+    <p class="small text-secondary mb-3">
+      Estos catálogos impactan más de un módulo y se gestionan en una única fuente para evitar duplicados.
+    </p>
+    <div class="row">
+      {% for key, label in shared_catalog_fields.items() %}
+      <div class="col-12 col-md-6 catalog-card" data-label="{{ label|lower }}" data-desc="catalogo compartido {{ label|lower }}">
+        <div class="card border mb-3">
+          <div class="card-body">
+            <h3 class="h6">ABM {{ label }}</h3>
+            <p class="small text-secondary mb-3">Disponible también desde Configuración de Clientes.</p>
+            <a href="{{ url_for('settings.client_catalog', field_key=key) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar {{ label|lower }}</a>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block extra_scripts %}

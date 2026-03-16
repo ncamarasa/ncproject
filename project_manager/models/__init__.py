@@ -20,6 +20,16 @@ from project_manager.models.settings import (
     PaymentTypeConfig,
     SystemCatalogOptionConfig,
 )
+from project_manager.models.team import (
+    ClientResource,
+    ProjectResource,
+    Resource,
+    ResourceAvailability,
+    ResourceCost,
+    ResourceRole,
+    TaskResource,
+    TeamRole,
+)
 from project_manager.models.user import (
     AccessAuditLog,
     AuditTrailLog,
@@ -48,6 +58,14 @@ __all__ = [
     "CompanyTypeConfig",
     "PaymentTypeConfig",
     "SystemCatalogOptionConfig",
+    "Resource",
+    "TeamRole",
+    "ResourceRole",
+    "ResourceAvailability",
+    "ResourceCost",
+    "ClientResource",
+    "ProjectResource",
+    "TaskResource",
     "Role",
     "Permission",
     "RolePermission",

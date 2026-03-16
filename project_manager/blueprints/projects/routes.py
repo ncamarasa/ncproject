@@ -26,23 +26,10 @@ from project_manager.auth_utils import (
 )
 from project_manager.blueprints.projects import bp
 from project_manager.extensions import db
-from project_manager.models import Client, ClientContract, Project, Stakeholder, SystemCatalogOptionConfig
+from project_manager.models import Client, ClientContract, Project, Resource, Stakeholder, SystemCatalogOptionConfig
 from project_manager.models import UserProjectAssignment
+from project_manager.services.code_generation import generate_client_code, generate_project_code
 
-PROJECT_TYPES = ["Implementacion", "Desarrollo", "Soporte evolutivo", "AMS", "Bolsa de horas", "Consultoria"]
-PROJECT_STATUSES = ["Planificado", "En progreso", "En pausa", "Completado", "Cancelado"]
-PROJECT_PRIORITIES = ["Baja", "Media", "Alta", "Critica"]
-PROJECT_COMPLEXITIES = ["Baja", "Media", "Alta"]
-PROJECT_CRITICALITIES = ["Baja", "Media", "Alta", "Critica"]
-PROJECT_METHODOLOGIES = ["Agil", "Hibrida", "Cascada", "Kanban", "Scrum"]
-PROJECT_CLOSE_REASONS = ["Completado", "Cancelado por cliente", "Cancelado interno", "Reemplazado"]
-PROJECT_CLOSE_RESULTS = ["Exitoso", "Parcial", "No logrado"]
-PROJECT_ORIGINS = ["Comercial", "Cliente", "Interno", "Regulatorio", "Soporte"]
-TASK_TYPES = ["Análisis", "Desarrollo", "Testing", "Documentación", "Deploy", "Hito"]
-TASK_STATUSES = ["Pendiente", "En progreso", "Bloqueada", "Completada"]
-TASK_PRIORITIES = ["Baja", "Media", "Alta", "Crítica"]
-TASK_DEPENDENCY_TYPES = ["FS", "SS", "FF", "SF"]
-RISK_CATEGORIES = ["Tecnológico", "Operativo", "Comercial", "Financiero", "Legal"]
 ALLOWED_CONTRACT_EXTENSIONS = {"pdf", "doc", "docx"}
 
 
@@ -129,8 +116,34 @@ def _active_contracts_for_client(client_id: int):
 
 
 def _build_project_payload(form):
+    project_manager_resource_id = _to_int(form.get("project_manager_resource_id"), default=0) or None
+    commercial_manager_resource_id = _to_int(form.get("commercial_manager_resource_id"), default=0) or None
+    functional_manager_resource_id = _to_int(form.get("functional_manager_resource_id"), default=0) or None
+    technical_manager_resource_id = _to_int(form.get("technical_manager_resource_id"), default=0) or None
+
+    project_manager = _safe_strip(form.get("project_manager"))
+    commercial_manager = _safe_strip(form.get("commercial_manager"))
+    functional_manager = _safe_strip(form.get("functional_manager"))
+    technical_manager = _safe_strip(form.get("technical_manager"))
+
+    if project_manager_resource_id:
+        resource = db.session.get(Resource, project_manager_resource_id)
+        if resource and resource.is_active:
+            project_manager = resource.full_name
+    if commercial_manager_resource_id:
+        resource = db.session.get(Resource, commercial_manager_resource_id)
+        if resource and resource.is_active:
+            commercial_manager = resource.full_name
+    if functional_manager_resource_id:
+        resource = db.session.get(Resource, functional_manager_resource_id)
+        if resource and resource.is_active:
+            functional_manager = resource.full_name
+    if technical_manager_resource_id:
+        resource = db.session.get(Resource, technical_manager_resource_id)
+        if resource and resource.is_active:
+            technical_manager = resource.full_name
+
     return {
-        "project_code": _safe_strip(form.get("project_code")) or None,
         "name": _safe_strip(form.get("name")),
         "description": _safe_strip(form.get("description")),
         "objective": _safe_strip(form.get("objective")),
@@ -144,10 +157,14 @@ def _build_project_payload(form):
         "complexity_level": _safe_strip(form.get("complexity_level")),
         "criticality_level": _safe_strip(form.get("criticality_level")),
         "project_origin": _safe_strip(form.get("project_origin")),
-        "project_manager": _safe_strip(form.get("project_manager")),
-        "commercial_manager": _safe_strip(form.get("commercial_manager")),
-        "functional_manager": _safe_strip(form.get("functional_manager")),
-        "technical_manager": _safe_strip(form.get("technical_manager")),
+        "project_manager": project_manager,
+        "project_manager_resource_id": project_manager_resource_id,
+        "commercial_manager": commercial_manager,
+        "commercial_manager_resource_id": commercial_manager_resource_id,
+        "functional_manager": functional_manager,
+        "functional_manager_resource_id": functional_manager_resource_id,
+        "technical_manager": technical_manager,
+        "technical_manager_resource_id": technical_manager_resource_id,
         "client_sponsor": _safe_strip(form.get("client_sponsor")),
         "key_user": _safe_strip(form.get("key_user")),
         "onboarding_date": _parse_date(form.get("onboarding_date")),
@@ -204,9 +221,9 @@ def _stakeholder_payload_from_form(form, project_id: int, current_id: int | None
 
 
 def _active_menu_context():
-    def _catalog_values(catalog_key: str, fallback: list[str]):
+    def _catalog_values(catalog_key: str):
         if not g.user:
-            return fallback
+            return []
         values = db.session.execute(
             select(SystemCatalogOptionConfig.name)
             .where(
@@ -215,25 +232,28 @@ def _active_menu_context():
                 SystemCatalogOptionConfig.catalog_key == catalog_key,
                 SystemCatalogOptionConfig.is_active.is_(True),
             )
-            .order_by(SystemCatalogOptionConfig.name.asc())
+            .order_by(SystemCatalogOptionConfig.is_system.asc(), SystemCatalogOptionConfig.name.asc())
         ).scalars().all()
-        return values or fallback
+        return values
 
     return {
-        "project_types": _catalog_values("project_types", PROJECT_TYPES),
-        "project_statuses": _catalog_values("project_statuses", PROJECT_STATUSES),
-        "project_priorities": _catalog_values("project_priorities", PROJECT_PRIORITIES),
-        "project_complexities": _catalog_values("project_complexities", PROJECT_COMPLEXITIES),
-        "project_criticalities": _catalog_values("project_criticalities", PROJECT_CRITICALITIES),
-        "project_methodologies": _catalog_values("project_methodologies", PROJECT_METHODOLOGIES),
-        "project_close_reasons": _catalog_values("project_close_reasons", PROJECT_CLOSE_REASONS),
-        "project_close_results": _catalog_values("project_close_results", PROJECT_CLOSE_RESULTS),
-        "project_origins": _catalog_values("project_origins", PROJECT_ORIGINS),
-        "task_types": _catalog_values("task_types", TASK_TYPES),
-        "task_statuses": _catalog_values("task_statuses", TASK_STATUSES),
-        "task_priorities": _catalog_values("task_priorities", TASK_PRIORITIES),
-        "task_dependency_types": _catalog_values("task_dependency_types", TASK_DEPENDENCY_TYPES),
-        "risk_categories": _catalog_values("risk_categories", RISK_CATEGORIES),
+        "project_types": _catalog_values("project_types"),
+        "project_statuses": _catalog_values("project_statuses"),
+        "project_priorities": _catalog_values("project_priorities"),
+        "project_complexities": _catalog_values("project_complexities"),
+        "project_criticalities": _catalog_values("project_criticalities"),
+        "project_methodologies": _catalog_values("project_methodologies"),
+        "project_close_reasons": _catalog_values("project_close_reasons"),
+        "project_close_results": _catalog_values("project_close_results"),
+        "project_origins": _catalog_values("project_origins"),
+        "task_types": _catalog_values("task_types"),
+        "task_statuses": _catalog_values("task_statuses"),
+        "task_priorities": _catalog_values("task_priorities"),
+        "task_dependency_types": _catalog_values("task_dependency_types"),
+        "risk_categories": _catalog_values("risk_categories"),
+        "active_resources": db.session.execute(
+            select(Resource).where(Resource.is_active.is_(True)).order_by(Resource.full_name.asc())
+        ).scalars().all(),
     }
 
 
@@ -290,6 +310,18 @@ def list_projects():
 
     if status:
         stmt = stmt.where(Project.status == status)
+    else:
+        excluded_statuses = db.session.execute(
+            select(SystemCatalogOptionConfig.name).where(
+                SystemCatalogOptionConfig.owner_user_id == g.user.id,
+                SystemCatalogOptionConfig.module_key == "projects",
+                SystemCatalogOptionConfig.catalog_key == "project_statuses",
+                SystemCatalogOptionConfig.exclude_from_default_list.is_(True),
+                SystemCatalogOptionConfig.is_active.is_(True),
+            )
+        ).scalars().all()
+        if excluded_statuses:
+            stmt = stmt.where(Project.status.not_in(excluded_statuses))
     if priority:
         stmt = stmt.where(Project.priority == priority)
     if project_type:
@@ -373,6 +405,12 @@ def create_project():
         selected_parent_project_id = _to_int(request.form.get("parent_project_id"), default=0)
         estimated_start_date = payload["estimated_start_date"]
         estimated_end_date = payload["estimated_end_date"]
+        manager_fields = [
+            ("Project Manager", payload.get("project_manager_resource_id")),
+            ("Responsable comercial", payload.get("commercial_manager_resource_id")),
+            ("Responsable funcional", payload.get("functional_manager_resource_id")),
+            ("Responsable técnico", payload.get("technical_manager_resource_id")),
+        ]
 
         if len(name) < 3:
             errors.append("El nombre del proyecto debe tener al menos 3 caracteres.")
@@ -384,6 +422,11 @@ def create_project():
             errors.append("El estado seleccionado no es válido.")
         if priority not in _active_menu_context()["project_priorities"]:
             errors.append("La prioridad seleccionada no es válida.")
+        for label, resource_id in manager_fields:
+            if resource_id:
+                resource = db.session.get(Resource, resource_id)
+                if not resource or not resource.is_active:
+                    errors.append(f"{label} inválido.")
 
         allowed_client_scope_set = set(allowed_client_scope) if allowed_client_scope is not None else None
         allowed_project_scope_set = set(allowed_project_scope) if allowed_project_scope is not None else None
@@ -442,6 +485,19 @@ def create_project():
             contract_original_name=contract_original_name,
             **payload,
         )
+        # Código autogenerado de proyecto: CLIENTE-###.
+        if client and not client.client_code:
+            client.client_code = generate_client_code(
+                Client,
+                Client.client_code,
+                client.name,
+            )
+        if not project.project_code and client and client.client_code:
+            project.project_code = generate_project_code(
+                Project,
+                Project.project_code,
+                client.client_code,
+            )
         db.session.add(project)
         db.session.flush()
         if g.user and not g.user.full_access and g.user.username != "admin":
@@ -545,6 +601,12 @@ def edit_project(project_id: int):
 
         estimated_start_date = payload["estimated_start_date"]
         estimated_end_date = payload["estimated_end_date"]
+        manager_fields = [
+            ("Project Manager", payload.get("project_manager_resource_id")),
+            ("Responsable comercial", payload.get("commercial_manager_resource_id")),
+            ("Responsable funcional", payload.get("functional_manager_resource_id")),
+            ("Responsable técnico", payload.get("technical_manager_resource_id")),
+        ]
 
         if len(name) < 3:
             errors.append("El nombre del proyecto debe tener al menos 3 caracteres.")
@@ -556,6 +618,11 @@ def edit_project(project_id: int):
             errors.append("El estado seleccionado no es válido.")
         if priority not in _active_menu_context()["project_priorities"]:
             errors.append("La prioridad seleccionada no es válida.")
+        for label, resource_id in manager_fields:
+            if resource_id:
+                resource = db.session.get(Resource, resource_id)
+                if not resource or not resource.is_active:
+                    errors.append(f"{label} inválido.")
 
         allowed_client_scope_set = set(allowed_client_scope) if allowed_client_scope is not None else None
         allowed_project_scope_set = set(allowed_project_scope) if allowed_project_scope is not None else None
@@ -621,6 +688,18 @@ def edit_project(project_id: int):
         project.parent_project_id = parent_project.id if parent_project else None
         for key, value in payload.items():
             setattr(project, key, value)
+        if client and not client.client_code:
+            client.client_code = generate_client_code(
+                Client,
+                Client.client_code,
+                client.name,
+            )
+        if not project.project_code and client and client.client_code:
+            project.project_code = generate_project_code(
+                Project,
+                Project.project_code,
+                client.client_code,
+            )
 
         db.session.commit()
         flash("Proyecto actualizado correctamente.", "success")

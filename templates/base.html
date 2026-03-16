@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>{% block title %}LTAdmin Flask{% endblock %}</title>
+  <title>{% block title %}NCProject{% endblock %}</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.7.2/css/all.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
@@ -14,6 +14,26 @@
 </head>
 <body class="{% block body_class %}hold-transition sidebar-mini layout-fixed{% endblock %}">
   {% block body %}{% endblock %}
+
+  <div class="modal fade" id="confirmActionModal" tabindex="-1" role="dialog" aria-labelledby="confirmActionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="confirmActionModalLabel">Confirmar acción</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="modal-body" id="confirmActionModalMessage">
+          ¿Deseas continuar?
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary btn-sm btn-action-standard" data-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-danger btn-sm btn-action-standard" id="confirmActionModalSubmit">Confirmar</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
@@ -45,6 +65,43 @@
           return originalFetch(resource, options);
         };
       }
+
+      const modalElement = document.getElementById("confirmActionModal");
+      const messageElement = document.getElementById("confirmActionModalMessage");
+      const confirmButton = document.getElementById("confirmActionModalSubmit");
+      if (!modalElement || !messageElement || !confirmButton || typeof window.jQuery !== "function") {
+        return;
+      }
+
+      let pendingForm = null;
+      document.addEventListener("submit", (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement)) return;
+
+        const confirmMessage = form.getAttribute("data-confirm-message");
+        if (!confirmMessage || form.dataset.confirmBypassed === "1") {
+          return;
+        }
+
+        event.preventDefault();
+        pendingForm = form;
+        messageElement.textContent = confirmMessage;
+        window.jQuery(modalElement).modal("show");
+      });
+
+      confirmButton.addEventListener("click", () => {
+        if (!pendingForm) return;
+        pendingForm.dataset.confirmBypassed = "1";
+        window.jQuery(modalElement).modal("hide");
+        pendingForm.submit();
+      });
+
+      window.jQuery(modalElement).on("hidden.bs.modal", () => {
+        if (pendingForm) {
+          delete pendingForm.dataset.confirmBypassed;
+        }
+        pendingForm = null;
+      });
     })();
   </script>
   {% block extra_scripts %}{% endblock %}

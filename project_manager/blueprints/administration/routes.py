@@ -1,7 +1,7 @@
 from datetime import date
 
 from flask import abort, flash, g, redirect, render_template, request, url_for
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
 from project_manager.auth_utils import require_permission
@@ -19,6 +19,7 @@ from project_manager.models import (
     UserClientAssignment,
     UserProjectAssignment,
 )
+from project_manager.services.default_catalogs import seed_default_catalogs_for_user
 
 
 @bp.before_request
@@ -30,6 +31,10 @@ def _authorize_administration_module():
 
 def _safe_strip(value: str | None) -> str:
     return (value or "").strip()
+
+
+def _normalize_role_name(value: str | None) -> str:
+    return " ".join(_safe_strip(value).split())
 
 
 def _to_int(value: str | None, default: int = 0) -> int:
@@ -48,6 +53,24 @@ def _paginate(stmt, page: int, per_page: int = 12):
     return db.paginate(stmt, page=page, per_page=per_page, error_out=False)
 
 
+def _role_in_use(role_id: int) -> bool:
+    return db.session.execute(select(User.id).where(User.role_id == role_id).limit(1)).scalar_one_or_none() is not None
+
+
+def _user_in_use(user_id: int) -> bool:
+    has_client_assignments = (
+        db.session.execute(select(UserClientAssignment.id).where(UserClientAssignment.user_id == user_id).limit(1))
+        .scalar_one_or_none()
+        is not None
+    )
+    has_project_assignments = (
+        db.session.execute(select(UserProjectAssignment.id).where(UserProjectAssignment.user_id == user_id).limit(1))
+        .scalar_one_or_none()
+        is not None
+    )
+    return has_client_assignments or has_project_assignments
+
+
 def _permission_tree():
     permissions = db.session.execute(select(Permission).where(Permission.is_active.is_(True)).order_by(Permission.module.asc(), Permission.label.asc())).scalars().all()
     module_labels = {
@@ -56,6 +79,7 @@ def _permission_tree():
         "clients": "Clientes",
         "projects": "Proyectos",
         "tasks": "Tareas",
+        "team": "Equipo",
         "settings": "Configuración",
     }
     tree = {}
@@ -159,6 +183,7 @@ def create_user():
         user.set_password(password)
         db.session.add(user)
         db.session.flush()
+        seed_default_catalogs_for_user(user.id)
 
         if not user.full_access:
             for client_id in request.form.getlist("client_ids"):
@@ -279,6 +304,9 @@ def toggle_user(user_id: int):
     user = db.session.get(User, user_id)
     if not user:
         abort(404)
+    if user.is_active and _user_in_use(user.id):
+        flash("No se puede desactivar: el usuario tiene asignaciones activas.", "danger")
+        return redirect(url_for("administration.list_users"))
     user.is_active = not user.is_active
     db.session.commit()
     flash("Estado de usuario actualizado.", "info")
@@ -310,14 +338,16 @@ def list_roles():
     permissions = _permission_tree()
     if request.method == "POST":
         if request.form.get("form_type") == "create_role":
-            name = _safe_strip(request.form.get("name"))
+            name = _normalize_role_name(request.form.get("name"))
             description = _safe_strip(request.form.get("description"))
             selected_permission_ids = [_to_int(x) for x in request.form.getlist("permission_ids")]
             selected_permission_ids = [x for x in selected_permission_ids if x]
             errors = []
             if len(name) < 2:
                 errors.append("El nombre del rol debe tener al menos 2 caracteres.")
-            if db.session.execute(select(Role.id).where(Role.name.ilike(name))).scalar_one_or_none():
+            if db.session.execute(
+                select(Role.id).where(func.lower(Role.name) == name.lower())
+            ).scalar_one_or_none():
                 errors.append("Ya existe un rol con ese nombre.")
             if not selected_permission_ids:
                 errors.append("Debes seleccionar al menos un permiso.")
@@ -325,7 +355,14 @@ def list_roles():
                 for err in errors:
                     flash(err, "danger")
             else:
-                role = Role(name=name, description=description or None, is_active=True)
+                role = Role(
+                    name=name,
+                    description=description or None,
+                    is_active=True,
+                    is_system=False,
+                    is_editable=True,
+                    is_deletable=True,
+                )
                 db.session.add(role)
                 db.session.flush()
                 for pid in selected_permission_ids:
@@ -350,17 +387,25 @@ def edit_role(role_id: int):
     ).scalar_one_or_none()
     if not role:
         abort(404)
+    if not role.is_editable:
+        flash("No se puede editar: el rol es de sistema.", "danger")
+        return redirect(url_for("administration.list_roles"))
 
     permissions = _permission_tree()
     if request.method == "POST":
-        name = _safe_strip(request.form.get("name"))
+        name = _normalize_role_name(request.form.get("name"))
         description = _safe_strip(request.form.get("description"))
         selected_permission_ids = [_to_int(x) for x in request.form.getlist("permission_ids")]
         selected_permission_ids = [x for x in selected_permission_ids if x]
         errors = []
         if len(name) < 2:
             errors.append("El nombre del rol debe tener al menos 2 caracteres.")
-        if db.session.execute(select(Role.id).where(Role.id != role.id, Role.name.ilike(name))).scalar_one_or_none():
+        if db.session.execute(
+            select(Role.id).where(
+                Role.id != role.id,
+                func.lower(Role.name) == name.lower(),
+            )
+        ).scalar_one_or_none():
             errors.append("Ya existe un rol con ese nombre.")
         if not selected_permission_ids:
             errors.append("Debes seleccionar al menos un permiso.")
@@ -370,7 +415,15 @@ def edit_role(role_id: int):
         else:
             role.name = name
             role.description = description or None
-            role.is_active = _to_bool(request.form.get("is_active"))
+            requested_active = _to_bool(request.form.get("is_active"))
+            if role.is_active and not requested_active:
+                if not role.is_deletable:
+                    flash("No se puede desactivar: el rol es de sistema.", "danger")
+                    return redirect(url_for("administration.list_roles"))
+                if _role_in_use(role.id):
+                    flash("No se puede desactivar: el rol está asignado a usuarios.", "danger")
+                    return redirect(url_for("administration.list_roles"))
+            role.is_active = requested_active
             db.session.query(RolePermission).filter_by(role_id=role.id).delete(synchronize_session=False)
             for pid in selected_permission_ids:
                 db.session.add(RolePermission(role_id=role.id, permission_id=pid))
@@ -393,6 +446,13 @@ def toggle_role(role_id: int):
     role = db.session.get(Role, role_id)
     if not role:
         abort(404)
+    if role.is_active:
+        if not role.is_deletable:
+            flash("No se puede desactivar: el rol es de sistema.", "danger")
+            return redirect(url_for("administration.list_roles"))
+        if _role_in_use(role.id):
+            flash("No se puede desactivar: el rol está asignado a usuarios.", "danger")
+            return redirect(url_for("administration.list_roles"))
     role.is_active = not role.is_active
     db.session.commit()
     flash("Estado del rol actualizado.", "info")

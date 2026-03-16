@@ -1,6 +1,6 @@
 {% extends 'dashboard/layout.html' %}
 
-{% block title %}Vista 360 de proyecto | LTAdmin Flask{% endblock %}
+{% block title %}Vista 360 de proyecto | NCProject{% endblock %}
 {% block page_title %}{{ project.name }}{% endblock %}
 {% block page_subtitle %}Vista 360: solo visualización{% endblock %}
 {% block page_actions %}
@@ -20,18 +20,42 @@
 
 {% block dashboard_content %}
 <div class="row g-3 mb-2">
-  <div class="col-6 col-lg-2"><div class="small-box bg-info"><div class="inner"><h4>{{ task_total }}</h4><p>Tareas totales</p></div></div></div>
-  <div class="col-6 col-lg-2"><div class="small-box bg-primary"><div class="inner"><h4>{{ task_pending }}</h4><p>Tareas pendientes</p></div></div></div>
-  <div class="col-6 col-lg-2"><div class="small-box bg-danger"><div class="inner"><h4>{{ task_overdue }}</h4><p>Tareas atrasadas</p></div></div></div>
-  <div class="col-6 col-lg-2"><div class="small-box bg-success"><div class="inner"><h4>{{ task_completed }}</h4><p>Completadas</p></div></div></div>
-  <div class="col-6 col-lg-2"><div class="small-box bg-warning"><div class="inner"><h4>{{ task_milestones }}</h4><p>Hitos</p></div></div></div>
-  <div class="col-6 col-lg-2"><div class="small-box bg-secondary"><div class="inner"><h4>{{ task_blocked }}</h4><p>Bloqueadas</p></div></div></div>
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="text-reset d-block">
+      <div class="small-box bg-info"><div class="inner"><h4>{{ task_total }}</h4><p>Tareas totales</p></div></div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="text-reset d-block">
+      <div class="small-box bg-primary"><div class="inner"><h4>{{ task_pending }}</h4><p>Tareas pendientes</p></div></div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="text-reset d-block">
+      <div class="small-box bg-danger"><div class="inner"><h4>{{ task_overdue }}</h4><p>Tareas atrasadas</p></div></div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="text-reset d-block">
+      <div class="small-box bg-success"><div class="inner"><h4>{{ task_completed }}</h4><p>Completadas</p></div></div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="text-reset d-block">
+      <div class="small-box bg-warning"><div class="inner"><h4>{{ task_milestones }}</h4><p>Hitos</p></div></div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="text-reset d-block">
+      <div class="small-box bg-secondary"><div class="inner"><h4>{{ task_blocked }}</h4><p>Bloqueadas</p></div></div>
+    </a>
+  </div>
 </div>
 
-<div class="row g-3">
+<div class="row g-3 view360-project">
   <div class="col-12 col-xl-6">
     <div class="card border-0 metric-card h-100">
-      <div class="card-header"><strong>1. Datos generales</strong></div>
+      <div class="card-header view360-tone-1"><strong>1. Datos generales</strong></div>
       <div class="card-body">
         <dl class="row mb-0">
           <dt class="col-sm-5">Código</dt><dd class="col-sm-7">{{ project.project_code or '-' }}</dd>
@@ -54,7 +78,7 @@
 
   <div class="col-12 col-xl-6">
     <div class="card border-0 metric-card h-100">
-      <div class="card-header"><strong>2. Clasificación</strong></div>
+      <div class="card-header view360-tone-2"><strong>2. Clasificación</strong></div>
       <div class="card-body">
         <dl class="row mb-0">
           <dt class="col-sm-5">Unidad de negocio</dt><dd class="col-sm-7">{{ project.business_unit or '-' }}</dd>
@@ -72,7 +96,7 @@
 
   <div class="col-12 col-xl-6">
     <div class="card border-0 metric-card h-100">
-      <div class="card-header"><strong>3. Responsables</strong></div>
+      <div class="card-header view360-tone-3"><strong>3. Responsables</strong></div>
       <div class="card-body">
         <dl class="row mb-0">
           <dt class="col-sm-5">Responsable</dt><dd class="col-sm-7">{{ project.owner or '-' }}</dd>
@@ -89,7 +113,7 @@
 
   <div class="col-12 col-xl-6">
     <div class="card border-0 metric-card h-100">
-      <div class="card-header"><strong>4. Planificación y operación</strong></div>
+      <div class="card-header view360-tone-4"><strong>4. Planificación y operación</strong></div>
       <div class="card-body">
         <dl class="row mb-0">
           <dt class="col-sm-5">Fecha alta</dt><dd class="col-sm-7">{{ project.onboarding_date or '-' }}</dd>
@@ -115,13 +139,13 @@
 
   <div class="col-12">
     <div class="card border-0 metric-card">
-      <div class="card-header d-flex justify-content-between align-items-center">
+      <div class="card-header view360-tone-5 d-flex justify-content-between align-items-center">
         <strong>5. Stakeholders</strong>
         <a href="{{ url_for('projects.manage_stakeholders', project_id=project.id) }}" class="btn btn-warning btn-sm ml-auto btn-manage-action btn-action-standard">Gestionar stakeholders</a>
       </div>
       <div class="card-body">
         <div class="table-responsive">
-          <table class="table table-sm table-bordered">
+          <table class="table table-sm table-hover">
             <thead>
               <tr>
                 <th>Nombre</th>
@@ -153,7 +177,7 @@
 
   <div class="col-12">
     <div class="card border-0 metric-card">
-      <div class="card-header d-flex justify-content-between align-items-center">
+      <div class="card-header view360-tone-6 d-flex justify-content-between align-items-center">
         <strong>6. Tareas e hitos</strong>
         <div class="d-flex gap-2 ml-auto">
           <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="btn btn-success btn-sm btn-manage-action btn-action-standard">Gestionar tareas</a>
@@ -162,7 +186,7 @@
       </div>
       <div class="card-body">
         <div class="table-responsive">
-          <table class="table table-sm table-bordered">
+          <table class="table table-sm table-hover">
             <thead><tr><th>Tarea</th><th>Tipo</th><th>Estado</th><th>Responsable</th><th>Fechas</th><th>Avance</th></tr></thead>
             <tbody>
               {% for task in project.tasks %}
@@ -190,7 +214,7 @@
 
   <div class="col-12 col-xl-6">
     <div class="card border-0 metric-card h-100">
-      <div class="card-header"><strong>7. Presupuesto y horas</strong></div>
+      <div class="card-header view360-tone-7"><strong>7. Presupuesto y horas</strong></div>
       <div class="card-body">
         <dl class="row mb-0">
           <dt class="col-sm-5">Modalidad facturación</dt><dd class="col-sm-7">{{ project.billing_mode or '-' }}</dd>
@@ -209,7 +233,7 @@
 
   <div class="col-12 col-xl-6">
     <div class="card border-0 metric-card h-100">
-      <div class="card-header"><strong>8. Cierre y documentos</strong></div>
+      <div class="card-header view360-tone-8"><strong>8. Cierre y documentos</strong></div>
       <div class="card-body">
         <dl class="row mb-0">
           <dt class="col-sm-5">Registro</dt><dd class="col-sm-7">{% if project.is_active %}<span class="badge badge-success">Activo</span>{% else %}<span class="badge badge-secondary">Inactivo</span>{% endif %}</dd>

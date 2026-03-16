@@ -1,51 +1,114 @@
 {% extends 'dashboard/layout.html' %}
-{% block title %}Tareas | LTAdmin Flask{% endblock %}
+{% block title %}Tareas | NCProject{% endblock %}
 {% block page_title %}Tareas - {{ project.name }}{% endblock %}
 {% block page_subtitle %}Planificación y ejecución{% endblock %}
-{% block page_actions %}
-<a href="{{ url_for('projects.project_detail', project_id=project.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al proyecto</a>
-<a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="btn btn-outline-primary btn-sm ml-2 btn-action-standard">Ver Gantt</a>
-{% endblock %}
 
 {% block dashboard_content %}
-<div class="card border-0 metric-card mb-3">
-  <div class="card-header"><strong>{{ 'Editar tarea' if edit_task else 'Nueva tarea' }}</strong></div>
+{% set lock_calculated_fields = edit_task and edit_task_has_subtasks %}
+{% set lock_close_status = edit_task and edit_task_has_subtasks and edit_task_open_subtasks %}
+{% set task_form_mode = 'edit' if edit_task else 'create' %}
+<div class="card border-0 metric-card mb-3 form-mode-card form-mode-{{ task_form_mode }}">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>{{ 'Editar tarea' if edit_task else 'Nueva tarea' }}</strong>
+    <span class="badge form-mode-badge">{{ 'Modo edición' if edit_task else 'Modo alta' }}</span>
+  </div>
   <div class="card-body">
+    {% if lock_calculated_fields %}
+    <div class="alert alert-info py-2" role="alert">
+      Esta tarea tiene subtareas: <strong>avance</strong> y <strong>fechas</strong> se calculan automáticamente.
+    </div>
+    {% endif %}
+    {% if lock_close_status %}
+    <div class="alert alert-warning py-2" role="alert">
+      No podés cerrar esta tarea hasta que todas sus subtareas estén cerradas.
+    </div>
+    {% endif %}
     <form method="post" action="{{ url_for('tasks.edit_task', project_id=project.id, task_id=edit_task.id, page=current_page) if edit_task else url_for('tasks.manage_tasks', project_id=project.id, page=current_page) }}" class="row g-2">
       <div class="col-12 col-lg-4"><label class="form-label">Título *</label><input required name="title" class="form-control" value="{{ form_values.get('title', edit_task.title if edit_task else '') }}"></div>
       <div class="col-12 col-lg-2"><label class="form-label">Tipo</label><input name="task_type" class="form-control" value="{{ form_values.get('task_type', edit_task.task_type if edit_task else '') }}"></div>
-      <div class="col-12 col-lg-2"><label class="form-label">Estado</label><input name="status" class="form-control" value="{{ form_values.get('status', edit_task.status if edit_task else '') }}"></div>
+      <div class="col-12 col-lg-2">
+        <label class="form-label">Estado</label>
+        {% set current_status = form_values.get('status', edit_task.status if edit_task else '') %}
+        <select id="taskStatusSelect" name="status" class="custom-select">
+          <option value="">Seleccionar</option>
+          {% for status_option in task_statuses %}
+          {% set status_key = status_option|lower %}
+          <option value="{{ status_option }}" {% if current_status == status_option %}selected{% endif %} {% if lock_close_status and status_key in closed_statuses %}disabled{% endif %}>{{ status_option }}</option>
+          {% endfor %}
+          {% if current_status and current_status not in task_statuses %}
+          <option value="{{ current_status }}" selected>{{ current_status }}</option>
+          {% endif %}
+        </select>
+      </div>
       <div class="col-12 col-lg-2"><label class="form-label">Prioridad</label><input name="priority" class="form-control" value="{{ form_values.get('priority', edit_task.priority if edit_task else '') }}"></div>
-      <div class="col-12 col-lg-2"><label class="form-label">Responsable</label><input name="responsible" class="form-control" value="{{ form_values.get('responsible', edit_task.responsible if edit_task else '') }}"></div>
+      <div class="col-12 col-lg-2">
+        <label class="form-label">Responsable</label>
+        {% set selected_resource = form_values.get('responsible_resource_id', edit_task.responsible_resource_id if edit_task else '')|string %}
+        <select name="responsible_resource_id" class="custom-select">
+          <option value="">Seleccionar</option>
+          {% for resource in active_resources %}
+          <option value="{{ resource.id }}" {% if selected_resource == resource.id|string %}selected{% endif %}>{{ resource.full_name }}</option>
+          {% endfor %}
+        </select>
+        <input type="hidden" name="responsible" value="{{ form_values.get('responsible', edit_task.responsible if edit_task else '') }}">
+      </div>
       <div class="col-12 col-lg-3"><label class="form-label">Tarea padre</label><select name="parent_task_id" class="custom-select"><option value="">Sin padre</option>{% set selected_parent = form_values.get('parent_task_id', edit_task.parent_task_id if edit_task else '')|string %}{% for candidate in parent_candidates %}<option value="{{ candidate.id }}" {% if selected_parent == candidate.id|string %}selected{% endif %}>#{{ candidate.id }} - {{ candidate.title }}</option>{% endfor %}</select></div>
-      <div class="col-12 col-lg-3"><label class="form-label">Inicio</label><input id="taskStartDate" type="date" name="start_date" class="form-control" value="{{ form_values.get('start_date', edit_task.start_date.isoformat() if edit_task and edit_task.start_date else '') }}"></div>
-      <div class="col-12 col-lg-3"><label class="form-label">Fin</label><input id="taskDueDate" type="date" name="due_date" class="form-control" value="{{ form_values.get('due_date', edit_task.due_date.isoformat() if edit_task and edit_task.due_date else '') }}"></div>
+      <div class="col-12 col-lg-3"><label class="form-label">Inicio</label><input id="taskStartDate" type="date" name="start_date" class="form-control" value="{{ form_values.get('start_date', edit_task.start_date.isoformat() if edit_task and edit_task.start_date else '') }}" {% if lock_calculated_fields %}readonly{% endif %}></div>
+      <div class="col-12 col-lg-3"><label class="form-label">Fin</label><input id="taskDueDate" type="date" name="due_date" class="form-control" value="{{ form_values.get('due_date', edit_task.due_date.isoformat() if edit_task and edit_task.due_date else '') }}" {% if lock_calculated_fields %}readonly{% endif %}></div>
       <div class="col-12 col-lg-2"><label class="form-label">Duración (días)</label><input id="taskDurationDays" type="number" min="1" name="estimated_duration_days" class="form-control" value="{{ form_values.get('estimated_duration_days', edit_task.estimated_duration_days if edit_task and edit_task.estimated_duration_days is not none else '') }}"></div>
       <div class="col-12 col-lg-2"><label class="form-label">Esfuerzo (hs)</label><input type="number" step="0.25" min="0" name="estimated_hours" class="form-control" value="{{ form_values.get('estimated_hours', edit_task.estimated_hours if edit_task and edit_task.estimated_hours is not none else '') }}"></div>
-      <div class="col-12 col-lg-2"><label class="form-label">Avance %</label><input type="number" min="0" max="100" name="progress_percent" class="form-control" value="{{ form_values.get('progress_percent', edit_task.progress_percent if edit_task else 0) }}"></div>
+      <div class="col-12 col-lg-2"><label class="form-label">Avance %</label><input type="number" min="0" max="100" name="progress_percent" class="form-control" value="{{ form_values.get('progress_percent', edit_task.progress_percent if edit_task else 0) }}" {% if lock_calculated_fields %}readonly{% endif %}></div>
       <div class="col-12"><label class="form-label">Descripción</label><input name="description" class="form-control" value="{{ form_values.get('description', edit_task.description if edit_task else '') }}"></div>
       <div class="col-12 d-flex gap-2 mt-2">
-        <button class="btn btn-primary" type="submit">{{ 'Guardar cambios' if edit_task else 'Agregar tarea' }}</button>
-        {% if edit_task %}<a href="{{ url_for('tasks.manage_tasks', project_id=project.id, page=current_page) }}" class="btn btn-outline-secondary">Cancelar edición</a>{% endif %}
+        <button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar cambios' if edit_task else 'Agregar tarea' }}</button>
+        {% if edit_task %}<a href="{{ url_for('tasks.manage_tasks', project_id=project.id, page=current_page) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar edición</a>{% endif %}
       </div>
     </form>
   </div>
 </div>
 
 <div class="card border-0 metric-card">
-  <div class="card-header"><strong>Listado de tareas</strong></div>
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Listado de tareas</strong>
+    <div class="d-flex gap-2 ml-auto justify-content-end">
+      <a href="{{ url_for('projects.project_detail', project_id=project.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al proyecto</a>
+      <a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver Gantt</a>
+    </div>
+  </div>
   <div class="card-body p-3">
     <div class="table-responsive">
-      <table class="table table-sm table-bordered mb-0">
+      <table class="table table-sm table-hover mb-0">
         <thead><tr><th>ID</th><th>Título</th><th>Estado</th><th>Responsable</th><th>Fechas</th><th>Duración</th><th>Esfuerzo</th><th>Avance</th><th class="text-end">Acciones</th></tr></thead>
         <tbody>
           {% for task in tasks %}
-          <tr>
+          {% set has_children = task.id in parent_task_ids %}
+          <tr class="{% if task.parent_task_id %}task-row-subtask js-subtask-row{% endif %}" {% if task.parent_task_id %}data-parent-id="{{ task.parent_task_id }}"{% endif %}>
             <td>#{{ task.id }}</td>
             <td>
-              <strong>{{ task.title }}</strong>
-              {% if task.parent_task_id %}<span class="badge badge-light">Subtarea de #{{ task.parent_task_id }}</span>{% endif %}
-              {% if task.is_milestone %}<span class="badge badge-warning">Hito</span>{% endif %}
+              <div class="{% if task.parent_task_id %}task-title-subtree{% endif %}">
+                {% if task.parent_task_id %}
+                <span class="task-tree-marker" aria-hidden="true"><i class="fas fa-level-down-alt fa-rotate-90"></i></span>
+                {% endif %}
+                <div>
+                  <div class="d-flex align-items-center gap-1">
+                    {% if has_children %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary task-subtask-toggle js-task-toggle" data-parent-id="{{ task.id }}" aria-expanded="false">
+                      <i class="fas fa-chevron-right"></i>
+                    </button>
+                    {% endif %}
+                    <strong>{{ task.title }}</strong>
+                    {% if has_children %}<span class="badge badge-light">{{ child_count_by_parent.get(task.id, 0) }}</span>{% endif %}
+                  </div>
+                  <div class="small text-secondary">
+                    {% if task.parent_task_id %}
+                    <a class="text-secondary" href="{{ url_for('tasks.task_detail', project_id=project.id, task_id=task.parent_task_id) }}">
+                      Subtarea de #{{ task.parent_task_id }}{% if task.parent_task %} - {{ task.parent_task.title }}{% endif %}
+                    </a>
+                    {% endif %}
+                    {% if task.is_milestone %}<span class="badge badge-warning ml-1">Hito</span>{% endif %}
+                  </div>
+                </div>
+              </div>
             </td>
             <td>{{ task.status or '-' }}</td>
             <td>{{ task.responsible or '-' }}</td>
@@ -83,6 +146,8 @@
     const startInput = document.getElementById("taskStartDate");
     const dueInput = document.getElementById("taskDueDate");
     const durationInput = document.getElementById("taskDurationDays");
+    const statusSelect = document.getElementById("taskStatusSelect");
+    const taskForm = document.querySelector(".card .card-body form.row.g-2");
     if (!startInput || !dueInput || !durationInput) return;
 
     const parseDate = (value) => {
@@ -128,6 +193,40 @@
         updateDueFromDuration();
       }
     });
+
+    const subtasksByParent = {};
+    document.querySelectorAll(".js-subtask-row[data-parent-id]").forEach((row) => {
+      const parentId = row.getAttribute("data-parent-id");
+      if (!subtasksByParent[parentId]) subtasksByParent[parentId] = [];
+      subtasksByParent[parentId].push(row);
+      row.style.display = "none";
+    });
+
+    document.querySelectorAll(".js-task-toggle[data-parent-id]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const parentId = button.getAttribute("data-parent-id");
+        const rows = subtasksByParent[parentId] || [];
+        const isExpanded = button.getAttribute("aria-expanded") === "true";
+        const nextExpanded = !isExpanded;
+        button.setAttribute("aria-expanded", String(nextExpanded));
+        button.classList.toggle("is-expanded", nextExpanded);
+        rows.forEach((row) => {
+          row.style.display = nextExpanded ? "" : "none";
+        });
+      });
+    });
+
+    const lockCloseStatus = {{ "true" if lock_close_status else "false" }};
+    const closedStatuses = new Set({{ closed_statuses|tojson }});
+    if (lockCloseStatus && statusSelect && taskForm) {
+      taskForm.addEventListener("submit", (event) => {
+        const selected = (statusSelect.value || "").trim().toLowerCase();
+        if (closedStatuses.has(selected)) {
+          event.preventDefault();
+          alert("No podés cerrar esta tarea hasta cerrar todas sus subtareas.");
+        }
+      });
+    }
   })();
 </script>
 {% endblock %}

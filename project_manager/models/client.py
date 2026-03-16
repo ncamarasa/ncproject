@@ -6,6 +6,7 @@ class Client(TimestampMixin, db.Model):
     __tablename__ = "clients"
 
     id = db.Column(db.Integer, primary_key=True)
+    client_code = db.Column(db.String(40), nullable=True, unique=True, index=True)
     name = db.Column(db.String(120), unique=True, nullable=False)
     contact_name = db.Column(db.String(120), nullable=True)
     email = db.Column(db.String(120), nullable=True)
@@ -33,7 +34,9 @@ class Client(TimestampMixin, db.Model):
     segment = db.Column(db.String(80), nullable=True)
     commercial_priority = db.Column(db.String(20), nullable=True)
     sales_executive = db.Column(db.String(120), nullable=True)
+    sales_executive_resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=True, index=True)
     account_manager = db.Column(db.String(120), nullable=True)
+    account_manager_resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=True, index=True)
     commercial_status = db.Column(db.String(40), nullable=True)
     billing_potential = db.Column(db.Numeric(12, 2), nullable=True)
     health_score = db.Column(db.Integer, nullable=True)
@@ -55,6 +58,7 @@ class Client(TimestampMixin, db.Model):
     timezone = db.Column(db.String(60), nullable=True)
     language = db.Column(db.String(40), nullable=True)
     delivery_manager = db.Column(db.String(120), nullable=True)
+    delivery_manager_resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=True, index=True)
     criticality_level = db.Column(db.String(20), nullable=True)
     service_type = db.Column(db.String(80), nullable=True)
     billing_mode = db.Column(db.String(80), nullable=True)
@@ -63,6 +67,15 @@ class Client(TimestampMixin, db.Model):
     approval_flow = db.Column(db.Text, nullable=True)
 
     projects = db.relationship("Project", back_populates="client", lazy="dynamic")
+    sales_executive_resource = db.relationship("Resource", foreign_keys=[sales_executive_resource_id], lazy="joined")
+    account_manager_resource = db.relationship("Resource", foreign_keys=[account_manager_resource_id], lazy="joined")
+    delivery_manager_resource = db.relationship("Resource", foreign_keys=[delivery_manager_resource_id], lazy="joined")
+    resource_assignments = db.relationship(
+        "ClientResource",
+        back_populates="client",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
     contacts = db.relationship(
         "ClientContact",
         back_populates="client",

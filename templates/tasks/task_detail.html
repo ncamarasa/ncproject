@@ -1,5 +1,5 @@
 {% extends 'dashboard/layout.html' %}
-{% block title %}Detalle de tarea | LTAdmin Flask{% endblock %}
+{% block title %}Detalle de tarea | NCProject{% endblock %}
 {% block page_title %}Tarea #{{ task.id }} - {{ task.title }}{% endblock %}
 {% block page_subtitle %}Proyecto: {{ project.name }}{% endblock %}
 {% block page_actions %}
@@ -12,6 +12,32 @@
     <div class="card border-0 metric-card">
       <div class="card-header"><strong>Datos de la tarea</strong></div>
       <div class="card-body">
+        {% set lock_close_status = task.subtasks and task_has_open_subtasks %}
+        {% if lock_close_status %}
+        <div class="alert alert-warning py-2" role="alert">
+          No podés cerrar esta tarea hasta cerrar todas sus subtareas.
+        </div>
+        {% endif %}
+        <form id="taskStatusForm" method="post" action="{{ url_for('tasks.update_task_status', project_id=project.id, task_id=task.id) }}" class="row g-2 mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-12 col-lg-8">
+            <label class="form-label">Estado</label>
+            {% set current_status = task.status or '' %}
+            <select id="taskDetailStatusSelect" name="status" class="custom-select">
+              <option value="">Seleccionar</option>
+              {% for status_option in task_statuses %}
+              {% set status_key = status_option|lower %}
+              <option value="{{ status_option }}" {% if current_status == status_option %}selected{% endif %} {% if lock_close_status and status_key in closed_statuses %}disabled{% endif %}>{{ status_option }}</option>
+              {% endfor %}
+              {% if current_status and current_status not in task_statuses %}
+              <option value="{{ current_status }}" selected>{{ current_status }}</option>
+              {% endif %}
+            </select>
+          </div>
+          <div class="col-12 col-lg-4 d-flex align-items-end">
+            <button type="submit" class="btn btn-primary btn-sm btn-action-standard">Actualizar estado</button>
+          </div>
+        </form>
         <dl class="row mb-0">
           <dt class="col-sm-4">Tipo</dt><dd class="col-sm-8">{{ task.task_type or '-' }}</dd>
           <dt class="col-sm-4">Estado</dt><dd class="col-sm-8">{{ task.status or '-' }}</dd>
@@ -40,6 +66,7 @@
       <div class="card-header"><strong>Agregar dependencia</strong></div>
       <div class="card-body">
         <form method="post" action="{{ url_for('tasks.add_dependency', project_id=project.id, task_id=task.id) }}" class="row g-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="col-12 col-lg-7">
             <label class="form-label">Predecesora</label>
             <select name="predecessor_task_id" class="custom-select" required>
@@ -53,7 +80,7 @@
             <label class="form-label">Tipo dependencia</label>
             <input name="dependency_type" class="form-control" placeholder="FS/SS/FF...">
           </div>
-          <div class="col-12"><button class="btn btn-primary" type="submit">Agregar dependencia</button></div>
+          <div class="col-12"><button class="btn btn-primary btn-sm btn-action-standard" type="submit">Agregar dependencia</button></div>
         </form>
       </div>
     </div>
@@ -73,6 +100,7 @@
               <small class="text-secondary">{{ dep.dependency_type or '' }}</small>
             </span>
             <form method="post" action="{{ url_for('tasks.delete_dependency', project_id=project.id, dependency_id=dep.id) }}" onsubmit="return confirm('¿Eliminar dependencia?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-trash"></i></button>
             </form>
           </li>
@@ -85,10 +113,43 @@
   </div>
 
   <div class="col-12 col-xl-6">
+    <div class="card border-0 metric-card mb-3">
+      <div class="card-header"><strong>Colaboradores</strong></div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('tasks.add_task_collaborator', project_id=project.id, task_id=task.id) }}" class="row g-2 align-items-end mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-12 col-lg-8">
+            <label class="form-label">Recurso</label>
+            <select name="resource_id" class="custom-select" required>
+              <option value="">Seleccionar</option>
+              {% for resource in available_resources %}
+              <option value="{{ resource.id }}">{{ resource.full_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-lg-4"><button class="btn btn-primary btn-sm btn-action-standard" type="submit">Agregar colaborador</button></div>
+        </form>
+        <ul class="list-group list-group-flush">
+          {% for collaborator in collaborators %}
+          <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+            <span>{{ collaborator.resource.full_name if collaborator.resource else '-' }}</span>
+            <form method="post" action="{{ url_for('tasks.delete_task_collaborator', project_id=project.id, assignment_id=collaborator.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-danger" type="submit">Quitar</button>
+            </form>
+          </li>
+          {% else %}
+          <li class="list-group-item px-0 text-secondary">Sin colaboradores.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
     <div class="card border-0 metric-card">
       <div class="card-header"><strong>Comentarios</strong></div>
       <div class="card-body">
         <form method="post" class="mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <label class="form-label">Nuevo comentario</label>
           <textarea name="comment_body" class="form-control" rows="2" placeholder="Agregar comentario"></textarea>
           <button class="btn btn-primary btn-sm mt-2" type="submit">Guardar comentario</button>
@@ -113,6 +174,7 @@
       <div class="card-header"><strong>Adjuntos</strong></div>
       <div class="card-body">
         <form method="post" enctype="multipart/form-data" class="mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <label class="form-label">Adjuntar archivo</label>
           <input type="file" name="attachment" class="form-control">
           <button class="btn btn-primary btn-sm mt-2" type="submit">Subir</button>
@@ -131,4 +193,21 @@
     </div>
   </div>
 </div>
+<script>
+  (() => {
+    const lockCloseStatus = {{ "true" if (task.subtasks and task_has_open_subtasks) else "false" }};
+    if (!lockCloseStatus) return;
+    const form = document.getElementById("taskStatusForm");
+    const select = document.getElementById("taskDetailStatusSelect");
+    const closedStatuses = new Set({{ closed_statuses|tojson }});
+    if (!form || !select) return;
+    form.addEventListener("submit", (event) => {
+      const selected = (select.value || "").trim().toLowerCase();
+      if (closedStatuses.has(selected)) {
+        event.preventDefault();
+        alert("No podés cerrar esta tarea hasta cerrar todas sus subtareas.");
+      }
+    });
+  })();
+</script>
 {% endblock %}

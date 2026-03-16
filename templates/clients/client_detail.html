@@ -1,7 +1,12 @@
 {% extends 'dashboard/layout.html' %}
 
-{% block title %}Vista 360 de cliente | LTAdmin Flask{% endblock %}
-{% block page_title %}{{ client.name }}{% endblock %}
+{% block title %}Vista 360 de cliente | NCProject{% endblock %}
+{% block page_title %}
+  {{ client.name }}
+  {% if client.client_code %}
+    <span class="entity-code-muted">({{ client.client_code }})</span>
+  {% endif %}
+{% endblock %}
 {% block page_subtitle %}Vista 360: solo visualización{% endblock %}
 {% block page_actions %}
 <a href="{{ url_for('clients.edit_client', client_id=client.id) }}" class="btn btn-primary btn-sm mr-2 btn-action-standard">
@@ -15,17 +20,33 @@
 {% block dashboard_content %}
 <div class="row g-3 mb-2">
   <div class="col-6 col-lg-2"><div class="small-box bg-info"><div class="inner"><h4>{{ stats.active_projects }}</h4><p>Proyectos activos</p></div></div></div>
-  <div class="col-6 col-lg-2"><div class="small-box bg-primary"><div class="inner"><h4>{{ stats.contacts }}</h4><p>Contactos</p></div></div></div>
-  <div class="col-6 col-lg-2"><div class="small-box bg-success"><div class="inner"><h4>{{ stats.contracts }}</h4><p>Contratos</p></div></div></div>
-  <div class="col-6 col-lg-2"><div class="small-box bg-secondary"><div class="inner"><h4>{{ stats.documents }}</h4><p>Documentos</p></div></div></div>
-  <div class="col-6 col-lg-2"><div class="small-box bg-warning"><div class="inner"><h4>{{ stats.interactions }}</h4><p>Interacciones</p></div></div></div>
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('clients.manage_contacts', client_id=client.id) }}" class="text-reset d-block">
+      <div class="small-box bg-primary"><div class="inner"><h4>{{ stats.contacts }}</h4><p>Contactos</p></div></div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('clients.manage_contracts', client_id=client.id) }}" class="text-reset d-block">
+      <div class="small-box bg-success"><div class="inner"><h4>{{ stats.contracts }}</h4><p>Contratos</p></div></div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('clients.manage_documents', client_id=client.id) }}" class="text-reset d-block">
+      <div class="small-box bg-secondary"><div class="inner"><h4>{{ stats.documents }}</h4><p>Documentos</p></div></div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('clients.manage_interactions', client_id=client.id) }}" class="text-reset d-block">
+      <div class="small-box bg-warning"><div class="inner"><h4>{{ stats.interactions }}</h4><p>Interacciones</p></div></div>
+    </a>
+  </div>
   <div class="col-6 col-lg-2"><div class="small-box bg-danger"><div class="inner"><h4>{{ client.risk_level or '-' }}</h4><p>Riesgo</p></div></div></div>
 </div>
 
-<div class="row g-3">
+<div class="row g-3 view360-client">
   <div class="col-12 col-xl-6">
     <div class="card border-0 metric-card h-100">
-      <div class="card-header"><strong>1. Datos generales</strong></div>
+      <div class="card-header view360-tone-1"><strong>1. Datos generales</strong></div>
       <div class="card-body">
         <dl class="row mb-0">
           <dt class="col-sm-5">Razón social</dt><dd class="col-sm-7">{{ client.legal_name or '-' }}</dd>
@@ -45,7 +66,7 @@
 
   <div class="col-12 col-xl-6">
     <div class="card border-0 metric-card h-100">
-      <div class="card-header"><strong>2. Gestión comercial</strong></div>
+      <div class="card-header view360-tone-2"><strong>2. Gestión comercial</strong></div>
       <div class="card-body">
         <dl class="row mb-0">
           <dt class="col-sm-5">Origen</dt><dd class="col-sm-7">{{ client.lead_source or '-' }}</dd>
@@ -65,7 +86,7 @@
 
   <div class="col-12 col-xl-6">
     <div class="card border-0 metric-card h-100">
-      <div class="card-header"><strong>3. Datos administrativos</strong></div>
+      <div class="card-header view360-tone-3"><strong>3. Datos administrativos</strong></div>
       <div class="card-body">
         <dl class="row mb-0">
           <dt class="col-sm-5">Condición impositiva</dt><dd class="col-sm-7">{{ client.tax_condition or '-' }}</dd>
@@ -82,7 +103,7 @@
 
   <div class="col-12 col-xl-6">
     <div class="card border-0 metric-card h-100">
-      <div class="card-header"><strong>4. Configuración operativa</strong></div>
+      <div class="card-header view360-tone-4"><strong>4. Configuración operativa</strong></div>
       <div class="card-body">
         <dl class="row mb-0">
           <dt class="col-sm-5">Metodología</dt><dd class="col-sm-7">{{ client.methodology or '-' }}</dd>
@@ -103,7 +124,7 @@
 
   <div class="col-12">
     <div class="card border-0 metric-card">
-      <div class="card-header d-flex justify-content-between align-items-center">
+      <div class="card-header view360-tone-5 d-flex justify-content-between align-items-center">
         <strong>5. Contactos y Stakeholders</strong>
         <a href="{{ url_for('clients.manage_contacts', client_id=client.id) }}" class="btn btn-primary btn-sm ml-auto btn-manage-action btn-action-standard">
           Gestionar contactos
@@ -111,7 +132,7 @@
       </div>
       <div class="card-body">
         <div class="table-responsive">
-          <table class="table table-sm table-bordered">
+          <table class="table table-sm table-hover">
             <thead><tr><th>Nombre</th><th>Cargo/Área</th><th>Canales</th><th>Flags</th></tr></thead>
             <tbody>
               {% for contact in contacts %}
@@ -141,7 +162,7 @@
 
   <div class="col-12">
     <div class="card border-0 metric-card">
-      <div class="card-header d-flex justify-content-between align-items-center">
+      <div class="card-header view360-tone-6 d-flex justify-content-between align-items-center">
         <strong>6. Contratos</strong>
         <a href="{{ url_for('clients.manage_contracts', client_id=client.id) }}" class="btn btn-success btn-sm ml-auto btn-manage-action btn-action-standard">
           Gestionar contratos
@@ -172,7 +193,7 @@
 
   <div class="col-12">
     <div class="card border-0 metric-card">
-      <div class="card-header d-flex justify-content-between align-items-center">
+      <div class="card-header view360-tone-7 d-flex justify-content-between align-items-center">
         <strong>7. Documentos</strong>
         <a href="{{ url_for('clients.manage_documents', client_id=client.id) }}" class="btn btn-secondary btn-sm ml-auto btn-manage-action btn-action-standard">
           Gestionar documentos
@@ -201,7 +222,7 @@
 
   <div class="col-12">
     <div class="card border-0 metric-card">
-      <div class="card-header d-flex justify-content-between align-items-center">
+      <div class="card-header view360-tone-8 d-flex justify-content-between align-items-center">
         <strong>8. Interacciones e historial</strong>
         <a href="{{ url_for('clients.manage_interactions', client_id=client.id) }}" class="btn btn-warning btn-sm ml-auto btn-manage-action btn-action-standard">
           Gestionar interacciones
@@ -209,7 +230,7 @@
       </div>
       <div class="card-body">
         <div class="table-responsive">
-          <table class="table table-sm table-bordered">
+          <table class="table table-sm table-hover">
             <thead><tr><th>Fecha</th><th>Tipo</th><th>Asunto</th><th>Responsable</th><th>Próxima acción</th><th>Riesgo</th></tr></thead>
             <tbody>
               {% for item in interactions %}
@@ -236,7 +257,7 @@
 
   <div class="col-12">
     <div class="card border-0 metric-card">
-      <div class="card-header"><strong>9. Proyectos vinculados</strong></div>
+      <div class="card-header view360-tone-9"><strong>9. Proyectos vinculados</strong></div>
       <div class="card-body">
         <ul class="list-group list-group-flush">
           {% for project in projects %}

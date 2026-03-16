@@ -1,6 +1,6 @@
 {% extends 'dashboard/layout.html' %}
 
-{% block title %}{{ 'Editar proyecto' if is_edit else 'Nuevo proyecto' }} | LTAdmin Flask{% endblock %}
+{% block title %}{{ 'Editar proyecto' if is_edit else 'Nuevo proyecto' }} | NCProject{% endblock %}
 {% block page_title %}{{ 'Editar proyecto' if is_edit else 'Nuevo proyecto' }}{% endblock %}
 {% block page_subtitle %}Formulario integral del proyecto{% endblock %}
 {% block page_actions %}
@@ -15,7 +15,8 @@
       <div class="card-body row g-3">
         <div class="col-12 col-lg-3">
           <label class="form-label">Código de proyecto</label>
-          <input name="project_code" class="form-control" value="{{ form_values.get('project_code', project.project_code if project else '') }}">
+          <input name="project_code" class="form-control" readonly value="{{ form_values.get('project_code', project.project_code if project else '') }}" placeholder="Se genera automáticamente">
+          {% if not is_edit %}<small class="text-secondary">Formato automático: AAAyy-NNN</small>{% endif %}
         </div>
         <div class="col-12 col-lg-9">
           <label class="form-label">Nombre *</label>
@@ -157,19 +158,47 @@
         </div>
         <div class="col-12 col-md-6">
           <label class="form-label">Project Manager</label>
-          <input name="project_manager" class="form-control" value="{{ form_values.get('project_manager', project.project_manager if project else '') }}">
+          {% set current_pm = form_values.get('project_manager_resource_id', project.project_manager_resource_id if project else '')|string %}
+          <select name="project_manager_resource_id" class="custom-select">
+            <option value="">Seleccionar</option>
+            {% for resource in active_resources %}
+              <option value="{{ resource.id }}" {% if current_pm == resource.id|string %}selected{% endif %}>{{ resource.full_name }}</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="project_manager" value="{{ form_values.get('project_manager', project.project_manager if project else '') }}">
         </div>
         <div class="col-12 col-md-6">
           <label class="form-label">Responsable comercial</label>
-          <input name="commercial_manager" class="form-control" value="{{ form_values.get('commercial_manager', project.commercial_manager if project else '') }}">
+          {% set current_com = form_values.get('commercial_manager_resource_id', project.commercial_manager_resource_id if project else '')|string %}
+          <select name="commercial_manager_resource_id" class="custom-select">
+            <option value="">Seleccionar</option>
+            {% for resource in active_resources %}
+              <option value="{{ resource.id }}" {% if current_com == resource.id|string %}selected{% endif %}>{{ resource.full_name }}</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="commercial_manager" value="{{ form_values.get('commercial_manager', project.commercial_manager if project else '') }}">
         </div>
         <div class="col-12 col-md-6">
           <label class="form-label">Responsable funcional</label>
-          <input name="functional_manager" class="form-control" value="{{ form_values.get('functional_manager', project.functional_manager if project else '') }}">
+          {% set current_fun = form_values.get('functional_manager_resource_id', project.functional_manager_resource_id if project else '')|string %}
+          <select name="functional_manager_resource_id" class="custom-select">
+            <option value="">Seleccionar</option>
+            {% for resource in active_resources %}
+              <option value="{{ resource.id }}" {% if current_fun == resource.id|string %}selected{% endif %}>{{ resource.full_name }}</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="functional_manager" value="{{ form_values.get('functional_manager', project.functional_manager if project else '') }}">
         </div>
         <div class="col-12 col-md-6">
           <label class="form-label">Responsable técnico</label>
-          <input name="technical_manager" class="form-control" value="{{ form_values.get('technical_manager', project.technical_manager if project else '') }}">
+          {% set current_tech = form_values.get('technical_manager_resource_id', project.technical_manager_resource_id if project else '')|string %}
+          <select name="technical_manager_resource_id" class="custom-select">
+            <option value="">Seleccionar</option>
+            {% for resource in active_resources %}
+              <option value="{{ resource.id }}" {% if current_tech == resource.id|string %}selected{% endif %}>{{ resource.full_name }}</option>
+            {% endfor %}
+          </select>
+          <input type="hidden" name="technical_manager" value="{{ form_values.get('technical_manager', project.technical_manager if project else '') }}">
         </div>
         <div class="col-12 col-md-6">
           <label class="form-label">Sponsor del cliente</label>
@@ -311,7 +340,7 @@
       <div class="card-body p-3">
         {% if is_edit and project %}
         <div class="table-responsive">
-          <table class="table table-sm table-bordered mb-0">
+          <table class="table table-sm table-hover mb-0">
             <thead>
               <tr>
                 <th>Nombre</th>

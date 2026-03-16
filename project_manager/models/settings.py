@@ -36,6 +36,10 @@ class ClientCatalogOptionConfig(TimestampMixin, db.Model):
     field_key = db.Column(db.String(40), nullable=False, index=True)
     name = db.Column(db.String(80), nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    is_system = db.Column(db.Boolean, default=False, nullable=False)
+    is_editable = db.Column(db.Boolean, default=True, nullable=False)
+    is_deletable = db.Column(db.Boolean, default=True, nullable=False)
+    exclude_from_default_list = db.Column(db.Boolean, default=False, nullable=False)
 
     __table_args__ = (
         db.UniqueConstraint(
@@ -56,6 +60,10 @@ class SystemCatalogOptionConfig(TimestampMixin, db.Model):
     catalog_key = db.Column(db.String(60), nullable=False, index=True)
     name = db.Column(db.String(120), nullable=False)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    is_system = db.Column(db.Boolean, default=False, nullable=False)
+    is_editable = db.Column(db.Boolean, default=True, nullable=False)
+    is_deletable = db.Column(db.Boolean, default=True, nullable=False)
+    exclude_from_default_list = db.Column(db.Boolean, default=False, nullable=False)
 
     __table_args__ = (
         db.UniqueConstraint(

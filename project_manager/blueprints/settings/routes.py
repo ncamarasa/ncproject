@@ -1,14 +1,22 @@
 from flask import abort, g, flash, redirect, render_template, request, url_for
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from project_manager.auth_utils import has_permission, login_required
 from project_manager.blueprints.settings import bp
 from project_manager.extensions import db
 from project_manager.models import (
+    Client,
     ClientCatalogOptionConfig,
+    ClientContact,
+    ClientContract,
+    ClientDocument,
+    ClientInteraction,
     CompanyTypeConfig,
     PaymentTypeConfig,
+    Project,
     SystemCatalogOptionConfig,
+    Task,
+    TaskDependency,
 )
 
 
@@ -17,7 +25,17 @@ CLIENT_CATALOG_FIELDS = {
     "company_size": "Tamaño",
     "country": "País",
     "currency_code": "Moneda",
+    "billing_mode": "Modalidad de facturación",
+    "document_category": "Categoría de documento",
+    "client_status": "Estado de cliente",
     "segment": "Segmento",
+    "commercial_priority": "Prioridad comercial",
+    "commercial_status": "Estado comercial",
+    "risk_level": "Riesgo",
+    "influence_level": "Nivel de influencia",
+    "interest_level": "Nivel de interés",
+    "contract_status": "Estado de contrato",
+    "interaction_type": "Tipo de interacción",
     "tax_condition": "Condición impositiva",
     "preferred_support_channel": "Canal de soporte preferido",
     "language": "Idioma",
@@ -55,6 +73,13 @@ PROJECT_CATALOG_DESCRIPTIONS = {
     "project_close_results": "Configura resultados de cierre para análisis de performance.",
 }
 
+SHARED_CLIENT_CATALOG_FIELDS_BY_MODULE = {
+    "projects": {
+        "currency_code": "Moneda",
+        "billing_mode": "Modalidad de facturación",
+    },
+}
+
 
 def _safe_strip(value: str | None) -> str:
     return (value or "").strip()
@@ -87,6 +112,100 @@ def _validate_unique_name(model, owner_user_id: int, name: str, current_id: int 
     return db.session.execute(stmt).scalar_one_or_none() is None
 
 
+def _count_usage(model, column, value: str) -> int:
+    if not value:
+        return 0
+    return db.session.execute(
+        select(func.count()).select_from(model).where(func.lower(column) == value.lower())
+    ).scalar_one()
+
+
+def _company_type_in_use(name: str) -> bool:
+    return _count_usage(Client, Client.client_type, name) > 0
+
+
+def _payment_type_in_use(name: str) -> bool:
+    return _count_usage(Client, Client.payment_terms, name) > 0
+
+
+def _client_catalog_in_use(field_key: str, name: str) -> bool:
+    if field_key == "industry":
+        return _count_usage(Client, Client.industry, name) > 0
+    if field_key == "company_size":
+        return _count_usage(Client, Client.company_size, name) > 0
+    if field_key == "country":
+        return _count_usage(Client, Client.country, name) > 0
+    if field_key == "currency_code":
+        return (
+            _count_usage(Client, Client.currency_code, name) > 0
+            or _count_usage(ClientContract, ClientContract.currency_code, name) > 0
+            or _count_usage(Project, Project.currency_code, name) > 0
+        )
+    if field_key == "billing_mode":
+        return (
+            _count_usage(Client, Client.billing_mode, name) > 0
+            or _count_usage(ClientContract, ClientContract.billing_mode, name) > 0
+            or _count_usage(Project, Project.billing_mode, name) > 0
+        )
+    if field_key == "document_category":
+        return _count_usage(ClientDocument, ClientDocument.category, name) > 0
+    if field_key == "client_status":
+        return _count_usage(Client, Client.status, name) > 0
+    if field_key == "segment":
+        return _count_usage(Client, Client.segment, name) > 0
+    if field_key == "commercial_priority":
+        return _count_usage(Client, Client.commercial_priority, name) > 0
+    if field_key == "commercial_status":
+        return _count_usage(Client, Client.commercial_status, name) > 0
+    if field_key == "risk_level":
+        return (
+            _count_usage(Client, Client.risk_level, name) > 0
+            or _count_usage(Client, Client.criticality_level, name) > 0
+            or _count_usage(ClientInteraction, ClientInteraction.risk_level, name) > 0
+        )
+    if field_key == "influence_level":
+        return _count_usage(ClientContact, ClientContact.influence_level, name) > 0
+    if field_key == "interest_level":
+        return _count_usage(ClientContact, ClientContact.interest_level, name) > 0
+    if field_key == "contract_status":
+        return _count_usage(ClientContract, ClientContract.status, name) > 0
+    if field_key == "interaction_type":
+        return _count_usage(ClientInteraction, ClientInteraction.interaction_type, name) > 0
+    if field_key == "tax_condition":
+        return _count_usage(Client, Client.tax_condition, name) > 0
+    if field_key == "preferred_support_channel":
+        return _count_usage(Client, Client.preferred_support_channel, name) > 0
+    if field_key == "language":
+        return _count_usage(Client, Client.language, name) > 0
+    return False
+
+
+def _project_catalog_in_use(catalog_key: str, name: str) -> bool:
+    if catalog_key == "project_types":
+        return _count_usage(Project, Project.project_type, name) > 0
+    if catalog_key == "project_statuses":
+        return _count_usage(Project, Project.status, name) > 0
+    if catalog_key == "project_priorities":
+        return _count_usage(Project, Project.priority, name) > 0
+    if catalog_key == "project_complexities":
+        return _count_usage(Project, Project.complexity_level, name) > 0
+    if catalog_key == "project_criticalities":
+        return _count_usage(Project, Project.criticality_level, name) > 0
+    if catalog_key == "project_methodologies":
+        return _count_usage(Project, Project.methodology, name) > 0
+    if catalog_key == "project_origins":
+        return _count_usage(Project, Project.project_origin, name) > 0
+    if catalog_key == "task_types":
+        return _count_usage(Task, Task.task_type, name) > 0
+    if catalog_key == "task_statuses":
+        return _count_usage(Task, Task.status, name) > 0
+    if catalog_key == "task_priorities":
+        return _count_usage(Task, Task.priority, name) > 0
+    if catalog_key == "task_dependency_types":
+        return _count_usage(TaskDependency, TaskDependency.dependency_type, name) > 0
+    return False
+
+
 @bp.before_request
 def _authorize_settings_module():
     if g.get("user") is None:
@@ -115,6 +234,7 @@ def projects_settings():
         "settings/projects.html",
         project_catalog_fields=PROJECT_CATALOG_FIELDS,
         project_catalog_descriptions=PROJECT_CATALOG_DESCRIPTIONS,
+        shared_catalog_fields=SHARED_CLIENT_CATALOG_FIELDS_BY_MODULE.get("projects", {}),
     )
 
 
@@ -188,6 +308,9 @@ def edit_project_catalog(catalog_key: str, item_id: int):
         or item.catalog_key != catalog_key
     ):
         abort(404)
+    if not item.is_editable:
+        flash("No se puede editar: la opción es de sistema.", "danger")
+        return redirect(url_for("settings.project_catalog", catalog_key=catalog_key))
 
     if request.method == "POST":
         name = _safe_strip(request.form.get("name"))
@@ -232,6 +355,12 @@ def delete_project_catalog(catalog_key: str, item_id: int):
         or item.catalog_key != catalog_key
     ):
         abort(404)
+    if not item.is_deletable:
+        flash("No se puede eliminar: la opción es de sistema.", "danger")
+        return redirect(url_for("settings.project_catalog", catalog_key=catalog_key))
+    if _project_catalog_in_use(catalog_key, item.name):
+        flash("No se puede eliminar: la opción está siendo utilizada.", "danger")
+        return redirect(url_for("settings.project_catalog", catalog_key=catalog_key))
     item.is_active = False
     db.session.commit()
     flash("Valor eliminado.", "info")
@@ -270,6 +399,9 @@ def delete_company_type(item_id: int):
     item = db.session.get(CompanyTypeConfig, item_id)
     if not item or item.owner_user_id != g.user.id:
         abort(404)
+    if _company_type_in_use(item.name):
+        flash("No se puede eliminar: el tipo de empresa está en uso.", "danger")
+        return redirect(url_for("settings.company_types"))
     item.is_active = False
     db.session.commit()
     flash("Tipo de empresa eliminado.", "info")
@@ -324,6 +456,9 @@ def delete_payment_type(item_id: int):
     item = db.session.get(PaymentTypeConfig, item_id)
     if not item or item.owner_user_id != g.user.id:
         abort(404)
+    if _payment_type_in_use(item.name):
+        flash("No se puede eliminar: el tipo de pago está en uso.", "danger")
+        return redirect(url_for("settings.payment_types"))
     item.is_active = False
     db.session.commit()
     flash("Tipo de pago eliminado.", "info")
@@ -418,6 +553,9 @@ def edit_client_catalog(field_key: str, item_id: int):
         or item.field_key != field_key
     ):
         abort(404)
+    if not item.is_editable:
+        flash("No se puede editar: la opción es de sistema.", "danger")
+        return redirect(url_for("settings.client_catalog", field_key=field_key))
 
     if request.method == "POST":
         name = _safe_strip(request.form.get("name"))
@@ -460,6 +598,12 @@ def delete_client_catalog(field_key: str, item_id: int):
         or item.field_key != field_key
     ):
         abort(404)
+    if not item.is_deletable:
+        flash("No se puede eliminar: la opción es de sistema.", "danger")
+        return redirect(url_for("settings.client_catalog", field_key=field_key))
+    if _client_catalog_in_use(field_key, item.name):
+        flash("No se puede eliminar: la opción está siendo utilizada.", "danger")
+        return redirect(url_for("settings.client_catalog", field_key=field_key))
     item.is_active = False
     db.session.commit()
     flash("Valor eliminado.", "info")

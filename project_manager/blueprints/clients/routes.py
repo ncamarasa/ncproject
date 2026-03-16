@@ -26,28 +26,12 @@ from project_manager.models import (
     CompanyTypeConfig,
     PaymentTypeConfig,
     Project,
+    Resource,
     UserClientAssignment,
 )
+from project_manager.services.code_generation import generate_client_code
 
-CLIENT_TYPES = ["Empresa", "Gobierno", "ONG", "Startup", "Otro"]
-PAYMENT_TYPES = ["Contado", "15 días", "30 días", "45 días", "60 días"]
 CLIENT_STATUS_DELETED = "Eliminado"
-CLIENT_STATUSES = ["Prospecto", "Activo", "En pausa", "Inactivo", CLIENT_STATUS_DELETED]
-SEGMENTS = ["Enterprise", "Mid-Market", "SMB", "Publico"]
-INDUSTRIES = ["Software", "Finanzas", "Salud", "Educacion", "Retail", "Manufactura"]
-COMPANY_SIZES = ["Micro", "PyME", "Mediana", "Grande", "Enterprise"]
-COUNTRIES = ["Argentina", "Chile", "Uruguay", "Mexico", "Colombia", "Espana"]
-CURRENCIES = ["ARS", "USD", "EUR", "CLP", "UYU", "COP"]
-TAX_CONDITIONS = ["Responsable Inscripto", "Monotributo", "Exento", "Consumidor Final"]
-SUPPORT_CHANNELS = ["Email", "WhatsApp", "Portal", "Telefono", "Slack", "Teams"]
-LANGUAGES = ["Espanol", "Ingles", "Portugues"]
-COMMERCIAL_PRIORITIES = ["Baja", "Media", "Alta", "Critica"]
-COMMERCIAL_STATUSES = ["Descubierto", "Calificado", "Propuesta", "Negociacion", "Ganado", "Perdido"]
-RISK_LEVELS = ["Bajo", "Medio", "Alto", "Critico"]
-INFLUENCE_LEVELS = ["Baja", "Media", "Alta"]
-INTEREST_LEVELS = ["Bajo", "Medio", "Alto"]
-CONTRACT_STATUSES = ["Borrador", "Vigente", "Vencido", "Rescindido"]
-INTERACTION_TYPES = ["Nota", "Llamada", "Email", "Reunion", "Soporte", "Riesgo"]
 ALLOWED_ATTACHMENT_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "png", "jpg", "jpeg", "txt"}
 CONTRACT_ENDPOINTS = {
     "clients.manage_contracts",
@@ -124,16 +108,26 @@ def _validate_choice(value: str | None, options: list[str], label: str, errors: 
 
 
 def _active_menu_context():
-    client_types = _user_config_values(CompanyTypeConfig, CLIENT_TYPES)
-    payment_types = _user_config_values(PaymentTypeConfig, PAYMENT_TYPES)
-    industries = _catalog_options("industry", INDUSTRIES)
-    company_sizes = _catalog_options("company_size", COMPANY_SIZES)
-    countries = _catalog_options("country", COUNTRIES)
-    currencies = _catalog_options("currency_code", CURRENCIES)
-    segments = _catalog_options("segment", SEGMENTS)
-    tax_conditions = _catalog_options("tax_condition", TAX_CONDITIONS)
-    support_channels = _catalog_options("preferred_support_channel", SUPPORT_CHANNELS)
-    languages = _catalog_options("language", LANGUAGES)
+    client_types = _user_config_values(CompanyTypeConfig)
+    payment_types = _user_config_values(PaymentTypeConfig)
+    industries = _catalog_options("industry")
+    company_sizes = _catalog_options("company_size")
+    countries = _catalog_options("country")
+    currencies = _catalog_options("currency_code")
+    segments = _catalog_options("segment")
+    tax_conditions = _catalog_options("tax_condition")
+    support_channels = _catalog_options("preferred_support_channel")
+    languages = _catalog_options("language")
+    billing_modes = _catalog_options("billing_mode")
+    document_categories = _catalog_options("document_category")
+    client_statuses = _catalog_options("client_status")
+    commercial_priorities = _catalog_options("commercial_priority")
+    commercial_statuses = _catalog_options("commercial_status")
+    risk_levels = _catalog_options("risk_level")
+    influence_levels = _catalog_options("influence_level")
+    interest_levels = _catalog_options("interest_level")
+    contract_statuses = _catalog_options("contract_status")
+    interaction_types = _catalog_options("interaction_type")
     return {
         "client_types": client_types,
         "payment_types": payment_types,
@@ -145,31 +139,40 @@ def _active_menu_context():
         "tax_conditions": tax_conditions,
         "support_channels": support_channels,
         "languages": languages,
-        "client_statuses": CLIENT_STATUSES,
-        "commercial_priorities": COMMERCIAL_PRIORITIES,
-        "commercial_statuses": COMMERCIAL_STATUSES,
-        "risk_levels": RISK_LEVELS,
-        "influence_levels": INFLUENCE_LEVELS,
-        "interest_levels": INTEREST_LEVELS,
-        "contract_statuses": CONTRACT_STATUSES,
-        "interaction_types": INTERACTION_TYPES,
+        "billing_modes": billing_modes,
+        "document_categories": document_categories,
+        "client_statuses": client_statuses,
+        "commercial_priorities": commercial_priorities,
+        "commercial_statuses": commercial_statuses,
+        "risk_levels": risk_levels,
+        "influence_levels": influence_levels,
+        "interest_levels": interest_levels,
+        "contract_statuses": contract_statuses,
+        "interaction_types": interaction_types,
+        "active_resources": _active_resources(),
     }
 
 
-def _user_config_values(model, fallback: list[str]):
+def _active_resources():
+    return db.session.execute(
+        select(Resource).where(Resource.is_active.is_(True)).order_by(Resource.full_name.asc())
+    ).scalars().all()
+
+
+def _user_config_values(model):
     if not g.user:
-        return fallback
+        return []
     values = db.session.execute(
         select(model.name)
         .where(model.owner_user_id == g.user.id, model.is_active.is_(True))
         .order_by(model.name.asc())
     ).scalars().all()
-    return values or fallback
+    return values
 
 
-def _catalog_options(field_key: str, fallback: list[str]):
+def _catalog_options(field_key: str):
     if not g.user:
-        return fallback
+        return []
     values = db.session.execute(
         select(ClientCatalogOptionConfig.name)
         .where(
@@ -177,9 +180,9 @@ def _catalog_options(field_key: str, fallback: list[str]):
             ClientCatalogOptionConfig.field_key == field_key,
             ClientCatalogOptionConfig.is_active.is_(True),
         )
-        .order_by(ClientCatalogOptionConfig.name.asc())
+        .order_by(ClientCatalogOptionConfig.is_system.asc(), ClientCatalogOptionConfig.name.asc())
     ).scalars().all()
-    return values or fallback
+    return values
 
 
 def _load_client_or_404(client_id: int) -> Client:
@@ -245,9 +248,14 @@ def _validate_client_form(
     country_options: list[str],
     currency_options: list[str],
     segment_options: list[str],
+    commercial_priority_options: list[str],
+    commercial_status_options: list[str],
+    risk_level_options: list[str],
     tax_condition_options: list[str],
     support_channel_options: list[str],
     language_options: list[str],
+    billing_mode_options: list[str],
+    client_status_options: list[str],
 ):
     errors = []
 
@@ -263,7 +271,7 @@ def _validate_client_form(
     client_type = _validate_choice(
         form.get("client_type"), client_type_options, "Tipo de cliente", errors
     )
-    status = _validate_choice(form.get("status"), CLIENT_STATUSES, "Estado de cliente", errors)
+    status = _validate_choice(form.get("status"), client_status_options, "Estado de cliente", errors)
     industry = _validate_choice(form.get("industry"), industry_options, "Rubro", errors)
     company_size = _validate_choice(form.get("company_size"), company_size_options, "Tamaño", errors)
     country = _validate_choice(form.get("country"), country_options, "País", errors)
@@ -278,16 +286,18 @@ def _validate_client_form(
     lead_source = _safe_strip(form.get("lead_source"))
     segment = _validate_choice(form.get("segment"), segment_options, "Segmento", errors)
     commercial_priority = _validate_choice(
-        form.get("commercial_priority"), COMMERCIAL_PRIORITIES, "Prioridad comercial", errors
+        form.get("commercial_priority"), commercial_priority_options, "Prioridad comercial", errors
     )
+    sales_executive_resource_id = _to_int(form.get("sales_executive_resource_id"))
+    account_manager_resource_id = _to_int(form.get("account_manager_resource_id"))
     sales_executive = _safe_strip(form.get("sales_executive"))
     account_manager = _safe_strip(form.get("account_manager"))
     commercial_status = _validate_choice(
-        form.get("commercial_status"), COMMERCIAL_STATUSES, "Estado comercial", errors
+        form.get("commercial_status"), commercial_status_options, "Estado comercial", errors
     )
     billing_potential = _to_decimal(form.get("billing_potential"))
     health_score = _to_int(form.get("health_score"))
-    risk_level = _validate_choice(form.get("risk_level"), RISK_LEVELS, "Riesgo", errors)
+    risk_level = _validate_choice(form.get("risk_level"), risk_level_options, "Riesgo", errors)
     last_interaction_at = _parse_date(form.get("last_interaction_at"))
     next_action_at = _parse_date(form.get("next_action_at"))
 
@@ -313,10 +323,11 @@ def _validate_client_form(
     support_hours = _safe_strip(form.get("support_hours"))
     timezone = _safe_strip(form.get("timezone"))
     language = _validate_choice(form.get("language"), language_options, "Idioma", errors)
+    delivery_manager_resource_id = _to_int(form.get("delivery_manager_resource_id"))
     delivery_manager = _safe_strip(form.get("delivery_manager"))
-    criticality_level = _validate_choice(form.get("criticality_level"), RISK_LEVELS, "Criticidad", errors)
+    criticality_level = _validate_choice(form.get("criticality_level"), risk_level_options, "Criticidad", errors)
     service_type = _safe_strip(form.get("service_type"))
-    billing_mode = _safe_strip(form.get("billing_mode"))
+    billing_mode = _validate_choice(form.get("billing_mode"), billing_mode_options, "Modalidad de facturación", errors)
     default_rate = _to_decimal(form.get("default_rate"))
     contracted_hours = _to_decimal(form.get("contracted_hours"))
     approval_flow = _safe_strip(form.get("approval_flow"))
@@ -354,6 +365,25 @@ def _validate_client_form(
     if last_interaction_at and next_action_at and last_interaction_at > next_action_at:
         errors.append("La próxima acción no puede ser anterior a la última interacción.")
 
+    sales_exec_resource = db.session.get(Resource, sales_executive_resource_id) if sales_executive_resource_id else None
+    if sales_executive_resource_id and (not sales_exec_resource or not sales_exec_resource.is_active):
+        errors.append("Ejecutivo comercial inválido.")
+
+    account_manager_resource = db.session.get(Resource, account_manager_resource_id) if account_manager_resource_id else None
+    if account_manager_resource_id and (not account_manager_resource or not account_manager_resource.is_active):
+        errors.append("Gerente de cuenta inválido.")
+
+    delivery_manager_resource = db.session.get(Resource, delivery_manager_resource_id) if delivery_manager_resource_id else None
+    if delivery_manager_resource_id and (not delivery_manager_resource or not delivery_manager_resource.is_active):
+        errors.append("Delivery manager inválido.")
+
+    if sales_exec_resource:
+        sales_executive = sales_exec_resource.full_name
+    if account_manager_resource:
+        account_manager = account_manager_resource.full_name
+    if delivery_manager_resource:
+        delivery_manager = delivery_manager_resource.full_name
+
     return {
         "errors": errors,
         "payload": {
@@ -381,7 +411,9 @@ def _validate_client_form(
             "segment": segment,
             "commercial_priority": commercial_priority,
             "sales_executive": sales_executive,
+            "sales_executive_resource_id": sales_executive_resource_id,
             "account_manager": account_manager,
+            "account_manager_resource_id": account_manager_resource_id,
             "commercial_status": commercial_status,
             "billing_potential": billing_potential,
             "health_score": health_score,
@@ -401,6 +433,7 @@ def _validate_client_form(
             "timezone": timezone,
             "language": language,
             "delivery_manager": delivery_manager,
+            "delivery_manager_resource_id": delivery_manager_resource_id,
             "criticality_level": criticality_level,
             "service_type": service_type,
             "billing_mode": billing_mode,
@@ -443,6 +476,17 @@ def list_clients():
         stmt = stmt.where(Client.is_active.is_(active == "1"))
     if status:
         stmt = stmt.where(Client.status == status)
+    else:
+        excluded_statuses = db.session.execute(
+            select(ClientCatalogOptionConfig.name).where(
+                ClientCatalogOptionConfig.owner_user_id == g.user.id,
+                ClientCatalogOptionConfig.field_key == "client_status",
+                ClientCatalogOptionConfig.exclude_from_default_list.is_(True),
+                ClientCatalogOptionConfig.is_active.is_(True),
+            )
+        ).scalars().all()
+        if excluded_statuses:
+            stmt = stmt.where(or_(Client.status.is_(None), Client.status.not_in(excluded_statuses)))
     if segment:
         stmt = stmt.where(Client.segment == segment)
     if risk:
@@ -472,16 +516,21 @@ def create_client():
     if request.method == "POST":
         result = _validate_client_form(
             request.form,
-            client_type_options=_user_config_values(CompanyTypeConfig, CLIENT_TYPES),
-            payment_type_options=_user_config_values(PaymentTypeConfig, PAYMENT_TYPES),
-            industry_options=_catalog_options("industry", INDUSTRIES),
-            company_size_options=_catalog_options("company_size", COMPANY_SIZES),
-            country_options=_catalog_options("country", COUNTRIES),
-            currency_options=_catalog_options("currency_code", CURRENCIES),
-            segment_options=_catalog_options("segment", SEGMENTS),
-            tax_condition_options=_catalog_options("tax_condition", TAX_CONDITIONS),
-            support_channel_options=_catalog_options("preferred_support_channel", SUPPORT_CHANNELS),
-            language_options=_catalog_options("language", LANGUAGES),
+            client_type_options=_user_config_values(CompanyTypeConfig),
+            payment_type_options=_user_config_values(PaymentTypeConfig),
+            industry_options=_catalog_options("industry"),
+            company_size_options=_catalog_options("company_size"),
+            country_options=_catalog_options("country"),
+            currency_options=_catalog_options("currency_code"),
+            segment_options=_catalog_options("segment"),
+            commercial_priority_options=_catalog_options("commercial_priority"),
+            commercial_status_options=_catalog_options("commercial_status"),
+            risk_level_options=_catalog_options("risk_level"),
+            tax_condition_options=_catalog_options("tax_condition"),
+            support_channel_options=_catalog_options("preferred_support_channel"),
+            language_options=_catalog_options("language"),
+            billing_mode_options=_catalog_options("billing_mode"),
+            client_status_options=_catalog_options("client_status"),
         )
         errors = result["errors"]
 
@@ -497,6 +546,12 @@ def create_client():
             )
 
         client = Client(**result["payload"])
+        # Código autogenerado de cliente: AAA##.
+        client.client_code = generate_client_code(
+            Client,
+            Client.client_code,
+            client.name,
+        )
         db.session.add(client)
         db.session.flush()
         if g.user and not g.user.full_access and g.user.username != "admin":
@@ -618,16 +673,21 @@ def edit_client(client_id: int):
         result = _validate_client_form(
             request.form,
             client_id=client.id,
-            client_type_options=_user_config_values(CompanyTypeConfig, CLIENT_TYPES),
-            payment_type_options=_user_config_values(PaymentTypeConfig, PAYMENT_TYPES),
-            industry_options=_catalog_options("industry", INDUSTRIES),
-            company_size_options=_catalog_options("company_size", COMPANY_SIZES),
-            country_options=_catalog_options("country", COUNTRIES),
-            currency_options=_catalog_options("currency_code", CURRENCIES),
-            segment_options=_catalog_options("segment", SEGMENTS),
-            tax_condition_options=_catalog_options("tax_condition", TAX_CONDITIONS),
-            support_channel_options=_catalog_options("preferred_support_channel", SUPPORT_CHANNELS),
-            language_options=_catalog_options("language", LANGUAGES),
+            client_type_options=_user_config_values(CompanyTypeConfig),
+            payment_type_options=_user_config_values(PaymentTypeConfig),
+            industry_options=_catalog_options("industry"),
+            company_size_options=_catalog_options("company_size"),
+            country_options=_catalog_options("country"),
+            currency_options=_catalog_options("currency_code"),
+            segment_options=_catalog_options("segment"),
+            commercial_priority_options=_catalog_options("commercial_priority"),
+            commercial_status_options=_catalog_options("commercial_status"),
+            risk_level_options=_catalog_options("risk_level"),
+            tax_condition_options=_catalog_options("tax_condition"),
+            support_channel_options=_catalog_options("preferred_support_channel"),
+            language_options=_catalog_options("language"),
+            billing_mode_options=_catalog_options("billing_mode"),
+            client_status_options=_catalog_options("client_status"),
         )
         errors = result["errors"]
         is_active = _to_bool(request.form.get("is_active"))
@@ -652,6 +712,12 @@ def edit_client(client_id: int):
         for key, value in result["payload"].items():
             setattr(client, key, value)
         client.is_active = is_active
+        if not client.client_code:
+            client.client_code = generate_client_code(
+                Client,
+                Client.client_code,
+                client.name,
+            )
 
         db.session.commit()
 
@@ -667,7 +733,7 @@ def edit_client(client_id: int):
     )
 
 
-def _contact_payload_from_form(form):
+def _contact_payload_from_form(form, *, influence_options: list[str], interest_options: list[str]):
     errors = []
     full_name = _safe_strip(form.get("full_name"))
     if len(full_name) < 2:
@@ -681,8 +747,8 @@ def _contact_payload_from_form(form):
         "phone": _safe_strip(form.get("phone")),
         "whatsapp": _safe_strip(form.get("whatsapp")),
         "relationship_role": _safe_strip(form.get("relationship_role")),
-        "influence_level": _validate_choice(form.get("influence_level"), INFLUENCE_LEVELS, "Influencia", []),
-        "interest_level": _validate_choice(form.get("interest_level"), INTEREST_LEVELS, "Interés", []),
+        "influence_level": _validate_choice(form.get("influence_level"), influence_options, "Influencia", []),
+        "interest_level": _validate_choice(form.get("interest_level"), interest_options, "Interés", []),
         "is_primary": _to_bool(form.get("is_primary")),
         "is_technical": _to_bool(form.get("is_technical")),
         "is_administrative": _to_bool(form.get("is_administrative")),
@@ -705,7 +771,11 @@ def manage_contacts(client_id: int):
             edit_contact = None
 
     if request.method == "POST":
-        payload, errors = _contact_payload_from_form(request.form)
+        payload, errors = _contact_payload_from_form(
+            request.form,
+            influence_options=_catalog_options("influence_level"),
+            interest_options=_catalog_options("interest_level"),
+        )
         if errors:
             for err in errors:
                 flash(err, "danger")
@@ -751,7 +821,11 @@ def edit_contact(client_id: int, contact_id: int):
         abort(404)
 
     if request.method == "POST":
-        payload, errors = _contact_payload_from_form(request.form)
+        payload, errors = _contact_payload_from_form(
+            request.form,
+            influence_options=_catalog_options("influence_level"),
+            interest_options=_catalog_options("interest_level"),
+        )
         if errors:
             for err in errors:
                 flash(err, "danger")
@@ -804,7 +878,15 @@ def delete_contact(client_id: int, contact_id: int):
     return redirect(url_for("clients.manage_contacts", client_id=client_id, page=page))
 
 
-def _contract_payload_from_form(form, files, *, require_attachment: bool = False):
+def _contract_payload_from_form(
+    form,
+    files,
+    *,
+    require_attachment: bool = False,
+    billing_mode_options: list[str],
+    currency_options: list[str],
+    status_options: list[str],
+):
     errors = []
     contract_type = _safe_strip(form.get("contract_type"))
     if not contract_type:
@@ -824,7 +906,11 @@ def _contract_payload_from_form(form, files, *, require_attachment: bool = False
     if require_attachment and not file_name:
         errors.append("Debes adjuntar un archivo de contrato.")
 
-    status = _validate_choice(form.get("status"), CONTRACT_STATUSES, "Estado de contrato", errors)
+    status = _validate_choice(form.get("status"), status_options, "Estado de contrato", errors)
+    billing_mode = _validate_choice(
+        form.get("billing_mode"), billing_mode_options, "Modalidad de facturación", errors
+    )
+    currency_code = _validate_choice(form.get("currency_code"), currency_options, "Moneda", errors)
     payload = {
         "contract_type": contract_type,
         "contract_code": _safe_strip(form.get("contract_code")),
@@ -837,8 +923,8 @@ def _contract_payload_from_form(form, files, *, require_attachment: bool = False
         "nda_signed": _to_bool(form.get("nda_signed")),
         "data_processing_agreement": _to_bool(form.get("data_processing_agreement")),
         "status": status,
-        "billing_mode": _safe_strip(form.get("billing_mode")),
-        "currency_code": _safe_strip(form.get("currency_code")),
+        "billing_mode": billing_mode,
+        "currency_code": currency_code,
         "amount": _to_decimal(form.get("amount")),
         "notes": _safe_strip(form.get("notes")),
     }
@@ -852,7 +938,12 @@ def manage_contracts(client_id: int):
     page = _to_int(request.args.get("page")) or 1
     if request.method == "POST":
         payload, file_name, original_name, errors = _contract_payload_from_form(
-            request.form, request.files, require_attachment=False
+            request.form,
+            request.files,
+            require_attachment=False,
+            billing_mode_options=_catalog_options("billing_mode"),
+            currency_options=_catalog_options("currency_code"),
+            status_options=_catalog_options("contract_status"),
         )
         if errors:
             for err in errors:
@@ -899,7 +990,12 @@ def edit_contract(client_id: int, contract_id: int):
 
     if request.method == "POST":
         payload, new_file_name, new_original_name, errors = _contract_payload_from_form(
-            request.form, request.files, require_attachment=False
+            request.form,
+            request.files,
+            require_attachment=False,
+            billing_mode_options=_catalog_options("billing_mode"),
+            currency_options=_catalog_options("currency_code"),
+            status_options=_catalog_options("contract_status"),
         )
         if errors:
             for err in errors:
@@ -963,7 +1059,14 @@ def delete_contract(client_id: int, contract_id: int):
     return redirect(url_for("clients.manage_contracts", client_id=client_id, page=page))
 
 
-def _document_payload_from_form(form, files, *, require_file: bool):
+def _document_payload_from_form(
+    form,
+    files,
+    *,
+    require_file: bool,
+    category_options: list[str],
+    actor_name: str,
+):
     errors = []
     title = _safe_strip(form.get("title"))
     if len(title) < 2:
@@ -976,11 +1079,12 @@ def _document_payload_from_form(form, files, *, require_file: bool):
     if require_file and not file_name:
         errors.append("Debes adjuntar un archivo.")
 
+    category = _validate_choice(form.get("category"), category_options, "Categoría", errors)
     payload = {
         "title": title,
-        "category": _safe_strip(form.get("category")),
+        "category": category,
         "expires_on": _parse_date(form.get("expires_on")),
-        "uploaded_by": _safe_strip(form.get("uploaded_by")),
+        "uploaded_by": actor_name,
         "notes": _safe_strip(form.get("notes")),
     }
     return payload, file_name, original_name, errors
@@ -991,9 +1095,14 @@ def _document_payload_from_form(form, files, *, require_file: bool):
 def manage_documents(client_id: int):
     client = _load_client_or_404(client_id)
     page = _to_int(request.args.get("page")) or 1
+    actor_name = g.user.display_name if g.get("user") else ""
     if request.method == "POST":
         payload, file_name, original_name, errors = _document_payload_from_form(
-            request.form, request.files, require_file=True
+            request.form,
+            request.files,
+            require_file=True,
+            category_options=_catalog_options("document_category"),
+            actor_name=actor_name,
         )
         if errors:
             for err in errors:
@@ -1025,6 +1134,7 @@ def manage_documents(client_id: int):
         build_page_url=_build_page_url,
         edit_document=None,
         form_values={},
+        actor_name=actor_name,
         **_active_menu_context(),
     )
 
@@ -1034,13 +1144,18 @@ def manage_documents(client_id: int):
 def edit_document(client_id: int, document_id: int):
     client = _load_client_or_404(client_id)
     page = _to_int(request.args.get("page")) or 1
+    actor_name = g.user.display_name if g.get("user") else ""
     document = db.session.get(ClientDocument, document_id)
     if not document or document.client_id != client.id:
         abort(404)
 
     if request.method == "POST":
         payload, new_file_name, new_original_name, errors = _document_payload_from_form(
-            request.form, request.files, require_file=False
+            request.form,
+            request.files,
+            require_file=False,
+            category_options=_catalog_options("document_category"),
+            actor_name=actor_name,
         )
         if errors:
             for err in errors:
@@ -1071,6 +1186,7 @@ def edit_document(client_id: int, document_id: int):
         build_page_url=_build_page_url,
         edit_document=document,
         form_values=request.form if request.method == "POST" else {},
+        actor_name=actor_name,
         **_active_menu_context(),
     )
 
@@ -1105,15 +1221,15 @@ def delete_document(client_id: int, document_id: int):
     return redirect(url_for("clients.manage_documents", client_id=client_id, page=page))
 
 
-def _interaction_payload_from_form(form):
+def _interaction_payload_from_form(form, *, interaction_type_options: list[str], risk_level_options: list[str]):
     errors = []
     interaction_type = _validate_choice(
-        form.get("interaction_type"), INTERACTION_TYPES, "Tipo de interacción", errors
+        form.get("interaction_type"), interaction_type_options, "Tipo de interacción", errors
     )
     subject = _safe_strip(form.get("subject"))
     interaction_date = _parse_date(form.get("interaction_date"))
     next_action_date = _parse_date(form.get("next_action_date"))
-    risk_level = _validate_choice(form.get("risk_level"), RISK_LEVELS, "Riesgo", errors)
+    risk_level = _validate_choice(form.get("risk_level"), risk_level_options, "Riesgo", errors)
 
     if len(subject) < 3:
         errors.append("El asunto debe tener al menos 3 caracteres.")
@@ -1140,7 +1256,11 @@ def manage_interactions(client_id: int):
     client = _load_client_or_404(client_id)
     page = _to_int(request.args.get("page")) or 1
     if request.method == "POST":
-        payload, errors = _interaction_payload_from_form(request.form)
+        payload, errors = _interaction_payload_from_form(
+            request.form,
+            interaction_type_options=_catalog_options("interaction_type"),
+            risk_level_options=_catalog_options("risk_level"),
+        )
         if errors:
             for err in errors:
                 flash(err, "danger")
@@ -1185,7 +1305,11 @@ def edit_interaction(client_id: int, interaction_id: int):
         abort(404)
 
     if request.method == "POST":
-        payload, errors = _interaction_payload_from_form(request.form)
+        payload, errors = _interaction_payload_from_form(
+            request.form,
+            interaction_type_options=_catalog_options("interaction_type"),
+            risk_level_options=_catalog_options("risk_level"),
+        )
         if errors:
             for err in errors:
                 flash(err, "danger")
@@ -1245,16 +1369,28 @@ def delete_client(client_id: int):
         flash("El cliente ya está marcado como eliminado.", "info")
         return redirect(url_for("clients.edit_client", client_id=client.id))
 
-    related_projects = db.session.execute(
-        select(func.count(Project.id)).where(Project.client_id == client.id)
+    # Solo bloqueamos baja si hay proyectos operativamente activos.
+    # Proyectos cancelados/completados no impiden la baja lógica del cliente.
+    blocking_projects = db.session.execute(
+        select(func.count(Project.id)).where(
+            Project.client_id == client.id,
+            Project.is_active.is_(True),
+            Project.status.not_in(["Cancelado", "Completado"]),
+        )
     ).scalar_one()
-    related_contracts = db.session.execute(
-        select(func.count(ClientContract.id)).where(ClientContract.client_id == client.id)
+    # Solo bloqueamos por contratos vigentes/activos/borrador y no vencidos.
+    today = date.today()
+    blocking_contracts = db.session.execute(
+        select(func.count(ClientContract.id)).where(
+            ClientContract.client_id == client.id,
+            ClientContract.status.in_(["Vigente", "Activo", "Borrador"]),
+            (ClientContract.end_date.is_(None) | (ClientContract.end_date >= today)),
+        )
     ).scalar_one()
 
-    if related_projects > 0 or related_contracts > 0:
+    if blocking_projects > 0 or blocking_contracts > 0:
         flash(
-            "No puedes eliminar este cliente porque tiene proyectos o contratos asociados.",
+            "No puedes eliminar este cliente porque tiene proyectos activos o contratos vigentes asociados.",
             "warning",
         )
         return redirect(url_for("clients.edit_client", client_id=client.id))

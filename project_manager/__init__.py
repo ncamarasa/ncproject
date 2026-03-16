@@ -40,6 +40,7 @@ def create_app() -> Flask:
     from project_manager.blueprints.main import bp as main_bp
     from project_manager.blueprints.projects import bp as projects_bp
     from project_manager.blueprints.settings import bp as settings_bp
+    from project_manager.blueprints.team import bp as team_bp
     from project_manager.blueprints.tasks import bp as tasks_bp
     from project_manager.blueprints.administration import bp as administration_bp
 
@@ -48,6 +49,7 @@ def create_app() -> Flask:
     app.register_blueprint(main_bp)
     app.register_blueprint(projects_bp)
     app.register_blueprint(settings_bp)
+    app.register_blueprint(team_bp)
     app.register_blueprint(tasks_bp)
     app.register_blueprint(administration_bp)
 
@@ -95,7 +97,13 @@ def create_app() -> Flask:
 
         role = db.session.execute(select(Role).where(Role.name == "Administrador")).scalar_one_or_none()
         if not role:
-            role = Role(name="Administrador", description="Acceso completo al sistema")
+            role = Role(
+                name="Administrador",
+                description="Acceso completo al sistema",
+                is_system=True,
+                is_editable=False,
+                is_deletable=False,
+            )
             db.session.add(role)
             db.session.flush()
 
@@ -110,6 +118,8 @@ def create_app() -> Flask:
             ("tasks.edit", "Editar tareas", "tasks"),
             ("settings.view", "Ver configuración", "settings"),
             ("settings.edit", "Editar configuración", "settings"),
+            ("team.view", "Ver equipo", "team"),
+            ("team.edit", "Editar equipo", "team"),
             ("users.manage", "Administrar usuarios", "users"),
             ("auth.reset_password", "Resetear contraseñas", "users"),
             ("audit.view", "Ver auditoría", "audit"),

@@ -11,6 +11,9 @@ class Role(TimestampMixin, db.Model):
     name = db.Column(db.String(80), unique=True, nullable=False)
     description = db.Column(db.String(255), nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    is_system = db.Column(db.Boolean, default=False, nullable=False)
+    is_editable = db.Column(db.Boolean, default=True, nullable=False)
+    is_deletable = db.Column(db.Boolean, default=True, nullable=False)
 
     users = db.relationship("User", back_populates="role", lazy="selectin")
     permissions = db.relationship(
