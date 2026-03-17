@@ -231,19 +231,24 @@
       <div class="card-body">
         <div class="table-responsive">
           <table class="table table-sm table-hover">
-            <thead><tr><th>Fecha</th><th>Tipo</th><th>Asunto</th><th>Responsable</th><th>Próxima acción</th><th>Riesgo</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Tipo</th><th>Asunto</th><th>Responsable</th><th>Próxima acción</th><th>Riesgo</th><th>Estado</th></tr></thead>
             <tbody>
               {% for item in interactions %}
               <tr>
                 <td>{{ item.interaction_date }}</td>
                 <td>{{ item.interaction_type }}</td>
-                <td>{{ item.subject }}<br><small class="text-secondary">{{ item.description or '' }}</small></td>
+                <td>
+                  {% if item.is_completed %}<s>{{ item.subject }}</s>{% else %}{{ item.subject }}{% endif %}
+                  <br>
+                  <small class="text-secondary">{% if item.is_completed and item.description %}<s>{{ item.description }}</s>{% else %}{{ item.description or '' }}{% endif %}</small>
+                </td>
                 <td>{{ item.owner or '-' }}</td>
                 <td>{{ item.next_action_date or '-' }}</td>
                 <td>{{ item.risk_level or '-' }}</td>
+                <td>{% if item.is_completed %}<span class="badge badge-success">Completada</span>{% else %}<span class="badge badge-warning">Pendiente</span>{% endif %}</td>
               </tr>
               {% else %}
-              <tr><td colspan="6" class="text-center text-secondary">Sin interacciones registradas.</td></tr>
+              <tr><td colspan="7" class="text-center text-secondary">Sin interacciones registradas.</td></tr>
               {% endfor %}
             </tbody>
           </table>

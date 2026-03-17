@@ -146,11 +146,19 @@
                 </a>
               </li>
               <li class="nav-item">
-                <a href="{{ url_for('settings.clients_settings') }}" class="nav-link {% if request.endpoint in ['settings.clients_settings', 'settings.company_types', 'settings.payment_types'] %}active{% endif %}">
+                <a href="{{ url_for('settings.clients_settings') }}" class="nav-link {% if request.endpoint in ['settings.clients_settings', 'settings.company_types', 'settings.payment_types', 'settings.client_catalog', 'settings.edit_client_catalog'] %}active{% endif %}">
                   <i class="far fa-circle nav-icon"></i>
                   <p>Clientes</p>
                 </a>
               </li>
+              {% if user_can('team.view') %}
+              <li class="nav-item">
+                <a href="{{ url_for('settings.team_settings') }}" class="nav-link {% if request.endpoint in ['settings.team_settings', 'settings.team_roles', 'settings.edit_team_role', 'settings.toggle_team_role', 'settings.team_catalog', 'settings.edit_team_catalog', 'settings.delete_team_catalog'] %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>Equipo</p>
+                </a>
+              </li>
+              {% endif %}
             </ul>
           </li>
           {% endif %}

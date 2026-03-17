@@ -23,7 +23,6 @@ from project_manager.models import (
     SystemCatalogOptionConfig,
     Task,
     TeamRole,
-    ClientResource,
     ProjectResource,
     TaskResource,
     User,
@@ -46,7 +45,6 @@ AUDITED_MODELS = [
     ResourceRole,
     ResourceAvailability,
     ResourceCost,
-    ClientResource,
     ProjectResource,
     TaskResource,
 ]

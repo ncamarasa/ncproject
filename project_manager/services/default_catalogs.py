@@ -22,6 +22,8 @@ DEFAULT_CLIENT_CATALOGS: dict[str, list[str]] = {
     "segment": ["Enterprise", "Mid-Market", "SMB", "Publico"],
     "tax_condition": ["Responsable Inscripto", "Monotributo", "Exento", "Consumidor Final"],
     "preferred_support_channel": ["Email", "WhatsApp", "Portal", "Telefono", "Slack", "Teams"],
+    "methodology": ["Agil", "Hibrida", "Cascada", "Kanban", "Scrum"],
+    "timezone": ["UTC-05:00", "UTC-04:00", "UTC-03:00", "UTC+00:00", "UTC+01:00"],
     "language": ["Espanol", "Ingles", "Portugues"],
     "client_status": ["Prospecto", "Activo", "En pausa", "Inactivo", "Eliminado"],
     "commercial_priority": ["Baja", "Media", "Alta", "Critica"],
@@ -47,6 +49,13 @@ DEFAULT_PROJECT_CATALOGS: dict[str, list[str]] = {
     "task_priorities": ["Baja", "Media", "Alta", "Crítica"],
     "task_dependency_types": ["FS", "SS", "FF", "SF"],
     "risk_categories": ["Tecnológico", "Operativo", "Comercial", "Financiero", "Legal"],
+}
+DEFAULT_TEAM_CATALOGS: dict[str, list[str]] = {
+    "resource_types": ["internal", "external"],
+    "availability_types": ["full_time", "part_time", "custom"],
+    "positions": ["Project Manager", "Consultor", "Analista Funcional", "Desarrollador", "QA"],
+    "areas": ["Delivery", "Comercial", "Operaciones", "Tecnologia", "Soporte"],
+    "vendors": ["Interno", "Partner A", "Partner B", "Freelance", "Consultora Externa"],
 }
 
 
@@ -154,6 +163,46 @@ def _ensure_project_catalog(
     )
 
 
+def _ensure_team_catalog(
+    owner_user_id: int,
+    catalog_key: str,
+    name: str,
+    *,
+    is_system: bool = False,
+    is_editable: bool = True,
+    is_deletable: bool = True,
+    exclude_from_default_list: bool = False,
+) -> None:
+    existing = db.session.execute(
+        select(SystemCatalogOptionConfig).where(
+            SystemCatalogOptionConfig.owner_user_id == owner_user_id,
+            SystemCatalogOptionConfig.module_key == "team",
+            SystemCatalogOptionConfig.catalog_key == catalog_key,
+            SystemCatalogOptionConfig.name.ilike(name),
+        )
+    ).scalar_one_or_none()
+    if existing:
+        existing.is_active = True
+        existing.is_system = bool(existing.is_system or is_system)
+        existing.is_editable = bool(existing.is_editable and is_editable)
+        existing.is_deletable = bool(existing.is_deletable and is_deletable)
+        existing.exclude_from_default_list = bool(existing.exclude_from_default_list or exclude_from_default_list)
+        return
+    db.session.add(
+        SystemCatalogOptionConfig(
+            owner_user_id=owner_user_id,
+            module_key="team",
+            catalog_key=catalog_key,
+            name=name,
+            is_active=True,
+            is_system=is_system,
+            is_editable=is_editable,
+            is_deletable=is_deletable,
+            exclude_from_default_list=exclude_from_default_list,
+        )
+    )
+
+
 def seed_default_catalogs_for_user(owner_user_id: int) -> None:
     for name in DEFAULT_COMPANY_TYPES:
         _ensure_company_type(owner_user_id, name)
@@ -182,4 +231,15 @@ def seed_default_catalogs_for_user(owner_user_id: int) -> None:
                 is_editable=not is_cancelled_status,
                 is_deletable=not is_cancelled_status,
                 exclude_from_default_list=is_cancelled_status,
+            )
+    for catalog_key, values in DEFAULT_TEAM_CATALOGS.items():
+        for name in values:
+            is_system = catalog_key in {"resource_types", "availability_types"}
+            _ensure_team_catalog(
+                owner_user_id,
+                catalog_key,
+                name,
+                is_system=is_system,
+                is_editable=True,
+                is_deletable=not is_system,
             )

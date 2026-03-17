@@ -21,8 +21,9 @@
         <label class="form-label">Tipo</label>
         <select name="resource_type" class="custom-select">
           <option value="">Todos</option>
-          <option value="internal" {% if filters.resource_type == 'internal' %}selected{% endif %}>Interno</option>
-          <option value="external" {% if filters.resource_type == 'external' %}selected{% endif %}>Tercerizado</option>
+          {% for item in resource_types %}
+          <option value="{{ item }}" {% if filters.resource_type == item %}selected{% endif %}>{{ item|replace('_', ' ')|title }}</option>
+          {% endfor %}
         </select>
       </div>
       <div class="col-12 col-md-3">
@@ -43,7 +44,9 @@
   <div class="card-header d-flex justify-content-between align-items-center">
     <strong>Listado</strong>
     <div class="d-flex gap-2 ml-auto justify-content-end">
-      <a href="{{ url_for('team.manage_roles') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Roles</a>
+      {% if user_can('settings.view') %}
+      <a href="{{ url_for('settings.team_roles') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Roles</a>
+      {% endif %}
       <a href="{{ url_for('team.create_resource') }}" class="btn btn-primary btn-sm btn-action-standard">Agregar recurso</a>
     </div>
   </div>
@@ -57,7 +60,7 @@
             <td>#{{ resource.id }}</td>
             <td><strong>{{ resource.full_name }}</strong>{% if resource.vendor_name %}<br><small class="text-secondary">{{ resource.vendor_name }}</small>{% endif %}</td>
             <td>{{ resource.email or '-' }}</td>
-            <td>{{ 'Interno' if resource.resource_type == 'internal' else 'Tercerizado' }}</td>
+            <td>{{ resource.resource_type|replace('_', ' ')|title }}</td>
             <td>{{ resource.position or '-' }}{% if resource.area %}<br><small class="text-secondary">{{ resource.area }}</small>{% endif %}</td>
             <td>
               {% if resource.is_active %}
@@ -67,11 +70,13 @@
               {% endif %}
             </td>
             <td class="text-end">
-              <a href="{{ url_for('team.resource_detail', resource_id=resource.id) }}" class="btn btn-sm btn-outline-primary"><i class="fas fa-eye"></i></a>
-              <a href="{{ url_for('team.edit_resource', resource_id=resource.id) }}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-pen"></i></a>
+              <a href="{{ url_for('team.resource_detail', resource_id=resource.id) }}" class="btn btn-sm btn-outline-primary btn-action-icon" title="Detalle" aria-label="Detalle"><i class="fas fa-eye"></i></a>
+              <a href="{{ url_for('team.edit_resource', resource_id=resource.id) }}" class="btn btn-sm btn-outline-secondary btn-action-icon" title="Editar" aria-label="Editar"><i class="fas fa-pen"></i></a>
               <form method="post" class="d-inline" action="{{ url_for('team.toggle_resource', resource_id=resource.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn-sm btn-outline-warning" type="submit">{{ 'Desactivar' if resource.is_active else 'Activar' }}</button>
+                <button class="btn btn-sm btn-outline-warning btn-action-icon" type="submit" title="{{ 'Desactivar' if resource.is_active else 'Activar' }}" aria-label="{{ 'Desactivar' if resource.is_active else 'Activar' }}">
+                  <i class="fas fa-power-off"></i>
+                </button>
               </form>
             </td>
           </tr>

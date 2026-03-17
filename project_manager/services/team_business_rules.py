@@ -11,13 +11,26 @@ from project_manager.models import (
     Resource,
     ResourceAvailability,
     ResourceCost,
+    ResourceRole,
     Task,
+    TaskResource,
     TeamRole,
 )
 
 
 VALID_RESOURCE_TYPES = {"internal", "external"}
 VALID_AVAILABILITY_TYPES = {"full_time", "part_time", "custom"}
+CANONICAL_SYSTEM_TEAM_ROLES: dict[str, tuple[str, ...]] = {
+    "Project Manager": ("project manager",),
+    "Ejecutivo comercial": ("ejecutivo comercial", "ejecutivo de cuenta"),
+    "Account manager": ("account manager", "gerente de cuenta"),
+    "Responsable delivery": (
+        "responsable delivery",
+        "delivery manager",
+        "responsable tecnico",
+        "responsable técnico",
+    ),
+}
 
 
 def normalize_email(value: str | None) -> str | None:
@@ -25,11 +38,83 @@ def normalize_email(value: str | None) -> str | None:
     return v or None
 
 
+def _merge_role_links(old_role_id: int, target_role_id: int) -> None:
+    links = db.session.execute(
+        select(ResourceRole.id, ResourceRole.resource_id).where(ResourceRole.role_id == old_role_id)
+    ).all()
+    for link_id, resource_id in links:
+        duplicate = db.session.execute(
+            select(ResourceRole.id).where(
+                ResourceRole.resource_id == resource_id,
+                ResourceRole.role_id == target_role_id,
+            )
+        ).scalar_one_or_none()
+        if duplicate:
+            row = db.session.get(ResourceRole, link_id)
+            if row:
+                db.session.delete(row)
+            continue
+        row = db.session.get(ResourceRole, link_id)
+        if row:
+            row.role_id = target_role_id
+
+    db.session.execute(
+        ProjectResource.__table__.update()
+        .where(ProjectResource.role_id == old_role_id)
+        .values(role_id=target_role_id)
+    )
+    db.session.execute(
+        TaskResource.__table__.update()
+        .where(TaskResource.role_id == old_role_id)
+        .values(role_id=target_role_id)
+    )
+
+
+def ensure_system_team_roles() -> None:
+    for canonical_name, aliases in CANONICAL_SYSTEM_TEAM_ROLES.items():
+        normalized_aliases = {alias.strip().lower() for alias in aliases}
+        roles = db.session.execute(
+            select(TeamRole).where(db.func.lower(TeamRole.name).in_(normalized_aliases)).order_by(TeamRole.id.asc())
+        ).scalars().all()
+
+        if not roles:
+            db.session.add(
+                TeamRole(
+                    name=canonical_name,
+                    description=None,
+                    is_active=True,
+                    is_system=True,
+                    is_editable=False,
+                    is_deletable=False,
+                )
+            )
+            continue
+
+        target = next((role for role in roles if role.name.strip().lower() == canonical_name.lower()), roles[0])
+        for role in roles:
+            if role.id == target.id:
+                continue
+            _merge_role_links(role.id, target.id)
+            db.session.delete(role)
+
+        target.name = canonical_name
+        target.is_active = True
+        target.is_system = True
+        target.is_editable = False
+        target.is_deletable = False
+
+    db.session.flush()
+
+
 def sync_resource_full_name(resource: Resource) -> None:
     resource.full_name = f"{(resource.first_name or '').strip()} {(resource.last_name or '').strip()}".strip()
 
 
-def validate_resource_payload(payload: dict, current_resource_id: int | None = None) -> list[str]:
+def validate_resource_payload(
+    payload: dict,
+    current_resource_id: int | None = None,
+    allowed_resource_types: list[str] | None = None,
+) -> list[str]:
     errors: list[str] = []
     first_name = (payload.get("first_name") or "").strip()
     last_name = (payload.get("last_name") or "").strip()
@@ -40,7 +125,8 @@ def validate_resource_payload(payload: dict, current_resource_id: int | None = N
         errors.append("Nombre inválido.")
     if len(last_name) < 2:
         errors.append("Apellido inválido.")
-    if resource_type not in VALID_RESOURCE_TYPES:
+    valid_resource_types = set(allowed_resource_types or list(VALID_RESOURCE_TYPES))
+    if resource_type not in valid_resource_types:
         errors.append("Tipo de recurso inválido.")
     if email and "@" not in email:
         errors.append("Email inválido.")
@@ -70,7 +156,12 @@ def _has_overlap(existing_rows: list, start: date, end: date | None, current_id:
     return False
 
 
-def validate_availability_payload(resource_id: int, payload: dict, current_id: int | None = None) -> list[str]:
+def validate_availability_payload(
+    resource_id: int,
+    payload: dict,
+    current_id: int | None = None,
+    allowed_availability_types: list[str] | None = None,
+) -> list[str]:
     errors: list[str] = []
 
     availability_type = (payload.get("availability_type") or "").strip().lower()
@@ -79,7 +170,8 @@ def validate_availability_payload(resource_id: int, payload: dict, current_id: i
     valid_from = payload.get("valid_from")
     valid_to = payload.get("valid_to")
 
-    if availability_type not in VALID_AVAILABILITY_TYPES:
+    valid_availability_types = set(allowed_availability_types or list(VALID_AVAILABILITY_TYPES))
+    if availability_type not in valid_availability_types:
         errors.append("Tipo de disponibilidad inválido.")
     if weekly_hours is None or Decimal(weekly_hours) <= 0:
         errors.append("Horas semanales deben ser mayores a 0.")

@@ -8,12 +8,8 @@
 {% endblock %}
 
 {% block dashboard_content %}
-{% set mode = 'edit' if is_edit else 'create' %}
-<div class="card border-0 metric-card form-mode-card form-mode-{{ mode }}">
-  <div class="card-header d-flex justify-content-between align-items-center">
-    <strong>{{ 'Editar recurso' if is_edit else 'Nuevo recurso' }}</strong>
-    <span class="badge form-mode-badge">{{ 'Modo edición' if is_edit else 'Modo alta' }}</span>
-  </div>
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>1. Datos principales del recurso</strong></div>
   <div class="card-body">
     <form method="post" class="row g-3">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -21,17 +17,45 @@
       <div class="col-12 col-md-4"><label class="form-label">Apellido *</label><input required name="last_name" class="form-control" value="{{ form_values.get('last_name', resource.last_name if resource else '') }}"></div>
       <div class="col-12 col-md-4"><label class="form-label">Email</label><input type="email" name="email" class="form-control" value="{{ form_values.get('email', resource.email if resource else '') }}"></div>
       <div class="col-12 col-md-4"><label class="form-label">Teléfono</label><input name="phone" class="form-control" value="{{ form_values.get('phone', resource.phone if resource else '') }}"></div>
-      <div class="col-12 col-md-4"><label class="form-label">Cargo</label><input name="position" class="form-control" value="{{ form_values.get('position', resource.position if resource else '') }}"></div>
-      <div class="col-12 col-md-4"><label class="form-label">Área</label><input name="area" class="form-control" value="{{ form_values.get('area', resource.area if resource else '') }}"></div>
+      <div class="col-12 col-md-4">
+        <label class="form-label">Cargo</label>
+        {% set selected_position = form_values.get('position', resource.position if resource else '') %}
+        <select name="position" class="custom-select">
+          <option value="">Seleccionar</option>
+          {% for item in position_options %}
+          <option value="{{ item }}" {% if selected_position == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-4">
+        <label class="form-label">Área</label>
+        {% set selected_area = form_values.get('area', resource.area if resource else '') %}
+        <select name="area" class="custom-select">
+          <option value="">Seleccionar</option>
+          {% for item in area_options %}
+          <option value="{{ item }}" {% if selected_area == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <div class="col-12 col-md-4">
         <label class="form-label">Tipo *</label>
         {% set type_value = form_values.get('resource_type', resource.resource_type if resource else 'internal') %}
         <select name="resource_type" class="custom-select" required>
-          <option value="internal" {% if type_value == 'internal' %}selected{% endif %}>Interno</option>
-          <option value="external" {% if type_value == 'external' %}selected{% endif %}>Tercerizado</option>
+          {% for item in resource_types %}
+          <option value="{{ item }}" {% if type_value == item %}selected{% endif %}>{{ item|replace('_', ' ')|title }}</option>
+          {% endfor %}
         </select>
       </div>
-      <div class="col-12 col-md-4"><label class="form-label">Proveedor</label><input name="vendor_name" class="form-control" value="{{ form_values.get('vendor_name', resource.vendor_name if resource else '') }}"></div>
+      <div class="col-12 col-md-4">
+        <label class="form-label">Proveedor</label>
+        {% set selected_vendor = form_values.get('vendor_name', resource.vendor_name if resource else '') %}
+        <select name="vendor_name" class="custom-select">
+          <option value="">Seleccionar</option>
+          {% for item in vendor_options %}
+          <option value="{{ item }}" {% if selected_vendor == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <div class="col-12 col-md-4">
         {% set active_value = form_values.get('is_active', '1' if not resource or resource.is_active else '0') %}
         <label class="form-label">Estado</label>
@@ -42,7 +66,7 @@
       </div>
       <div class="col-12 d-flex gap-2">
         <button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar cambios' if is_edit else 'Crear recurso' }}</button>
-        {% if is_edit %}<a href="{{ url_for('team.resource_detail', resource_id=resource.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar</a>{% endif %}
+        {% if is_edit %}<a href="{{ url_for('team.list_resources') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar</a>{% endif %}
       </div>
     </form>
   </div>

@@ -35,12 +35,6 @@ class Resource(TimestampMixin, db.Model):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-    client_assignments = db.relationship(
-        "ClientResource",
-        back_populates="resource",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
     project_assignments = db.relationship(
         "ProjectResource",
         back_populates="resource",
@@ -119,25 +113,6 @@ class ResourceCost(TimestampMixin, db.Model):
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
     resource = db.relationship("Resource", back_populates="costs")
-
-
-class ClientResource(TimestampMixin, db.Model):
-    __tablename__ = "client_resource"
-
-    id = db.Column(db.Integer, primary_key=True)
-    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
-    resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=False, index=True)
-    role_id = db.Column(db.Integer, db.ForeignKey("team_roles.id"), nullable=True, index=True)
-    is_primary = db.Column(db.Boolean, nullable=False, default=False)
-    allocation_percent = db.Column(db.Numeric(6, 2), nullable=True)
-    planned_hours = db.Column(db.Numeric(10, 2), nullable=True)
-    start_date = db.Column(db.Date, nullable=True)
-    end_date = db.Column(db.Date, nullable=True)
-    is_active = db.Column(db.Boolean, nullable=False, default=True)
-
-    client = db.relationship("Client", back_populates="resource_assignments")
-    resource = db.relationship("Resource", back_populates="client_assignments")
-    role = db.relationship("TeamRole")
 
 
 class ProjectResource(TimestampMixin, db.Model):

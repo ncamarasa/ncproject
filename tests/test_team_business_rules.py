@@ -55,7 +55,7 @@ class TeamBusinessRulesTestCase(unittest.TestCase):
                 resource_type="internal",
                 is_active=True,
             )
-            role = TeamRole(name="PM", is_active=True)
+            role = TeamRole(name="Project Manager", is_active=True)
             client = Client(name="Cliente X")
             db.session.add_all([resource, role, client])
             db.session.flush()

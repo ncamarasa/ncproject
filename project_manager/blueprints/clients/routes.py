@@ -27,9 +27,12 @@ from project_manager.models import (
     PaymentTypeConfig,
     Project,
     Resource,
+    ResourceRole,
+    TeamRole,
     UserClientAssignment,
 )
 from project_manager.services.code_generation import generate_client_code
+from project_manager.services.team_business_rules import ensure_system_team_roles
 
 CLIENT_STATUS_DELETED = "Eliminado"
 ALLOWED_ATTACHMENT_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "png", "jpg", "jpeg", "txt"}
@@ -39,6 +42,9 @@ CONTRACT_ENDPOINTS = {
     "clients.download_contract_attachment",
     "clients.delete_contract",
 }
+SALES_EXECUTIVE_ROLE_NAMES = ("ejecutivo comercial",)
+ACCOUNT_MANAGER_ROLE_NAMES = ("account manager",)
+DELIVERY_MANAGER_ROLE_NAMES = ("responsable delivery",)
 
 
 @bp.before_request
@@ -57,6 +63,7 @@ def _authorize_clients_module():
     if not has_permission(g.user, needed_permission):
         flash("No tienes permisos para acceder al módulo de clientes.", "danger")
         return redirect(url_for("main.home"))
+    ensure_system_team_roles()
 
 
 def _safe_strip(value: str | None) -> str:
@@ -98,6 +105,14 @@ def _to_bool(value: str | None) -> bool:
     return value == "1"
 
 
+def _interaction_order_by():
+    return (
+        ClientInteraction.interaction_date.desc(),
+        ClientInteraction.created_at.desc(),
+        ClientInteraction.id.desc(),
+    )
+
+
 def _validate_choice(value: str | None, options: list[str], label: str, errors: list[str]) -> str:
     value = _safe_strip(value)
     if not value:
@@ -105,6 +120,45 @@ def _validate_choice(value: str | None, options: list[str], label: str, errors: 
     if value not in options:
         errors.append(f"{label} no es válido.")
     return value
+
+
+def _normalize_role_name(value: str | None) -> str:
+    return " ".join((value or "").strip().lower().split())
+
+
+def _system_role_ids_by_names(role_names: tuple[str, ...]) -> list[int]:
+    expected = {_normalize_role_name(name) for name in role_names if _normalize_role_name(name)}
+    if not expected:
+        return []
+    roles = db.session.execute(
+        select(TeamRole.id, TeamRole.name, TeamRole.is_system).where(TeamRole.is_active.is_(True))
+    ).all()
+    system_role_ids = [
+        role_id
+        for role_id, role_name, is_system in roles
+        if is_system and _normalize_role_name(role_name) in expected
+    ]
+    if system_role_ids:
+        return system_role_ids
+    # Compatibilidad: si aún no existen roles de sistema equivalentes, usar roles activos por nombre.
+    return [role_id for role_id, role_name, _ in roles if _normalize_role_name(role_name) in expected]
+
+
+def _active_resources_by_system_roles(role_names: tuple[str, ...]) -> list[Resource]:
+    role_ids = _system_role_ids_by_names(role_names)
+    if not role_ids:
+        return []
+    return db.session.execute(
+        select(Resource)
+        .join(ResourceRole, ResourceRole.resource_id == Resource.id)
+        .where(Resource.is_active.is_(True), ResourceRole.role_id.in_(role_ids))
+        .distinct()
+        .order_by(Resource.full_name.asc())
+    ).scalars().all()
+
+
+def _active_resource_ids_by_system_roles(role_names: tuple[str, ...]) -> set[int]:
+    return {resource.id for resource in _active_resources_by_system_roles(role_names)}
 
 
 def _active_menu_context():
@@ -117,6 +171,8 @@ def _active_menu_context():
     segments = _catalog_options("segment")
     tax_conditions = _catalog_options("tax_condition")
     support_channels = _catalog_options("preferred_support_channel")
+    methodologies = _catalog_options("methodology")
+    timezones = _catalog_options("timezone")
     languages = _catalog_options("language")
     billing_modes = _catalog_options("billing_mode")
     document_categories = _catalog_options("document_category")
@@ -138,6 +194,8 @@ def _active_menu_context():
         "segments": segments,
         "tax_conditions": tax_conditions,
         "support_channels": support_channels,
+        "methodologies": methodologies,
+        "timezones": timezones,
         "languages": languages,
         "billing_modes": billing_modes,
         "document_categories": document_categories,
@@ -150,6 +208,9 @@ def _active_menu_context():
         "contract_statuses": contract_statuses,
         "interaction_types": interaction_types,
         "active_resources": _active_resources(),
+        "sales_executive_resources": _active_resources_by_system_roles(SALES_EXECUTIVE_ROLE_NAMES),
+        "account_manager_resources": _active_resources_by_system_roles(ACCOUNT_MANAGER_ROLE_NAMES),
+        "delivery_manager_resources": _active_resources_by_system_roles(DELIVERY_MANAGER_ROLE_NAMES),
     }
 
 
@@ -252,6 +313,8 @@ def _validate_client_form(
     commercial_status_options: list[str],
     risk_level_options: list[str],
     tax_condition_options: list[str],
+    methodology_options: list[str],
+    timezone_options: list[str],
     support_channel_options: list[str],
     language_options: list[str],
     billing_mode_options: list[str],
@@ -313,7 +376,7 @@ def _validate_client_form(
     rate_card = _safe_strip(form.get("rate_card"))
     credit_limit = _to_decimal(form.get("credit_limit"))
 
-    methodology = _safe_strip(form.get("methodology"))
+    methodology = _validate_choice(form.get("methodology"), methodology_options, "Metodología", errors)
     preferred_support_channel = _validate_choice(
         form.get("preferred_support_channel"),
         support_channel_options,
@@ -321,7 +384,7 @@ def _validate_client_form(
         errors,
     )
     support_hours = _safe_strip(form.get("support_hours"))
-    timezone = _safe_strip(form.get("timezone"))
+    timezone = _validate_choice(form.get("timezone"), timezone_options, "Zona horaria", errors)
     language = _validate_choice(form.get("language"), language_options, "Idioma", errors)
     delivery_manager_resource_id = _to_int(form.get("delivery_manager_resource_id"))
     delivery_manager = _safe_strip(form.get("delivery_manager"))
@@ -365,17 +428,27 @@ def _validate_client_form(
     if last_interaction_at and next_action_at and last_interaction_at > next_action_at:
         errors.append("La próxima acción no puede ser anterior a la última interacción.")
 
+    allowed_sales_exec_ids = _active_resource_ids_by_system_roles(SALES_EXECUTIVE_ROLE_NAMES)
+    allowed_account_manager_ids = _active_resource_ids_by_system_roles(ACCOUNT_MANAGER_ROLE_NAMES)
+    allowed_delivery_manager_ids = _active_resource_ids_by_system_roles(DELIVERY_MANAGER_ROLE_NAMES)
+
     sales_exec_resource = db.session.get(Resource, sales_executive_resource_id) if sales_executive_resource_id else None
     if sales_executive_resource_id and (not sales_exec_resource or not sales_exec_resource.is_active):
         errors.append("Ejecutivo comercial inválido.")
+    if sales_exec_resource and sales_exec_resource.id not in allowed_sales_exec_ids:
+        errors.append("Ejecutivo comercial inválido: el recurso no tiene rol de sistema permitido.")
 
     account_manager_resource = db.session.get(Resource, account_manager_resource_id) if account_manager_resource_id else None
     if account_manager_resource_id and (not account_manager_resource or not account_manager_resource.is_active):
         errors.append("Gerente de cuenta inválido.")
+    if account_manager_resource and account_manager_resource.id not in allowed_account_manager_ids:
+        errors.append("Gerente de cuenta inválido: el recurso no tiene rol de sistema permitido.")
 
     delivery_manager_resource = db.session.get(Resource, delivery_manager_resource_id) if delivery_manager_resource_id else None
     if delivery_manager_resource_id and (not delivery_manager_resource or not delivery_manager_resource.is_active):
         errors.append("Delivery manager inválido.")
+    if delivery_manager_resource and delivery_manager_resource.id not in allowed_delivery_manager_ids:
+        errors.append("Delivery manager inválido: el recurso no tiene rol de sistema permitido.")
 
     if sales_exec_resource:
         sales_executive = sales_exec_resource.full_name
@@ -527,6 +600,8 @@ def create_client():
             commercial_status_options=_catalog_options("commercial_status"),
             risk_level_options=_catalog_options("risk_level"),
             tax_condition_options=_catalog_options("tax_condition"),
+            methodology_options=_catalog_options("methodology"),
+            timezone_options=_catalog_options("timezone"),
             support_channel_options=_catalog_options("preferred_support_channel"),
             language_options=_catalog_options("language"),
             billing_mode_options=_catalog_options("billing_mode"),
@@ -609,7 +684,7 @@ def client_detail(client_id: int):
     interactions_pagination = db.paginate(
         select(ClientInteraction)
         .where(ClientInteraction.client_id == client.id)
-        .order_by(ClientInteraction.interaction_date.desc()),
+        .order_by(*_interaction_order_by()),
         page=interactions_page,
         per_page=8,
         error_out=False,
@@ -684,6 +759,8 @@ def edit_client(client_id: int):
             commercial_status_options=_catalog_options("commercial_status"),
             risk_level_options=_catalog_options("risk_level"),
             tax_condition_options=_catalog_options("tax_condition"),
+            methodology_options=_catalog_options("methodology"),
+            timezone_options=_catalog_options("timezone"),
             support_channel_options=_catalog_options("preferred_support_channel"),
             language_options=_catalog_options("language"),
             billing_mode_options=_catalog_options("billing_mode"),
@@ -1277,7 +1354,7 @@ def manage_interactions(client_id: int):
     interactions_pagination = db.paginate(
         select(ClientInteraction)
         .where(ClientInteraction.client_id == client.id)
-        .order_by(ClientInteraction.interaction_date.desc()),
+        .order_by(*_interaction_order_by()),
         page=page,
         per_page=10,
         error_out=False,
@@ -1326,7 +1403,7 @@ def edit_interaction(client_id: int, interaction_id: int):
     interactions_pagination = db.paginate(
         select(ClientInteraction)
         .where(ClientInteraction.client_id == client.id)
-        .order_by(ClientInteraction.interaction_date.desc()),
+        .order_by(*_interaction_order_by()),
         page=page,
         per_page=10,
         error_out=False,
@@ -1355,6 +1432,22 @@ def delete_interaction(client_id: int, interaction_id: int):
     db.session.delete(interaction)
     db.session.commit()
     flash("Interacción eliminada.", "info")
+    return redirect(url_for("clients.manage_interactions", client_id=client_id, page=page))
+
+
+@bp.route("/<int:client_id>/interactions/<int:interaction_id>/toggle-status", methods=["POST"])
+@login_required
+def toggle_interaction_status(client_id: int, interaction_id: int):
+    page = _to_int(request.args.get("page")) or 1
+    interaction = db.session.get(ClientInteraction, interaction_id)
+    if not interaction or interaction.client_id != client_id:
+        abort(404)
+    interaction.is_completed = not interaction.is_completed
+    db.session.commit()
+    flash(
+        "Interacción marcada como completada." if interaction.is_completed else "Interacción marcada como pendiente.",
+        "success",
+    )
     return redirect(url_for("clients.manage_interactions", client_id=client_id, page=page))
 
 

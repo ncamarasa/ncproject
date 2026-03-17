@@ -5,24 +5,26 @@ from flask import abort, flash, g, redirect, render_template, request, url_for
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
-from project_manager.auth_utils import allowed_project_ids, has_permission, login_required
+from project_manager.auth_utils import has_permission, login_required
 from project_manager.blueprints.team import bp
 from project_manager.extensions import db
 from project_manager.models import (
     Client,
-    ClientResource,
     Project,
     ProjectResource,
     Resource,
     ResourceAvailability,
     ResourceCost,
     ResourceRole,
+    SystemCatalogOptionConfig,
     Task,
     TaskResource,
     TeamRole,
 )
+from project_manager.services.default_catalogs import seed_default_catalogs_for_user
 from project_manager.services.team_business_rules import (
     close_previous_cost_if_needed,
+    ensure_system_team_roles,
     normalize_email,
     sync_resource_full_name,
     validate_assignment,
@@ -46,14 +48,11 @@ def _authorize_team_module():
     if not has_permission(g.user, needed_permission):
         flash("No tienes permisos para acceder al módulo de equipo.", "danger")
         return redirect(url_for("main.home"))
+    ensure_system_team_roles()
 
 
 def _safe_strip(value: str | None) -> str:
     return (value or "").strip()
-
-
-def _normalize_role_name(value: str | None) -> str:
-    return " ".join(_safe_strip(value).split())
 
 
 def _to_int(value: str | None):
@@ -85,12 +84,57 @@ def _to_bool(value: str | None) -> bool:
     return value == "1"
 
 
+def _canonical_assignment_role_name(role_name: str | None) -> str:
+    normalized = " ".join((role_name or "").strip().lower().split())
+    if normalized == "project manager":
+        return "Project Manager"
+    return role_name or "-"
+
+
 def _active_roles():
     return db.session.execute(select(TeamRole).where(TeamRole.is_active.is_(True)).order_by(TeamRole.name.asc())).scalars().all()
 
 
 def _active_resources():
     return db.session.execute(select(Resource).where(Resource.is_active.is_(True)).order_by(Resource.full_name.asc())).scalars().all()
+
+
+def _team_catalog_values(catalog_key: str, fallback: list[str]) -> list[str]:
+    if not g.get("user"):
+        return fallback
+    values = db.session.execute(
+        select(SystemCatalogOptionConfig.name)
+        .where(
+            SystemCatalogOptionConfig.owner_user_id == g.user.id,
+            SystemCatalogOptionConfig.module_key == "team",
+            SystemCatalogOptionConfig.catalog_key == catalog_key,
+            SystemCatalogOptionConfig.is_active.is_(True),
+        )
+        .order_by(SystemCatalogOptionConfig.is_system.asc(), SystemCatalogOptionConfig.name.asc())
+    ).scalars().all()
+    if not values:
+        seed_default_catalogs_for_user(g.user.id)
+        db.session.commit()
+        values = db.session.execute(
+            select(SystemCatalogOptionConfig.name)
+            .where(
+                SystemCatalogOptionConfig.owner_user_id == g.user.id,
+                SystemCatalogOptionConfig.module_key == "team",
+                SystemCatalogOptionConfig.catalog_key == catalog_key,
+                SystemCatalogOptionConfig.is_active.is_(True),
+            )
+            .order_by(SystemCatalogOptionConfig.is_system.asc(), SystemCatalogOptionConfig.name.asc())
+        ).scalars().all()
+    return values or fallback
+
+
+def _validate_catalog_value(value: str, options: list[str], field_label: str, errors: list[str]) -> str:
+    cleaned = _safe_strip(value)
+    if not cleaned:
+        return ""
+    if cleaned not in set(options):
+        errors.append(f"{field_label} no es valido.")
+    return cleaned
 
 
 def _resource_or_404(resource_id: int) -> Resource:
@@ -101,11 +145,10 @@ def _resource_or_404(resource_id: int) -> Resource:
             selectinload(Resource.role_links).selectinload(ResourceRole.role),
             selectinload(Resource.availabilities),
             selectinload(Resource.costs),
-            selectinload(Resource.client_assignments).selectinload(ClientResource.client),
-            selectinload(Resource.client_assignments).selectinload(ClientResource.role),
             selectinload(Resource.project_assignments).selectinload(ProjectResource.project),
             selectinload(Resource.project_assignments).selectinload(ProjectResource.role),
             selectinload(Resource.task_assignments).selectinload(TaskResource.task),
+            selectinload(Resource.task_assignments).selectinload(TaskResource.task).selectinload(Task.project),
             selectinload(Resource.task_assignments).selectinload(TaskResource.role),
         )
     ).scalar_one_or_none()
@@ -114,24 +157,64 @@ def _resource_or_404(resource_id: int) -> Resource:
     return resource
 
 
-def _team_role_in_use(role_id: int) -> bool:
-    has_resource_links = (
-        db.session.execute(select(ResourceRole.id).where(ResourceRole.role_id == role_id).limit(1)).scalar_one_or_none()
-        is not None
-    )
-    has_client_assignments = (
-        db.session.execute(select(ClientResource.id).where(ClientResource.role_id == role_id).limit(1)).scalar_one_or_none()
-        is not None
-    )
-    has_project_assignments = (
-        db.session.execute(select(ProjectResource.id).where(ProjectResource.role_id == role_id).limit(1)).scalar_one_or_none()
-        is not None
-    )
-    has_task_assignments = (
-        db.session.execute(select(TaskResource.id).where(TaskResource.role_id == role_id).limit(1)).scalar_one_or_none()
-        is not None
-    )
-    return has_resource_links or has_client_assignments or has_project_assignments or has_task_assignments
+def _resource_usage_messages(resource_id: int) -> list[str]:
+    messages: list[str] = []
+
+    sales_exec_count = db.session.execute(
+        select(func.count()).select_from(Client).where(Client.sales_executive_resource_id == resource_id)
+    ).scalar_one()
+    account_manager_count = db.session.execute(
+        select(func.count()).select_from(Client).where(Client.account_manager_resource_id == resource_id)
+    ).scalar_one()
+    delivery_manager_count = db.session.execute(
+        select(func.count()).select_from(Client).where(Client.delivery_manager_resource_id == resource_id)
+    ).scalar_one()
+    if sales_exec_count:
+        messages.append(f"Está asignado como Ejecutivo comercial en {sales_exec_count} cliente(s).")
+    if account_manager_count:
+        messages.append(f"Está asignado como Account manager en {account_manager_count} cliente(s).")
+    if delivery_manager_count:
+        messages.append(f"Está asignado como Responsable delivery en {delivery_manager_count} cliente(s).")
+
+    project_manager_count = db.session.execute(
+        select(func.count()).select_from(Project).where(Project.project_manager_resource_id == resource_id)
+    ).scalar_one()
+    commercial_manager_count = db.session.execute(
+        select(func.count()).select_from(Project).where(Project.commercial_manager_resource_id == resource_id)
+    ).scalar_one()
+    functional_manager_count = db.session.execute(
+        select(func.count()).select_from(Project).where(Project.functional_manager_resource_id == resource_id)
+    ).scalar_one()
+    technical_manager_count = db.session.execute(
+        select(func.count()).select_from(Project).where(Project.technical_manager_resource_id == resource_id)
+    ).scalar_one()
+    if project_manager_count:
+        messages.append(f"Está asignado como Project manager en {project_manager_count} proyecto(s).")
+    if commercial_manager_count:
+        messages.append(f"Está asignado como Responsable comercial en {commercial_manager_count} proyecto(s).")
+    if functional_manager_count:
+        messages.append(f"Está asignado como Responsable funcional en {functional_manager_count} proyecto(s).")
+    if technical_manager_count:
+        messages.append(f"Está asignado como Responsable técnico/delivery en {technical_manager_count} proyecto(s).")
+
+    task_responsible_count = db.session.execute(
+        select(func.count()).select_from(Task).where(Task.responsible_resource_id == resource_id)
+    ).scalar_one()
+    if task_responsible_count:
+        messages.append(f"Está asignado como responsable en {task_responsible_count} tarea(s).")
+
+    project_assignment_count = db.session.execute(
+        select(func.count()).select_from(ProjectResource).where(ProjectResource.resource_id == resource_id)
+    ).scalar_one()
+    task_assignment_count = db.session.execute(
+        select(func.count()).select_from(TaskResource).where(TaskResource.resource_id == resource_id)
+    ).scalar_one()
+    if project_assignment_count:
+        messages.append(f"Tiene {project_assignment_count} asignación(es) a proyectos.")
+    if task_assignment_count:
+        messages.append(f"Tiene {task_assignment_count} asignación(es) a tareas.")
+
+    return messages
 
 
 @bp.route("/")
@@ -161,7 +244,8 @@ def list_resources():
         )
     if active in {"1", "0"}:
         stmt = stmt.where(Resource.is_active.is_(active == "1"))
-    if resource_type in {"internal", "external"}:
+    resource_types = _team_catalog_values("resource_types", ["internal", "external"])
+    if resource_type in set(resource_types):
         stmt = stmt.where(Resource.resource_type == resource_type)
     if role_id:
         stmt = stmt.join(ResourceRole, ResourceRole.resource_id == Resource.id).where(ResourceRole.role_id == role_id)
@@ -171,6 +255,7 @@ def list_resources():
         "team/resource_list.html",
         resources=resources,
         roles=_active_roles(),
+        resource_types=resource_types,
         filters={
             "q": q,
             "active": active,
@@ -183,38 +268,65 @@ def list_resources():
 @bp.route("/resources/new", methods=["GET", "POST"])
 @login_required
 def create_resource():
+    resource_types = _team_catalog_values("resource_types", ["internal", "external"])
+    position_options = _team_catalog_values("positions", [])
+    area_options = _team_catalog_values("areas", [])
+    vendor_options = _team_catalog_values("vendors", [])
     if request.method == "POST":
         payload = {
             "first_name": _safe_strip(request.form.get("first_name")),
             "last_name": _safe_strip(request.form.get("last_name")),
             "email": normalize_email(request.form.get("email")),
             "phone": _safe_strip(request.form.get("phone")),
-            "position": _safe_strip(request.form.get("position")),
-            "area": _safe_strip(request.form.get("area")),
+            "position": "",
+            "area": "",
             "resource_type": _safe_strip(request.form.get("resource_type")).lower(),
-            "vendor_name": _safe_strip(request.form.get("vendor_name")),
+            "vendor_name": "",
             "is_active": _to_bool(request.form.get("is_active", "1")),
         }
-        errors = validate_resource_payload(payload)
+        errors = validate_resource_payload(payload, allowed_resource_types=resource_types)
+        payload["position"] = _validate_catalog_value(request.form.get("position"), position_options, "Cargo", errors)
+        payload["area"] = _validate_catalog_value(request.form.get("area"), area_options, "Area", errors)
+        payload["vendor_name"] = _validate_catalog_value(request.form.get("vendor_name"), vendor_options, "Proveedor", errors)
         if errors:
             for error in errors:
                 flash(error, "danger")
-            return render_template("team/resource_form.html", resource=None, form_values=request.form)
+            return render_template(
+                "team/resource_form.html",
+                resource=None,
+                form_values=request.form,
+                resource_types=resource_types,
+                position_options=position_options,
+                area_options=area_options,
+                vendor_options=vendor_options,
+            )
 
         resource = Resource(**payload)
         sync_resource_full_name(resource)
         db.session.add(resource)
         db.session.commit()
         flash("Recurso creado.", "success")
-        return redirect(url_for("team.resource_detail", resource_id=resource.id))
+        return redirect(url_for("team.list_resources"))
 
-    return render_template("team/resource_form.html", resource=None, form_values={})
+    return render_template(
+        "team/resource_form.html",
+        resource=None,
+        form_values={},
+        resource_types=resource_types,
+        position_options=position_options,
+        area_options=area_options,
+        vendor_options=vendor_options,
+    )
 
 
 @bp.route("/resources/<int:resource_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit_resource(resource_id: int):
     resource = _resource_or_404(resource_id)
+    resource_types = _team_catalog_values("resource_types", ["internal", "external"])
+    position_options = _team_catalog_values("positions", [])
+    area_options = _team_catalog_values("areas", [])
+    vendor_options = _team_catalog_values("vendors", [])
 
     if request.method == "POST":
         payload = {
@@ -222,26 +334,49 @@ def edit_resource(resource_id: int):
             "last_name": _safe_strip(request.form.get("last_name")),
             "email": normalize_email(request.form.get("email")),
             "phone": _safe_strip(request.form.get("phone")),
-            "position": _safe_strip(request.form.get("position")),
-            "area": _safe_strip(request.form.get("area")),
+            "position": "",
+            "area": "",
             "resource_type": _safe_strip(request.form.get("resource_type")).lower(),
-            "vendor_name": _safe_strip(request.form.get("vendor_name")),
+            "vendor_name": "",
             "is_active": _to_bool(request.form.get("is_active", "1")),
         }
-        errors = validate_resource_payload(payload, current_resource_id=resource.id)
+        errors = validate_resource_payload(
+            payload,
+            current_resource_id=resource.id,
+            allowed_resource_types=resource_types,
+        )
+        payload["position"] = _validate_catalog_value(request.form.get("position"), position_options, "Cargo", errors)
+        payload["area"] = _validate_catalog_value(request.form.get("area"), area_options, "Area", errors)
+        payload["vendor_name"] = _validate_catalog_value(request.form.get("vendor_name"), vendor_options, "Proveedor", errors)
         if errors:
             for error in errors:
                 flash(error, "danger")
-            return render_template("team/resource_form.html", resource=resource, form_values=request.form)
+            return render_template(
+                "team/resource_form.html",
+                resource=resource,
+                form_values=request.form,
+                resource_types=resource_types,
+                position_options=position_options,
+                area_options=area_options,
+                vendor_options=vendor_options,
+            )
 
         for key, value in payload.items():
             setattr(resource, key, value)
         sync_resource_full_name(resource)
         db.session.commit()
         flash("Recurso actualizado.", "success")
-        return redirect(url_for("team.resource_detail", resource_id=resource.id))
+        return redirect(url_for("team.list_resources"))
 
-    return render_template("team/resource_form.html", resource=resource, form_values={})
+    return render_template(
+        "team/resource_form.html",
+        resource=resource,
+        form_values={},
+        resource_types=resource_types,
+        position_options=position_options,
+        area_options=area_options,
+        vendor_options=vendor_options,
+    )
 
 
 @bp.route("/resources/<int:resource_id>/toggle", methods=["POST"])
@@ -254,35 +389,172 @@ def toggle_resource(resource_id: int):
     return redirect(request.referrer or url_for("team.list_resources"))
 
 
+@bp.route("/resources/<int:resource_id>/delete", methods=["POST"])
+@login_required
+def delete_resource(resource_id: int):
+    _resource_or_404(resource_id)
+    flash("La eliminación física de recursos está deshabilitada. Usa Activar/Desactivar.", "warning")
+    return redirect(request.referrer or url_for("team.list_resources"))
+
+
 @bp.route("/resources/<int:resource_id>")
 @login_required
 def resource_detail(resource_id: int):
     resource = _resource_or_404(resource_id)
     role_ids = {link.role_id for link in resource.role_links}
+    assignment_rows: list[dict[str, object]] = []
+    seen_keys: set[tuple[str, int, str]] = set()
 
-    clients = db.session.execute(select(Client).where(Client.is_active.is_(True)).order_by(Client.name.asc())).scalars().all()
-    projects_stmt = select(Project).where(Project.is_active.is_(True)).order_by(Project.name.asc())
-    allowed_ids = allowed_project_ids(g.user)
-    if allowed_ids is not None:
-        projects_stmt = projects_stmt.where(Project.id.in_(allowed_ids))
-    projects = db.session.execute(projects_stmt).scalars().all()
+    def _project_label(project_code: str | None, project_name: str | None) -> str:
+        code = (project_code or "").strip()
+        name = (project_name or "").strip()
+        if code and name:
+            return f"{code} - {name}"
+        return name or "-"
 
-    tasks = db.session.execute(
-        select(Task)
-        .join(Project, Task.project_id == Project.id)
-        .where(Task.is_active.is_(True), Project.is_active.is_(True))
-        .order_by(Task.id.desc())
-        .limit(300)
-    ).scalars().all()
+    client_rows = db.session.execute(
+        select(
+            Client.id,
+            Client.name,
+            Client.is_active,
+            Client.onboarding_date,
+            Client.created_at,
+            Client.sales_executive_resource_id,
+            Client.account_manager_resource_id,
+            Client.delivery_manager_resource_id,
+        )
+        .where(
+            or_(
+                Client.sales_executive_resource_id == resource.id,
+                Client.account_manager_resource_id == resource.id,
+                Client.delivery_manager_resource_id == resource.id,
+            )
+        )
+        .order_by(Client.name.asc())
+    ).all()
+
+    client_role_labels = (
+        ("Ejecutivo comercial", 5),
+        ("Account manager", 6),
+        ("Responsable delivery", 7),
+    )
+    for row in client_rows:
+        for label, idx in client_role_labels:
+            if row[idx] != resource.id:
+                continue
+            display_role = _canonical_assignment_role_name(label)
+            key = ("client", row[0], display_role)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            assignment_rows.append(
+                {
+                    "entity_type": "Cliente",
+                    "client_name": row[1],
+                    "project_name": "-",
+                    "role_name": display_role,
+                    "start_date": row[3] or (row[4].date() if row[4] else None),
+                    "end_date": None,
+                    "status_label": "Activo" if bool(row[2]) else "Inactivo",
+                }
+            )
+
+    explicit_project_ids = {item.project_id for item in resource.project_assignments if item.project_id}
+    project_client_map: dict[int, str] = {}
+    if explicit_project_ids:
+        project_client_rows = db.session.execute(
+            select(Project.id, Client.name).join(Client, Client.id == Project.client_id).where(Project.id.in_(explicit_project_ids))
+        ).all()
+        project_client_map = {row[0]: row[1] for row in project_client_rows}
+
+    for item in resource.project_assignments:
+        if not item.project:
+            continue
+        role_name = _canonical_assignment_role_name(item.role.name if item.role else "-")
+        key = ("project", item.project_id, role_name)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        is_active = bool(item.is_active and item.project.is_active)
+        assignment_rows.append(
+            {
+                "entity_type": "Proyecto",
+                "project_name": _project_label(item.project.project_code, item.project.name),
+                "client_name": project_client_map.get(item.project_id, "-"),
+                "role_name": role_name,
+                "end_date": item.end_date,
+                "status_label": "Activo" if is_active else "Inactivo",
+                "start_date": item.start_date or (item.created_at.date() if item.created_at else None),
+            }
+        )
+
+    project_rows = db.session.execute(
+        select(
+            Project.id,
+            Project.name,
+            Project.project_code,
+            Project.is_active,
+            Client.name,
+            Project.onboarding_date,
+            Project.estimated_start_date,
+            Project.actual_end_date,
+            Project.close_date,
+            Project.created_at,
+            Project.project_manager_resource_id,
+            Project.commercial_manager_resource_id,
+            Project.functional_manager_resource_id,
+            Project.technical_manager_resource_id,
+        )
+        .join(Client, Client.id == Project.client_id)
+        .where(
+            or_(
+                Project.project_manager_resource_id == resource.id,
+                Project.commercial_manager_resource_id == resource.id,
+                Project.functional_manager_resource_id == resource.id,
+                Project.technical_manager_resource_id == resource.id,
+            )
+        )
+        .order_by(Project.name.asc())
+    ).all()
+
+    role_labels = (
+        ("Project Manager", 10),
+        ("Responsable comercial", 11),
+        ("Responsable funcional", 12),
+        ("Responsable tecnico/delivery", 13),
+    )
+    for row in project_rows:
+        for label, idx in role_labels:
+            if row[idx] != resource.id:
+                continue
+            key = ("project", row[0], label)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            assignment_rows.append(
+                {
+                    "entity_type": "Proyecto",
+                    "project_name": _project_label(row[2], row[1]),
+                    "client_name": row[4],
+                    "role_name": label,
+                    "end_date": row[7] or row[8],
+                    "status_label": "Activo" if bool(row[3]) else "Inactivo",
+                    "start_date": row[5] or row[6] or (row[9].date() if row[9] else None),
+                }
+            )
+
+    assignment_rows.sort(
+        key=lambda item: (item.get("start_date") is None, item.get("start_date")),
+        reverse=True,
+    )
 
     return render_template(
         "team/resource_detail.html",
         resource=resource,
         roles=_active_roles(),
         role_ids=role_ids,
-        clients=clients,
-        projects=projects,
-        tasks=tasks,
+        assignment_rows=assignment_rows,
+        availability_types=_team_catalog_values("availability_types", ["full_time", "part_time", "custom"]),
     )
 
 
@@ -319,6 +591,24 @@ def remove_resource_role(link_id: int):
     link = db.session.get(ResourceRole, link_id)
     if not link:
         abort(404)
+
+    project_names = db.session.execute(
+        select(Project.name)
+        .join(ProjectResource, ProjectResource.project_id == Project.id)
+        .where(
+            ProjectResource.resource_id == link.resource_id,
+            ProjectResource.role_id == link.role_id,
+            ProjectResource.is_active.is_(True),
+        )
+        .order_by(Project.name.asc())
+        .limit(3)
+    ).scalars().all()
+
+    if project_names:
+        flash("No se puede remover el rol porque el recurso lo tiene asignado en proyectos activos.", "danger")
+        flash(f"Proyectos detectados: {', '.join(project_names)}.", "warning")
+        return redirect(url_for("team.resource_detail", resource_id=link.resource_id))
+
     resource_id = link.resource_id
     db.session.delete(link)
     db.session.commit()
@@ -340,7 +630,11 @@ def add_availability(resource_id: int):
         "observations": _safe_strip(request.form.get("observations")),
         "is_active": _to_bool(request.form.get("is_active", "1")),
     }
-    errors = validate_availability_payload(resource.id, payload)
+    errors = validate_availability_payload(
+        resource.id,
+        payload,
+        allowed_availability_types=_team_catalog_values("availability_types", ["full_time", "part_time", "custom"]),
+    )
     if errors:
         for error in errors:
             flash(error, "danger")
@@ -412,32 +706,9 @@ def _validate_assignment_dates(start_date, end_date) -> list[str]:
 @bp.route("/resources/<int:resource_id>/assign/client", methods=["POST"])
 @login_required
 def assign_client(resource_id: int):
-    resource = _resource_or_404(resource_id)
-    client_id = _to_int(request.form.get("client_id"))
-    role_id = _to_int(request.form.get("role_id"))
-    payload = {
-        "is_primary": _to_bool(request.form.get("is_primary")),
-        "allocation_percent": _to_decimal(request.form.get("allocation_percent")),
-        "planned_hours": _to_decimal(request.form.get("planned_hours")),
-        "start_date": _parse_date(request.form.get("start_date")),
-        "end_date": _parse_date(request.form.get("end_date")),
-        "is_active": True,
-    }
-
-    errors = validate_assignment(resource.id, role_id)
-    errors.extend(_validate_assignment_dates(payload["start_date"], payload["end_date"]))
-    client = db.session.get(Client, client_id) if client_id else None
-    if not client or not client.is_active:
-        errors.append("Cliente inválido.")
-    if errors:
-        for error in errors:
-            flash(error, "danger")
-        return redirect(url_for("team.resource_detail", resource_id=resource.id))
-
-    db.session.add(ClientResource(client_id=client.id, resource_id=resource.id, role_id=role_id, **payload))
-    db.session.commit()
-    flash("Asignación a cliente creada.", "success")
-    return redirect(url_for("team.resource_detail", resource_id=resource.id))
+    _resource_or_404(resource_id)
+    flash("Las asignaciones manuales a cliente están deshabilitadas. Se gestionan automáticamente desde Clientes.", "warning")
+    return redirect(url_for("team.resource_detail", resource_id=resource_id))
 
 
 @bp.route("/resources/<int:resource_id>/assign/project", methods=["POST"])
@@ -508,13 +779,8 @@ def assign_task(resource_id: int):
 @bp.route("/client-assignment/<int:assignment_id>/toggle", methods=["POST"])
 @login_required
 def toggle_client_assignment(assignment_id: int):
-    assignment = db.session.get(ClientResource, assignment_id)
-    if not assignment:
-        abort(404)
-    assignment.is_active = not assignment.is_active
-    db.session.commit()
-    flash("Asignación actualizada.", "info")
-    return redirect(url_for("team.resource_detail", resource_id=assignment.resource_id))
+    flash("Las asignaciones manuales a cliente están deshabilitadas. Se gestionan automáticamente desde Clientes.", "warning")
+    return redirect(url_for("team.list_resources"))
 
 
 @bp.route("/project-assignment/<int:assignment_id>/toggle", methods=["POST"])
@@ -544,80 +810,17 @@ def toggle_task_assignment(assignment_id: int):
 @bp.route("/roles", methods=["GET", "POST"])
 @login_required
 def manage_roles():
-    if request.method == "POST":
-        name = _normalize_role_name(request.form.get("name"))
-        description = _safe_strip(request.form.get("description"))
-        if len(name) < 2:
-            flash("El nombre del rol es inválido.", "danger")
-        elif db.session.execute(
-            select(TeamRole.id).where(func.lower(TeamRole.name) == name.lower())
-        ).scalar_one_or_none():
-            flash("Ya existe un rol con ese nombre.", "danger")
-        else:
-            db.session.add(
-                TeamRole(
-                    name=name,
-                    description=description,
-                    is_active=True,
-                    is_system=False,
-                    is_editable=True,
-                    is_deletable=True,
-                )
-            )
-            db.session.commit()
-            flash("Rol creado.", "success")
-        return redirect(url_for("team.manage_roles"))
-
-    roles = db.session.execute(select(TeamRole).order_by(TeamRole.name.asc())).scalars().all()
-    return render_template("team/role_list.html", roles=roles)
+    return redirect(url_for("settings.team_roles"))
 
 
 @bp.route("/roles/<int:role_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit_role(role_id: int):
-    role = db.session.get(TeamRole, role_id)
-    if not role:
-        abort(404)
-    if not role.is_editable:
-        flash("No se puede editar: el rol es de sistema.", "danger")
-        return redirect(url_for("team.manage_roles"))
-
-    if request.method == "POST":
-        name = _normalize_role_name(request.form.get("name"))
-        description = _safe_strip(request.form.get("description"))
-        if len(name) < 2:
-            flash("El nombre del rol es inválido.", "danger")
-        elif db.session.execute(
-            select(TeamRole.id).where(
-                TeamRole.id != role.id,
-                func.lower(TeamRole.name) == name.lower(),
-            )
-        ).scalar_one_or_none():
-            flash("Ya existe otro rol con ese nombre.", "danger")
-        else:
-            role.name = name
-            role.description = description
-            db.session.commit()
-            flash("Rol actualizado.", "success")
-            return redirect(url_for("team.manage_roles"))
-
-    return render_template("team/role_form.html", role=role)
+    return redirect(url_for("settings.edit_team_role", role_id=role_id))
 
 
 @bp.route("/roles/<int:role_id>/toggle", methods=["POST"])
 @login_required
 def toggle_role(role_id: int):
-    role = db.session.get(TeamRole, role_id)
-    if not role:
-        abort(404)
-    if role.is_active:
-        if not role.is_deletable:
-            flash("No se puede desactivar: el rol es de sistema.", "danger")
-            return redirect(url_for("team.manage_roles"))
-        if _team_role_in_use(role.id):
-            flash("No se puede desactivar: el rol está siendo utilizado.", "danger")
-            return redirect(url_for("team.manage_roles"))
-    role.is_active = not role.is_active
-    db.session.commit()
-    flash("Estado del rol actualizado.", "info")
-    return redirect(url_for("team.manage_roles"))
+    flash("La gestión de roles se realiza desde Configuración / Equipo.", "info")
+    return redirect(url_for("settings.team_roles"))

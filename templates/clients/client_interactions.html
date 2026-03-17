@@ -30,23 +30,34 @@
   <div class="card-body p-3">
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0">
-        <thead><tr><th>Fecha</th><th>Tipo</th><th>Asunto</th><th>Responsable</th><th>Próxima acción</th><th>Riesgo</th><th class="text-end">Acciones</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Tipo</th><th>Asunto</th><th>Responsable</th><th>Próxima acción</th><th>Riesgo</th><th>Estado</th><th class="text-end">Acciones</th></tr></thead>
         <tbody>
           {% for item in interactions %}
           <tr>
             <td>{{ item.interaction_date }}</td>
             <td>{{ item.interaction_type }}</td>
-            <td>{{ item.subject }}<br><small class="text-secondary">{{ item.description or '' }}</small></td>
+            <td>
+              {% if item.is_completed %}<s>{{ item.subject }}</s>{% else %}{{ item.subject }}{% endif %}
+              <br>
+              <small class="text-secondary">{% if item.is_completed and item.description %}<s>{{ item.description }}</s>{% else %}{{ item.description or '' }}{% endif %}</small>
+            </td>
             <td>{{ item.owner or '-' }}</td>
             <td>{{ item.next_action_date or '-' }}</td>
             <td>{{ item.risk_level or '-' }}</td>
+            <td>{% if item.is_completed %}<span class="badge badge-success">Completada</span>{% else %}<span class="badge badge-warning">Pendiente</span>{% endif %}</td>
             <td class="text-end">
+              <form method="post" action="{{ url_for('clients.toggle_interaction_status', client_id=client.id, interaction_id=item.id, page=current_page) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-outline-{% if item.is_completed %}warning{% else %}success{% endif %} btn-action-icon" type="submit" title="{% if item.is_completed %}Marcar pendiente{% else %}Marcar completada{% endif %}">
+                  <i class="fas {% if item.is_completed %}fa-rotate-left{% else %}fa-check{% endif %}"></i>
+                </button>
+              </form>
               <a class="btn btn-sm btn-outline-secondary btn-action-icon" href="{{ url_for('clients.edit_interaction', client_id=client.id, interaction_id=item.id, page=current_page) }}"><i class="fas fa-pen"></i></a>
-              <form method="post" action="{{ url_for('clients.delete_interaction', client_id=client.id, interaction_id=item.id, page=current_page) }}" class="d-inline" data-confirm-message="¿Eliminar interacción?"><button class="btn btn-sm btn-outline-danger btn-action-icon" type="submit"><i class="fas fa-trash"></i></button></form>
+              <form method="post" action="{{ url_for('clients.delete_interaction', client_id=client.id, interaction_id=item.id, page=current_page) }}" class="d-inline" data-confirm-message="¿Eliminar interacción?"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-danger btn-action-icon" type="submit"><i class="fas fa-trash"></i></button></form>
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="7" class="text-center text-secondary py-3">Sin interacciones registradas.</td></tr>
+          <tr><td colspan="8" class="text-center text-secondary py-3">Sin interacciones registradas.</td></tr>
           {% endfor %}
         </tbody>
       </table>

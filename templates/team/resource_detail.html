@@ -9,11 +9,11 @@
 
 {% block dashboard_content %}
 <div class="card border-0 metric-card mb-3">
-  <div class="card-header"><strong>Datos generales</strong></div>
+  <div class="card-header"><strong>1. Datos generales</strong></div>
   <div class="card-body row g-2">
     <div class="col-12 col-md-4"><strong>Email:</strong> {{ resource.email or '-' }}</div>
     <div class="col-12 col-md-3"><strong>Teléfono:</strong> {{ resource.phone or '-' }}</div>
-    <div class="col-12 col-md-2"><strong>Tipo:</strong> {{ 'Interno' if resource.resource_type == 'internal' else 'Tercerizado' }}</div>
+    <div class="col-12 col-md-2"><strong>Tipo:</strong> {{ resource.resource_type|replace('_', ' ')|title }}</div>
     <div class="col-12 col-md-3"><strong>Estado:</strong> {{ 'Activo' if resource.is_active else 'Inactivo' }}</div>
     <div class="col-12 col-md-4"><strong>Cargo:</strong> {{ resource.position or '-' }}</div>
     <div class="col-12 col-md-4"><strong>Área:</strong> {{ resource.area or '-' }}</div>
@@ -22,7 +22,7 @@
 </div>
 
 <div class="card border-0 metric-card mb-3">
-  <div class="card-header"><strong>Roles</strong></div>
+  <div class="card-header"><strong>2. Roles</strong></div>
   <div class="card-body">
     <form method="post" action="{{ url_for('team.add_resource_role', resource_id=resource.id) }}" class="row g-2 align-items-end mb-3">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -62,11 +62,11 @@
 </div>
 
 <div class="card border-0 metric-card mb-3">
-  <div class="card-header"><strong>Disponibilidad</strong></div>
+  <div class="card-header"><strong>3. Disponibilidad</strong></div>
   <div class="card-body">
     <form method="post" action="{{ url_for('team.add_availability', resource_id=resource.id) }}" class="row g-2 align-items-end mb-3">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="col-6 col-md-2"><label class="form-label">Tipo</label><select name="availability_type" class="custom-select"><option value="full_time">Full time</option><option value="part_time">Part time</option><option value="custom">Custom</option></select></div>
+      <div class="col-6 col-md-2"><label class="form-label">Tipo</label><select name="availability_type" class="custom-select">{% for item in availability_types %}<option value="{{ item }}">{{ item|replace('_', ' ')|title }}</option>{% endfor %}</select></div>
       <div class="col-6 col-md-2"><label class="form-label">Hs/semana</label><input type="number" min="1" step="0.25" name="weekly_hours" class="form-control" required value="40"></div>
       <div class="col-6 col-md-2"><label class="form-label">Hs/día</label><input type="number" min="0" step="0.25" name="daily_hours" class="form-control"></div>
       <div class="col-6 col-md-2"><label class="form-label">Desde *</label><input type="date" name="valid_from" class="form-control" required></div>
@@ -101,7 +101,7 @@
 </div>
 
 <div class="card border-0 metric-card mb-3">
-  <div class="card-header"><strong>Costos</strong></div>
+  <div class="card-header"><strong>4. Costos</strong></div>
   <div class="card-body">
     <form method="post" action="{{ url_for('team.add_cost', resource_id=resource.id) }}" class="row g-2 align-items-end mb-3">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -141,62 +141,24 @@
 </div>
 
 <div class="card border-0 metric-card mb-3">
-  <div class="card-header"><strong>Asignaciones</strong></div>
+  <div class="card-header"><strong>5. Asignaciones</strong></div>
   <div class="card-body">
-    <h6 class="mb-2">Cliente</h6>
-    <form method="post" action="{{ url_for('team.assign_client', resource_id=resource.id) }}" class="row g-2 align-items-end mb-3">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="col-12 col-md-4"><label class="form-label">Cliente</label><select name="client_id" class="custom-select" required><option value="">Seleccionar</option>{% for item in clients %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select></div>
-      <div class="col-12 col-md-3"><label class="form-label">Rol</label><select name="role_id" class="custom-select"><option value="">Sin rol</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select></div>
-      <div class="col-6 col-md-2"><label class="form-label">Inicio</label><input type="date" name="start_date" class="form-control"></div>
-      <div class="col-6 col-md-2"><label class="form-label">Fin</label><input type="date" name="end_date" class="form-control"></div>
-      <div class="col-12 col-md-1"><button class="btn btn-primary btn-sm btn-action-standard" type="submit">+</button></div>
-    </form>
-
-    <h6 class="mb-2">Proyecto</h6>
-    <form method="post" action="{{ url_for('team.assign_project', resource_id=resource.id) }}" class="row g-2 align-items-end mb-3">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="col-12 col-md-4"><label class="form-label">Proyecto</label><select name="project_id" class="custom-select" required><option value="">Seleccionar</option>{% for item in projects %}<option value="{{ item.id }}">{{ item.name }}</option>{% endfor %}</select></div>
-      <div class="col-12 col-md-3"><label class="form-label">Rol</label><select name="role_id" class="custom-select"><option value="">Sin rol</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select></div>
-      <div class="col-6 col-md-2"><label class="form-label">Inicio</label><input type="date" name="start_date" class="form-control"></div>
-      <div class="col-6 col-md-2"><label class="form-label">Fin</label><input type="date" name="end_date" class="form-control"></div>
-      <div class="col-12 col-md-1"><button class="btn btn-primary btn-sm btn-action-standard" type="submit">+</button></div>
-    </form>
-
-    <h6 class="mb-2">Tarea</h6>
-    <form method="post" action="{{ url_for('team.assign_task', resource_id=resource.id) }}" class="row g-2 align-items-end mb-3">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="col-12 col-md-4"><label class="form-label">Tarea</label><select name="task_id" class="custom-select" required><option value="">Seleccionar</option>{% for item in tasks %}<option value="{{ item.id }}">#{{ item.id }} - {{ item.title }}</option>{% endfor %}</select></div>
-      <div class="col-12 col-md-3"><label class="form-label">Rol</label><select name="role_id" class="custom-select"><option value="">Sin rol</option>{% for role in roles %}<option value="{{ role.id }}">{{ role.name }}</option>{% endfor %}</select></div>
-      <div class="col-6 col-md-2"><label class="form-label">Inicio</label><input type="date" name="start_date" class="form-control"></div>
-      <div class="col-6 col-md-2"><label class="form-label">Fin</label><input type="date" name="end_date" class="form-control"></div>
-      <div class="col-12 col-md-1"><button class="btn btn-primary btn-sm btn-action-standard" type="submit">+</button></div>
-    </form>
-
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0">
-        <thead><tr><th>Entidad</th><th>Detalle</th><th>Rol</th><th>Estado</th><th class="text-end">Acción</th></tr></thead>
+        <thead><tr><th>Cliente</th><th>Proyecto</th><th>Rol</th><th>Desde</th><th>Hasta</th><th>Estado</th></tr></thead>
         <tbody>
-          {% for item in resource.client_assignments %}
+          {% for item in assignment_rows %}
           <tr>
-            <td>Cliente</td><td>{{ item.client.name }}</td><td>{{ item.role.name if item.role else '-' }}</td><td>{{ 'Activo' if item.is_active else 'Inactivo' }}</td>
-            <td class="text-end"><form method="post" action="{{ url_for('team.toggle_client_assignment', assignment_id=item.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-warning" type="submit">{{ 'Desactivar' if item.is_active else 'Activar' }}</button></form></td>
+            <td>{{ item.client_name }}</td>
+            <td>{{ item.project_name }}</td>
+            <td>{{ item.role_name }}</td>
+            <td>{{ item.start_date or '-' }}</td>
+            <td>{{ item.end_date or '-' }}</td>
+            <td>{{ item.status_label }}</td>
           </tr>
           {% endfor %}
-          {% for item in resource.project_assignments %}
-          <tr>
-            <td>Proyecto</td><td>{{ item.project.name }}</td><td>{{ item.role.name if item.role else '-' }}</td><td>{{ 'Activo' if item.is_active else 'Inactivo' }}</td>
-            <td class="text-end"><form method="post" action="{{ url_for('team.toggle_project_assignment', assignment_id=item.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-warning" type="submit">{{ 'Desactivar' if item.is_active else 'Activar' }}</button></form></td>
-          </tr>
-          {% endfor %}
-          {% for item in resource.task_assignments %}
-          <tr>
-            <td>Tarea</td><td>#{{ item.task_id }} - {{ item.task.title if item.task else '-' }}</td><td>{{ item.role.name if item.role else '-' }}</td><td>{{ 'Activo' if item.is_active else 'Inactivo' }}</td>
-            <td class="text-end"><form method="post" action="{{ url_for('team.toggle_task_assignment', assignment_id=item.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn btn-sm btn-outline-warning" type="submit">{{ 'Desactivar' if item.is_active else 'Activar' }}</button></form></td>
-          </tr>
-          {% endfor %}
-          {% if not resource.client_assignments and not resource.project_assignments and not resource.task_assignments %}
-          <tr><td colspan="5" class="text-secondary text-center">Sin asignaciones.</td></tr>
+          {% if not assignment_rows %}
+          <tr><td colspan="6" class="text-secondary text-center">Sin asignaciones.</td></tr>
           {% endif %}
         </tbody>
       </table>

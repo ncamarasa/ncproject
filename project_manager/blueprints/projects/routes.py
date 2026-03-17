@@ -26,7 +26,16 @@ from project_manager.auth_utils import (
 )
 from project_manager.blueprints.projects import bp
 from project_manager.extensions import db
-from project_manager.models import Client, ClientContract, Project, Resource, Stakeholder, SystemCatalogOptionConfig
+from project_manager.models import (
+    Client,
+    ClientContract,
+    Project,
+    ProjectResource,
+    Resource,
+    Stakeholder,
+    SystemCatalogOptionConfig,
+    TeamRole,
+)
 from project_manager.models import UserProjectAssignment
 from project_manager.services.code_generation import generate_client_code, generate_project_code
 
@@ -113,6 +122,76 @@ def _active_contracts_for_client(client_id: int):
         )
         .order_by(ClientContract.start_date.desc().nullslast(), ClientContract.created_at.desc())
     ).scalars().all()
+
+
+def _active_team_role_id(*candidate_names: str) -> int | None:
+    normalized = {name.strip().lower() for name in candidate_names if name and name.strip()}
+    if not normalized:
+        return None
+    role = db.session.execute(
+        select(TeamRole).where(TeamRole.is_active.is_(True)).order_by(TeamRole.name.asc())
+    ).scalars().all()
+    for item in role:
+        if (item.name or "").strip().lower() in normalized:
+            return item.id
+    return None
+
+
+def _sync_project_manager_assignments(project: Project, payload: dict) -> None:
+    role_mapping = [
+        (
+            payload.get("project_manager_resource_id"),
+            _active_team_role_id("Project Manager"),
+        ),
+        (
+            payload.get("commercial_manager_resource_id"),
+            _active_team_role_id("Ejecutivo comercial", "Responsable comercial", "Account manager"),
+        ),
+        (
+            payload.get("functional_manager_resource_id"),
+            _active_team_role_id("Responsable funcional"),
+        ),
+        (
+            payload.get("technical_manager_resource_id"),
+            _active_team_role_id("Responsable técnico", "Responsable delivery"),
+        ),
+    ]
+
+    for resource_id, role_id in role_mapping:
+        if not role_id:
+            continue
+
+        existing = db.session.execute(
+            select(ProjectResource)
+            .where(
+                ProjectResource.project_id == project.id,
+                ProjectResource.role_id == role_id,
+            )
+            .order_by(ProjectResource.id.asc())
+        ).scalars().all()
+
+        if not resource_id:
+            for row in existing:
+                row.is_active = False
+            continue
+
+        active_row = next((row for row in existing if row.is_active), None)
+        if active_row:
+            active_row.resource_id = resource_id
+            active_row.is_active = True
+            active_row.is_primary = True
+            continue
+
+        db.session.add(
+            ProjectResource(
+                project_id=project.id,
+                resource_id=resource_id,
+                role_id=role_id,
+                is_primary=True,
+                is_active=True,
+                start_date=project.estimated_start_date or project.actual_start_date,
+            )
+        )
 
 
 def _build_project_payload(form):
@@ -509,6 +588,7 @@ def create_project():
             ).scalar_one_or_none()
             if not assigned:
                 db.session.add(UserProjectAssignment(user_id=g.user.id, project_id=project.id))
+        _sync_project_manager_assignments(project, payload)
         db.session.commit()
 
         flash("Proyecto creado correctamente.", "success")
@@ -701,6 +781,7 @@ def edit_project(project_id: int):
                 client.client_code,
             )
 
+        _sync_project_manager_assignments(project, payload)
         db.session.commit()
         flash("Proyecto actualizado correctamente.", "success")
         return redirect(url_for("projects.project_detail", project_id=project.id))

@@ -21,7 +21,6 @@ from project_manager.models.settings import (
     SystemCatalogOptionConfig,
 )
 from project_manager.models.team import (
-    ClientResource,
     ProjectResource,
     Resource,
     ResourceAvailability,
@@ -63,7 +62,6 @@ __all__ = [
     "ResourceRole",
     "ResourceAvailability",
     "ResourceCost",
-    "ClientResource",
     "ProjectResource",
     "TaskResource",
     "Role",

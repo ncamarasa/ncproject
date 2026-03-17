@@ -385,25 +385,36 @@
     </div>
   </div>
 
-  <div class="col-12 d-flex gap-2">
-    <button type="submit" class="btn btn-primary btn-action-standard">{{ 'Guardar cambios' if is_edit else 'Crear proyecto' }}</button>
-    <a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-secondary btn-action-standard">Cancelar</a>
+  <div class="col-12">
+    <div class="card border-0 metric-card">
+      <div class="card-header"><strong>8. Estado y acciones</strong></div>
+      <div class="card-body">
+        {% if is_edit and project and project.is_active %}
+        <div class="border border-danger rounded p-3 mb-3">
+          <h3 class="h6 text-danger mb-2">Eliminar proyecto</h3>
+          <p class="small text-secondary mb-3">
+            La eliminación es lógica (se marca como inactivo). Solo disponible para proyectos en estado Cancelado o Completado.
+          </p>
+          <button
+            class="btn btn-outline-danger btn-sm btn-action-standard"
+            type="submit"
+            formaction="{{ url_for('projects.delete_project', project_id=project.id) }}"
+            formmethod="post"
+            formnovalidate
+            onclick="return confirm('Vas a dar de baja este proyecto. ¿Deseas continuar?');"
+          >
+            Eliminar proyecto
+          </button>
+        </div>
+        {% endif %}
+      </div>
+      <div class="card-footer bg-white d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-action-standard">{{ 'Guardar cambios' if is_edit else 'Crear proyecto' }}</button>
+        <a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-secondary btn-action-standard">Cancelar</a>
+      </div>
+    </div>
   </div>
 </form>
-
-{% if is_edit and project and project.is_active %}
-<div class="card border border-danger mt-3">
-  <div class="card-body">
-    <h3 class="h6 text-danger mb-2">Eliminar proyecto</h3>
-    <p class="small text-secondary mb-3">
-      La eliminación es lógica (se marca como inactivo). Solo disponible para proyectos en estado Cancelado o Completado.
-    </p>
-    <form method="post" action="{{ url_for('projects.delete_project', project_id=project.id) }}" class="m-0" onsubmit="return confirm('Vas a dar de baja este proyecto. ¿Deseas continuar?');">
-      <button class="btn btn-outline-danger btn-sm" type="submit">Eliminar proyecto</button>
-    </form>
-  </div>
-</div>
-{% endif %}
 
 <script>
   (() => {

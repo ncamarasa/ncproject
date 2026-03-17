@@ -70,12 +70,6 @@ class Client(TimestampMixin, db.Model):
     sales_executive_resource = db.relationship("Resource", foreign_keys=[sales_executive_resource_id], lazy="joined")
     account_manager_resource = db.relationship("Resource", foreign_keys=[account_manager_resource_id], lazy="joined")
     delivery_manager_resource = db.relationship("Resource", foreign_keys=[delivery_manager_resource_id], lazy="joined")
-    resource_assignments = db.relationship(
-        "ClientResource",
-        back_populates="client",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
     contacts = db.relationship(
         "ClientContact",
         back_populates="client",
@@ -181,5 +175,6 @@ class ClientInteraction(TimestampMixin, db.Model):
     next_action_date = db.Column(db.Date, nullable=True)
     owner = db.Column(db.String(120), nullable=True)
     risk_level = db.Column(db.String(20), nullable=True)
+    is_completed = db.Column(db.Boolean, default=False, nullable=False)
 
     client = db.relationship("Client", back_populates="interactions")

@@ -14,10 +14,18 @@ from project_manager.models import (
     CompanyTypeConfig,
     PaymentTypeConfig,
     Project,
+    ProjectResource,
+    Resource,
+    ResourceAvailability,
+    ResourceRole,
     SystemCatalogOptionConfig,
     Task,
     TaskDependency,
+    TaskResource,
+    TeamRole,
 )
+from project_manager.services.default_catalogs import seed_default_catalogs_for_user
+from project_manager.services.team_business_rules import ensure_system_team_roles
 
 
 CLIENT_CATALOG_FIELDS = {
@@ -38,6 +46,8 @@ CLIENT_CATALOG_FIELDS = {
     "interaction_type": "Tipo de interacción",
     "tax_condition": "Condición impositiva",
     "preferred_support_channel": "Canal de soporte preferido",
+    "methodology": "Metodología",
+    "timezone": "Zona horaria",
     "language": "Idioma",
 }
 
@@ -80,9 +90,46 @@ SHARED_CLIENT_CATALOG_FIELDS_BY_MODULE = {
     },
 }
 
+TEAM_CATALOG_FIELDS = {
+    "resource_types": "Tipos de recurso",
+    "availability_types": "Tipos de disponibilidad",
+    "positions": "Cargos",
+    "areas": "Areas",
+    "vendors": "Proveedores",
+}
+
+TEAM_CATALOG_DESCRIPTIONS = {
+    "resource_types": "Define los tipos de recurso para la ficha de Equipo (interno, tercerizado, etc.).",
+    "availability_types": "Configura los tipos de disponibilidad para capacidad operativa (full time, part time, custom).",
+    "positions": "Administra el catalogo de cargos disponibles para los recursos.",
+    "areas": "Administra el catalogo de areas organizativas para clasificar recursos.",
+    "vendors": "Administra el catalogo de proveedores/partners para recursos tercerizados.",
+}
+TEAM_ROLE_CANONICAL_NAMES = {
+    "ejecutivo de cuenta": "Ejecutivo comercial",
+    "ejecutivo comercial": "Ejecutivo comercial",
+    "gerente de cuenta": "Account manager",
+    "account manager": "Account manager",
+    "delivery manager": "Responsable delivery",
+    "responsable delivery": "Responsable delivery",
+    "responsable tecnico": "Responsable delivery",
+    "responsable técnico": "Responsable delivery",
+}
+
 
 def _safe_strip(value: str | None) -> str:
     return (value or "").strip()
+
+
+def _normalize_team_catalog_name(catalog_key: str, name: str) -> str:
+    if catalog_key in {"resource_types", "availability_types"}:
+        return "_".join(name.strip().lower().split())
+    return name
+
+
+def _canonical_team_role_name(name: str) -> str:
+    normalized = " ".join(name.strip().lower().split())
+    return TEAM_ROLE_CANONICAL_NAMES.get(normalized, " ".join(name.strip().split()))
 
 
 def _upsert_config_item(model, name: str):
@@ -118,6 +165,11 @@ def _count_usage(model, column, value: str) -> int:
     return db.session.execute(
         select(func.count()).select_from(model).where(func.lower(column) == value.lower())
     ).scalar_one()
+
+
+def _ensure_team_catalog_defaults() -> None:
+    seed_default_catalogs_for_user(g.user.id)
+    db.session.commit()
 
 
 def _company_type_in_use(name: str) -> bool:
@@ -175,6 +227,10 @@ def _client_catalog_in_use(field_key: str, name: str) -> bool:
         return _count_usage(Client, Client.tax_condition, name) > 0
     if field_key == "preferred_support_channel":
         return _count_usage(Client, Client.preferred_support_channel, name) > 0
+    if field_key == "methodology":
+        return _count_usage(Client, Client.methodology, name) > 0
+    if field_key == "timezone":
+        return _count_usage(Client, Client.timezone, name) > 0
     if field_key == "language":
         return _count_usage(Client, Client.language, name) > 0
     return False
@@ -203,6 +259,20 @@ def _project_catalog_in_use(catalog_key: str, name: str) -> bool:
         return _count_usage(Task, Task.priority, name) > 0
     if catalog_key == "task_dependency_types":
         return _count_usage(TaskDependency, TaskDependency.dependency_type, name) > 0
+    return False
+
+
+def _team_catalog_in_use(catalog_key: str, name: str) -> bool:
+    if catalog_key == "resource_types":
+        return _count_usage(Resource, Resource.resource_type, name) > 0
+    if catalog_key == "availability_types":
+        return _count_usage(ResourceAvailability, ResourceAvailability.availability_type, name) > 0
+    if catalog_key == "positions":
+        return _count_usage(Resource, Resource.position, name) > 0
+    if catalog_key == "areas":
+        return _count_usage(Resource, Resource.area, name) > 0
+    if catalog_key == "vendors":
+        return _count_usage(Resource, Resource.vendor_name, name) > 0
     return False
 
 
@@ -236,6 +306,243 @@ def projects_settings():
         project_catalog_descriptions=PROJECT_CATALOG_DESCRIPTIONS,
         shared_catalog_fields=SHARED_CLIENT_CATALOG_FIELDS_BY_MODULE.get("projects", {}),
     )
+
+
+@bp.route("/team")
+@login_required
+def team_settings():
+    ensure_system_team_roles()
+    _ensure_team_catalog_defaults()
+    return render_template(
+        "settings/team.html",
+        team_catalog_fields=TEAM_CATALOG_FIELDS,
+        team_catalog_descriptions=TEAM_CATALOG_DESCRIPTIONS,
+    )
+
+
+@bp.route("/team/roles", methods=["GET", "POST"])
+@login_required
+def team_roles():
+    ensure_system_team_roles()
+    if request.method == "POST":
+        name = _canonical_team_role_name(_safe_strip(request.form.get("name")))
+        description = _safe_strip(request.form.get("description"))
+        if len(name) < 2:
+            flash("El nombre del rol es inválido.", "danger")
+        elif db.session.execute(
+            select(TeamRole.id).where(func.lower(TeamRole.name) == name.lower())
+        ).scalar_one_or_none():
+            flash("Ya existe un rol con ese nombre.", "danger")
+        else:
+            db.session.add(
+                TeamRole(
+                    name=name,
+                    description=description,
+                    is_active=True,
+                    is_system=False,
+                    is_editable=True,
+                    is_deletable=True,
+                )
+            )
+            db.session.commit()
+            flash("Rol creado.", "success")
+        return redirect(url_for("settings.team_roles"))
+
+    roles = db.session.execute(select(TeamRole).order_by(TeamRole.name.asc())).scalars().all()
+    return render_template("settings/team_roles.html", roles=roles)
+
+
+@bp.route("/team/roles/<int:role_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_team_role(role_id: int):
+    ensure_system_team_roles()
+    role = db.session.get(TeamRole, role_id)
+    if not role:
+        abort(404)
+    if not role.is_editable:
+        flash("No se puede editar: el rol es de sistema.", "danger")
+        return redirect(url_for("settings.team_roles"))
+
+    if request.method == "POST":
+        name = _canonical_team_role_name(_safe_strip(request.form.get("name")))
+        description = _safe_strip(request.form.get("description"))
+        if len(name) < 2:
+            flash("El nombre del rol es inválido.", "danger")
+        elif db.session.execute(
+            select(TeamRole.id).where(
+                TeamRole.id != role.id,
+                func.lower(TeamRole.name) == name.lower(),
+            )
+        ).scalar_one_or_none():
+            flash("Ya existe otro rol con ese nombre.", "danger")
+        else:
+            role.name = name
+            role.description = description
+            db.session.commit()
+            flash("Rol actualizado.", "success")
+            return redirect(url_for("settings.team_roles"))
+
+    return render_template(
+        "settings/edit_item.html",
+        item=role,
+        kind="rol de equipo",
+        back_url=url_for("settings.team_roles"),
+    )
+
+
+@bp.route("/team/roles/<int:role_id>/toggle", methods=["POST"])
+@login_required
+def toggle_team_role(role_id: int):
+    ensure_system_team_roles()
+    role = db.session.get(TeamRole, role_id)
+    if not role:
+        abort(404)
+    if role.is_active:
+        if not role.is_deletable:
+            flash("No se puede desactivar: el rol es de sistema.", "danger")
+            return redirect(url_for("settings.team_roles"))
+        in_use = (
+            db.session.execute(select(func.count()).select_from(ResourceRole).where(ResourceRole.role_id == role.id)).scalar_one()
+            + db.session.execute(select(func.count()).select_from(ProjectResource).where(ProjectResource.role_id == role.id)).scalar_one()
+            + db.session.execute(select(func.count()).select_from(TaskResource).where(TaskResource.role_id == role.id)).scalar_one()
+        ) > 0
+        if in_use:
+            flash("No se puede desactivar: el rol está siendo utilizado.", "danger")
+            return redirect(url_for("settings.team_roles"))
+    role.is_active = not role.is_active
+    db.session.commit()
+    flash("Estado del rol actualizado.", "info")
+    return redirect(url_for("settings.team_roles"))
+
+
+@bp.route("/team/catalog/<catalog_key>", methods=["GET", "POST"])
+@login_required
+def team_catalog(catalog_key: str):
+    _ensure_team_catalog_defaults()
+    catalog_label = TEAM_CATALOG_FIELDS.get(catalog_key)
+    if not catalog_label:
+        abort(404)
+
+    if request.method == "POST":
+        name = _normalize_team_catalog_name(catalog_key, _safe_strip(request.form.get("name")))
+        if len(name) < 2:
+            flash(f"{catalog_label} debe tener al menos 2 caracteres.", "danger")
+        else:
+            existing = db.session.execute(
+                select(SystemCatalogOptionConfig).where(
+                    SystemCatalogOptionConfig.owner_user_id == g.user.id,
+                    SystemCatalogOptionConfig.module_key == "team",
+                    SystemCatalogOptionConfig.catalog_key == catalog_key,
+                    SystemCatalogOptionConfig.name.ilike(name),
+                )
+            ).scalar_one_or_none()
+            if existing:
+                existing.is_active = True
+                flash("Valor reactivado.", "success")
+            else:
+                db.session.add(
+                    SystemCatalogOptionConfig(
+                        owner_user_id=g.user.id,
+                        module_key="team",
+                        catalog_key=catalog_key,
+                        name=name,
+                        is_active=True,
+                    )
+                )
+                flash("Valor agregado.", "success")
+            db.session.commit()
+        return redirect(url_for("settings.team_catalog", catalog_key=catalog_key))
+
+    items = db.session.execute(
+        select(SystemCatalogOptionConfig)
+        .where(
+            SystemCatalogOptionConfig.owner_user_id == g.user.id,
+            SystemCatalogOptionConfig.module_key == "team",
+            SystemCatalogOptionConfig.catalog_key == catalog_key,
+            SystemCatalogOptionConfig.is_active.is_(True),
+        )
+        .order_by(SystemCatalogOptionConfig.is_system.asc(), SystemCatalogOptionConfig.name.asc())
+    ).scalars()
+    return render_template(
+        "settings/team_catalog.html",
+        items=items,
+        catalog_key=catalog_key,
+        catalog_label=catalog_label,
+    )
+
+
+@bp.route("/team/catalog/<catalog_key>/<int:item_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_team_catalog(catalog_key: str, item_id: int):
+    catalog_label = TEAM_CATALOG_FIELDS.get(catalog_key)
+    if not catalog_label:
+        abort(404)
+
+    item = db.session.get(SystemCatalogOptionConfig, item_id)
+    if (
+        not item
+        or item.owner_user_id != g.user.id
+        or item.module_key != "team"
+        or item.catalog_key != catalog_key
+    ):
+        abort(404)
+    if not item.is_editable:
+        flash("No se puede editar: la opción es de sistema.", "danger")
+        return redirect(url_for("settings.team_catalog", catalog_key=catalog_key))
+
+    if request.method == "POST":
+        name = _normalize_team_catalog_name(catalog_key, _safe_strip(request.form.get("name")))
+        if len(name) < 2:
+            flash(f"{catalog_label} debe tener al menos 2 caracteres.", "danger")
+        else:
+            exists = db.session.execute(
+                select(SystemCatalogOptionConfig).where(
+                    SystemCatalogOptionConfig.owner_user_id == g.user.id,
+                    SystemCatalogOptionConfig.module_key == "team",
+                    SystemCatalogOptionConfig.catalog_key == catalog_key,
+                    SystemCatalogOptionConfig.name.ilike(name),
+                    SystemCatalogOptionConfig.id != item.id,
+                )
+            ).scalar_one_or_none()
+            if exists:
+                flash(f"Ya existe un valor para {catalog_label} con ese nombre.", "danger")
+            else:
+                item.name = name
+                db.session.commit()
+                flash("Valor actualizado.", "success")
+                return redirect(url_for("settings.team_catalog", catalog_key=catalog_key))
+
+    return render_template(
+        "settings/edit_item.html",
+        item=item,
+        kind=catalog_label,
+        back_url=url_for("settings.team_catalog", catalog_key=catalog_key),
+    )
+
+
+@bp.route("/team/catalog/<catalog_key>/<int:item_id>/delete", methods=["POST"])
+@login_required
+def delete_team_catalog(catalog_key: str, item_id: int):
+    if catalog_key not in TEAM_CATALOG_FIELDS:
+        abort(404)
+    item = db.session.get(SystemCatalogOptionConfig, item_id)
+    if (
+        not item
+        or item.owner_user_id != g.user.id
+        or item.module_key != "team"
+        or item.catalog_key != catalog_key
+    ):
+        abort(404)
+    if not item.is_deletable:
+        flash("No se puede eliminar: la opción es de sistema.", "danger")
+        return redirect(url_for("settings.team_catalog", catalog_key=catalog_key))
+    if _team_catalog_in_use(catalog_key, item.name):
+        flash("No se puede eliminar: la opción está siendo utilizada.", "danger")
+        return redirect(url_for("settings.team_catalog", catalog_key=catalog_key))
+    item.is_active = False
+    db.session.commit()
+    flash("Valor eliminado.", "info")
+    return redirect(url_for("settings.team_catalog", catalog_key=catalog_key))
 
 
 @bp.route("/projects/catalog/<catalog_key>", methods=["GET", "POST"])

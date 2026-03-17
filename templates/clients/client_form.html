@@ -8,7 +8,7 @@
 {% endblock %}
 
 {% block dashboard_content %}
-<form method="post" class="row g-3">
+<form method="post" class="row g-3 client-form">
   <div class="col-12">
     <div class="card border-0 metric-card">
       <div class="card-header"><strong>1. Datos generales</strong></div>
@@ -170,7 +170,7 @@
           {% set current = form_values.get('sales_executive_resource_id', client.sales_executive_resource_id if client else '')|string %}
           <select name="sales_executive_resource_id" class="custom-select">
             <option value="">Seleccionar</option>
-            {% for resource in active_resources %}
+            {% for resource in sales_executive_resources %}
               <option value="{{ resource.id }}" {% if current == resource.id|string %}selected{% endif %}>{{ resource.full_name }}</option>
             {% endfor %}
           </select>
@@ -181,7 +181,7 @@
           {% set current = form_values.get('account_manager_resource_id', client.account_manager_resource_id if client else '')|string %}
           <select name="account_manager_resource_id" class="custom-select">
             <option value="">Seleccionar</option>
-            {% for resource in active_resources %}
+            {% for resource in account_manager_resources %}
               <option value="{{ resource.id }}" {% if current == resource.id|string %}selected{% endif %}>{{ resource.full_name }}</option>
             {% endfor %}
           </select>
@@ -275,7 +275,13 @@
       <div class="card-body row g-3">
         <div class="col-12 col-lg-6">
           <label class="form-label">Metodología</label>
-          <input name="methodology" class="form-control" value="{{ form_values.get('methodology', client.methodology if client else '') }}">
+          {% set current = form_values.get('methodology', client.methodology if client else '') %}
+          <select name="methodology" class="custom-select">
+            <option value="">Seleccionar</option>
+            {% for item in methodologies %}
+              <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
         </div>
         <div class="col-12 col-lg-6">
           <label class="form-label">Canal soporte preferido</label>
@@ -293,7 +299,13 @@
         </div>
         <div class="col-12 col-lg-6">
           <label class="form-label">Zona horaria</label>
-          <input name="timezone" class="form-control" value="{{ form_values.get('timezone', client.timezone if client else '') }}">
+          {% set current = form_values.get('timezone', client.timezone if client else '') %}
+          <select name="timezone" class="custom-select">
+            <option value="">Seleccionar</option>
+            {% for item in timezones %}
+              <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
+            {% endfor %}
+          </select>
         </div>
         <div class="col-12 col-lg-6">
           <label class="form-label">Idioma</label>
@@ -310,7 +322,7 @@
           {% set current = form_values.get('delivery_manager_resource_id', client.delivery_manager_resource_id if client else '')|string %}
           <select name="delivery_manager_resource_id" class="custom-select">
             <option value="">Seleccionar</option>
-            {% for resource in active_resources %}
+            {% for resource in delivery_manager_resources %}
               <option value="{{ resource.id }}" {% if current == resource.id|string %}selected{% endif %}>{{ resource.full_name }}</option>
             {% endfor %}
           </select>
@@ -380,43 +392,46 @@
     </div>
   </div>
 
-  {% if is_edit %}
-  <div class="col-12 col-lg-4">
-    <label class="form-label">Estado de registro</label>
-    {% set selected = form_values.get('is_active', '1' if client.is_active else '0') %}
-    <select name="is_active" class="custom-select">
-      <option value="1" {% if selected == '1' %}selected{% endif %}>Activo</option>
-      <option value="0" {% if selected == '0' %}selected{% endif %}>Inactivo</option>
-    </select>
-  </div>
-
-  {% if client and client.is_active %}
   <div class="col-12">
-    <div class="card border border-danger">
-      <div class="card-body">
-        <h3 class="h6 text-danger mb-2">Eliminar cliente</h3>
-        <p class="small text-secondary mb-3">
-          La eliminación es lógica (estado "Eliminado"). Solo disponible si no tiene proyectos ni contratos asociados.
-        </p>
-        <button
-          class="btn btn-outline-danger btn-sm"
-          type="submit"
-          formaction="{{ url_for('clients.delete_client', client_id=client.id) }}"
-          formmethod="post"
-          formnovalidate
-          onclick="return confirm('Vas a marcar este cliente como eliminado. ¿Deseas continuar?');"
-        >
-          Eliminar cliente
-        </button>
+    <div class="card border-0 metric-card">
+      <div class="card-header"><strong>6. Estado y acciones</strong></div>
+      <div class="card-body row g-3">
+        {% if is_edit %}
+        <div class="col-12 col-lg-4">
+          <label class="form-label">Estado de registro</label>
+          {% set selected = form_values.get('is_active', '1' if client.is_active else '0') %}
+          <select name="is_active" class="custom-select">
+            <option value="1" {% if selected == '1' %}selected{% endif %}>Activo</option>
+            <option value="0" {% if selected == '0' %}selected{% endif %}>Inactivo</option>
+          </select>
+        </div>
+        {% endif %}
+        {% if is_edit and client and client.is_active %}
+        <div class="col-12">
+          <div class="border border-danger rounded p-3">
+            <h3 class="h6 text-danger mb-2">Eliminar cliente</h3>
+            <p class="small text-secondary mb-3">
+              La eliminación es lógica (estado "Eliminado"). Solo disponible si no tiene proyectos ni contratos asociados.
+            </p>
+            <button
+              class="btn btn-outline-danger btn-sm btn-action-standard"
+              type="submit"
+              formaction="{{ url_for('clients.delete_client', client_id=client.id) }}"
+              formmethod="post"
+              formnovalidate
+              onclick="return confirm('Vas a marcar este cliente como eliminado. ¿Deseas continuar?');"
+            >
+              Eliminar cliente
+            </button>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      <div class="card-footer bg-white d-flex gap-2">
+          <button class="btn btn-primary btn-action-standard" type="submit">{{ 'Guardar cambios' if is_edit else 'Crear cliente' }}</button>
+          <a href="{{ url_for('clients.list_clients') }}" class="btn btn-outline-secondary btn-action-standard">Cancelar</a>
       </div>
     </div>
-  </div>
-  {% endif %}
-  {% endif %}
-
-  <div class="col-12 d-flex gap-2">
-    <button class="btn btn-primary btn-action-standard" type="submit">{{ 'Guardar cambios' if is_edit else 'Crear cliente' }}</button>
-    <a href="{{ url_for('clients.list_clients') }}" class="btn btn-outline-secondary btn-action-standard">Cancelar</a>
   </div>
 </form>
 {% endblock %}
