@@ -1,0 +1,41 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Editar excepción de disponibilidad | NCProject{% endblock %}
+{% block page_title %}Editar excepción de disponibilidad{% endblock %}
+{% block page_subtitle %}Recurso: {{ resource.full_name }}{% endblock %}
+{% block page_actions %}
+<a href="{{ next_url if next_url is defined else url_for('team.manage_resource_availability', resource_id=resource.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
+{% endblock %}
+
+{% block dashboard_content %}
+{% set exception_type_labels = {'time_off': 'Ausencia', 'vacation': 'Vacaciones', 'leave': 'Licencia', 'holiday': 'Feriado', 'blocked': 'Bloqueado'} %}
+<div class="card border-0 metric-card">
+  <div class="card-header d-flex align-items-center">
+    <strong>Actualizar excepción</strong>
+    <a href="{{ url_for('settings.team_catalog', catalog_key='availability_exception_types') }}" class="btn btn-link btn-sm ml-auto">Configurar tipos</a>
+  </div>
+  <div class="card-body">
+    {% set selected_type = form_values.get('exception_type', availability_exception.exception_type) %}
+    {% set selected_start_date = form_values.get('start_date', availability_exception.start_date) %}
+    {% set selected_end_date = form_values.get('end_date', availability_exception.end_date or '') %}
+    {% set selected_hours_lost = form_values.get('hours_lost', availability_exception.hours_lost or '') %}
+    {% set selected_observations = form_values.get('observations', availability_exception.observations or '') %}
+    <form method="post" action="{{ url_for('team.edit_availability_exception', exception_id=availability_exception.id) }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ next_url if next_url is defined else url_for('team.manage_resource_availability', resource_id=resource.id) }}">
+      <div class="col-12 col-md-3">
+        <label class="form-label">Tipo</label>
+        <select name="exception_type" class="custom-select" required>
+          {% for item in availability_exception_types %}
+          <option value="{{ item }}" {% if selected_type == item %}selected{% endif %}>{{ exception_type_labels.get(item, item|replace('_', ' ')|title) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-2"><label class="form-label">Desde *</label><input type="date" name="start_date" class="form-control" required value="{{ selected_start_date }}"></div>
+      <div class="col-12 col-md-2"><label class="form-label">Hasta</label><input type="date" name="end_date" class="form-control" value="{{ selected_end_date }}"></div>
+      <div class="col-12 col-md-2"><label class="form-label">Hs afectadas</label><input type="number" min="0" step="0.25" name="hours_lost" class="form-control" value="{{ selected_hours_lost }}"></div>
+      <div class="col-12 col-md-3"><label class="form-label">Observaciones</label><input name="observations" class="form-control" value="{{ selected_observations }}"></div>
+      <div class="col-12"><button class="btn btn-primary btn-sm btn-action-standard" type="submit">Guardar cambios</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

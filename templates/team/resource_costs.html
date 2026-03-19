@@ -1,0 +1,94 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Gestión de costos | NCProject{% endblock %}
+{% block page_title %}Gestión de costos{% endblock %}
+{% block page_subtitle %}Recurso: {{ resource.full_name }}{% endblock %}
+{% block page_actions %}
+<a href="{{ url_for('team.resource_detail', resource_id=resource.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al detalle</a>
+{% endblock %}
+
+{% block dashboard_content %}
+{% set cost_form_mode = 'edit' if edit_cost else 'create' %}
+{% set cost_values = cost_form_values if cost_form_values else {} %}
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>Tarifas del recurso</strong></div>
+  <div class="card-body">
+    <div class="card border-0 metric-card mb-3 form-mode-card form-mode-{{ cost_form_mode }}">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>{{ 'Editar tarifa' if edit_cost else 'Nueva tarifa' }}</strong>
+        <span class="badge form-mode-badge">{{ 'Modo edición' if edit_cost else 'Modo alta' }}</span>
+      </div>
+      <div class="card-body">
+        {% if edit_cost and edit_cost_usage_count > 0 %}
+        <div class="alert alert-warning py-2" role="alert">
+          Esta tarifa está en uso ({{ edit_cost_usage_count }} referencia{{ '' if edit_cost_usage_count == 1 else 's' }}). Los cambios impactarán esos registros.
+        </div>
+        {% endif %}
+        {% set selected_cost_type = cost_values.get('cost_type', 'hourly' if edit_cost and edit_cost.hourly_cost is not none else ('monthly' if edit_cost else 'hourly')) %}
+        {% set selected_cost_amount = cost_values.get('cost_amount', edit_cost.hourly_cost if edit_cost and edit_cost.hourly_cost is not none else (edit_cost.monthly_cost if edit_cost else '')) %}
+        <form method="post" action="{{ url_for('team.edit_cost', cost_id=edit_cost.id) if edit_cost else url_for('team.add_cost', resource_id=resource.id) }}" class="row g-2 align-items-end">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ url_for('team.manage_resource_costs', resource_id=resource.id) }}">
+          <div class="col-6 col-md-2"><label class="form-label">Desde *</label><input type="date" name="valid_from" class="form-control" required value="{{ cost_values.get('valid_from', edit_cost.valid_from if edit_cost else '') }}"></div>
+          <div class="col-6 col-md-2"><label class="form-label">Hasta</label><input type="date" name="valid_to" class="form-control" value="{{ cost_values.get('valid_to', edit_cost.valid_to if edit_cost else '') }}"></div>
+          <div class="col-6 col-md-2">
+            <label class="form-label">Tipo *</label>
+            <select name="cost_type" class="custom-select" required>
+              <option value="hourly" {% if selected_cost_type == 'hourly' %}selected{% endif %}>Por hora</option>
+              <option value="monthly" {% if selected_cost_type == 'monthly' %}selected{% endif %}>Por mes</option>
+            </select>
+          </div>
+          <div class="col-6 col-md-2"><label class="form-label">Costo *</label><input type="number" min="0" step="0.01" name="cost_amount" class="form-control" required value="{{ selected_cost_amount }}"></div>
+          <div class="col-6 col-md-2">
+            <label class="form-label">Moneda *</label>
+            {% set selected_currency = cost_values.get('currency', edit_cost.currency if edit_cost else 'USD') %}
+            <select name="currency" class="custom-select" required>
+              {% for currency in currency_options %}
+              <option value="{{ currency }}" {% if selected_currency == currency %}selected{% endif %}>{{ currency }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-2 d-flex gap-2">
+            <button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar cambios' if edit_cost else 'Agregar tarifa' }}</button>
+            {% if edit_cost %}
+            <a href="{{ url_for('team.manage_resource_costs', resource_id=resource.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar edición</a>
+            {% endif %}
+          </div>
+          <div class="col-12"><label class="form-label">Observaciones</label><input name="observations" class="form-control" value="{{ cost_values.get('observations', edit_cost.observations if edit_cost else '') }}"></div>
+        </form>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead><tr><th>Rango</th><th>Tipo</th><th>Costo</th><th>Moneda</th><th>Observaciones</th><th>Estado</th><th class="text-end">Acción</th></tr></thead>
+        <tbody>
+          {% for item in resource.costs|sort(attribute='valid_from', reverse=True) %}
+          <tr>
+            <td>{{ item.valid_from }}{% if item.valid_to %} - {{ item.valid_to }}{% else %} - actual{% endif %}</td>
+            <td>{{ 'Por hora' if item.hourly_cost is not none else 'Por mes' }}</td>
+            <td>{{ item.hourly_cost if item.hourly_cost is not none else item.monthly_cost }}</td>
+            <td>{{ item.currency }}</td>
+            <td>{{ item.observations or '-' }}</td>
+            <td>{{ 'Activo' if item.is_active else 'Inactivo' }}</td>
+            <td class="text-end">
+              {% set usage_count = usage_by_cost_id.get(item.id, 0) %}
+              <a href="{{ url_for('team.manage_resource_costs', resource_id=resource.id, edit_cost_id=item.id) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
+              {% if usage_count > 0 %}
+              <span class="badge bg-secondary ml-1">En uso ({{ usage_count }})</span>
+              {% else %}
+              <form method="post" class="d-inline" action="{{ url_for('team.delete_cost', cost_id=item.id) }}" onsubmit="return confirm('¿Eliminar esta tarifa? Esta acción no se puede deshacer.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="next" value="{{ url_for('team.manage_resource_costs', resource_id=resource.id) }}">
+                <button class="btn btn-sm btn-outline-danger ml-1" type="submit">Eliminar</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-secondary text-center">Sin costos.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

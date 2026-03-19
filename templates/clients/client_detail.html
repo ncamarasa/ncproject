@@ -9,17 +9,17 @@
 {% endblock %}
 {% block page_subtitle %}Vista 360: solo visualización{% endblock %}
 {% block page_actions %}
-<a href="{{ url_for('clients.edit_client', client_id=client.id) }}" class="btn btn-primary btn-sm mr-2 btn-action-standard">
-  <i class="fas fa-user-edit"></i> Editar cliente
-</a>
-<a href="{{ url_for('clients.list_clients') }}" class="btn btn-outline-dark btn-sm btn-action-standard">
-  <i class="fas fa-arrow-left"></i> Volver al listado
-</a>
+<a href="{{ url_for('clients.edit_client', client_id=client.id) }}" class="btn btn-primary btn-sm btn-action-standard">Editar</a>
+<a href="{{ url_for('clients.list_clients') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al listado</a>
 {% endblock %}
 
 {% block dashboard_content %}
 <div class="row g-3 mb-2">
-  <div class="col-6 col-lg-2"><div class="small-box bg-info"><div class="inner"><h4>{{ stats.active_projects }}</h4><p>Proyectos activos</p></div></div></div>
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('projects.list_projects', client_id=client.id, active='1') }}" class="text-reset d-block">
+      <div class="small-box bg-info"><div class="inner"><h4>{{ stats.active_projects }}</h4><p>Proyectos activos</p></div></div>
+    </a>
+  </div>
   <div class="col-6 col-lg-2">
     <a href="{{ url_for('clients.manage_contacts', client_id=client.id) }}" class="text-reset d-block">
       <div class="small-box bg-primary"><div class="inner"><h4>{{ stats.contacts }}</h4><p>Contactos</p></div></div>

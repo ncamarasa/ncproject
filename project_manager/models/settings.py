@@ -74,3 +74,23 @@ class SystemCatalogOptionConfig(TimestampMixin, db.Model):
             name="uq_system_catalog_option_configs_owner_module_catalog_name",
         ),
     )
+
+
+class TeamCalendarHolidayConfig(TimestampMixin, db.Model):
+    __tablename__ = "team_calendar_holiday_configs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    owner_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    calendar_name = db.Column(db.String(120), nullable=False, index=True)
+    holiday_date = db.Column(db.Date, nullable=False, index=True)
+    label = db.Column(db.String(180), nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "owner_user_id",
+            "calendar_name",
+            "holiday_date",
+            name="uq_team_calendar_holiday_owner_calendar_date",
+        ),
+    )

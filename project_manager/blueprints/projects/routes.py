@@ -1,5 +1,6 @@
 import os
 from datetime import date
+from decimal import Decimal
 from uuid import uuid4
 
 from flask import (
@@ -32,12 +33,17 @@ from project_manager.models import (
     Project,
     ProjectResource,
     Resource,
+    ResourceCost,
+    RoleSalePrice,
     Stakeholder,
     SystemCatalogOptionConfig,
     TeamRole,
 )
 from project_manager.models import UserProjectAssignment
 from project_manager.services.code_generation import generate_client_code, generate_project_code
+from project_manager.services.task_business_rules import is_blocked_status, is_closed_status
+from project_manager.services.team_business_rules import find_applicable_cost_id, find_applicable_role_sale_price_id
+from project_manager.utils.dates import parse_date_input
 
 ALLOWED_CONTRACT_EXTENSIONS = {"pdf", "doc", "docx"}
 
@@ -78,13 +84,104 @@ def _safe_strip(value: str | None) -> str:
     return (value or "").strip()
 
 
-def _parse_date(value: str | None):
-    if not value:
-        return None
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        return None
+_parse_date = parse_date_input
+
+
+def _assignment_estimated_hours(assignment: ProjectResource) -> Decimal | None:
+    if assignment.planned_hours is not None:
+        return Decimal(assignment.planned_hours)
+    if (
+        assignment.planned_daily_hours is not None
+        and assignment.start_date is not None
+        and assignment.end_date is not None
+        and assignment.end_date >= assignment.start_date
+    ):
+        day_count = (assignment.end_date - assignment.start_date).days + 1
+        return Decimal(assignment.planned_daily_hours) * Decimal(day_count)
+    return None
+
+
+def _hourly_amount(cost_value, monthly_value) -> Decimal | None:
+    if cost_value is not None:
+        return Decimal(cost_value)
+    if monthly_value is not None:
+        return Decimal(monthly_value) / Decimal("160")
+    return None
+
+
+def _project_financial_summary(project: Project) -> dict:
+    assignments = [item for item in project.resource_assignments if item.is_active]
+    coverage_total = len(assignments)
+    covered = 0
+    estimated_hours_total = Decimal("0")
+    estimated_revenue = Decimal("0")
+    estimated_cost = Decimal("0")
+    warnings: list[str] = []
+
+    role_price_cache: dict[tuple[int, date], RoleSalePrice | None] = {}
+    resource_cost_cache: dict[tuple[int, date], ResourceCost | None] = {}
+    project_currency = (project.currency_code or "").strip().upper()
+    currency_set: set[str] = set()
+
+    for assignment in assignments:
+        reference_date = assignment.start_date or project.estimated_start_date or project.actual_start_date or date.today()
+        hours = _assignment_estimated_hours(assignment)
+        if hours is None or hours <= 0:
+            warnings.append("Hay asignaciones activas sin horas planificadas suficientes para calcular margen.")
+            continue
+        if not assignment.role_id:
+            warnings.append("Hay asignaciones activas sin rol asignado.")
+            continue
+
+        resource_cost_key = (assignment.resource_id, reference_date)
+        if resource_cost_key not in resource_cost_cache:
+            cost_id = assignment.resource_cost_id or find_applicable_cost_id(assignment.resource_id, reference_date)
+            resource_cost_cache[resource_cost_key] = db.session.get(ResourceCost, cost_id) if cost_id else None
+        resource_cost = resource_cost_cache[resource_cost_key]
+
+        role_price_key = (assignment.role_id, reference_date)
+        if role_price_key not in role_price_cache:
+            sale_price_id = find_applicable_role_sale_price_id(assignment.role_id, reference_date)
+            role_price_cache[role_price_key] = db.session.get(RoleSalePrice, sale_price_id) if sale_price_id else None
+        role_sale_price = role_price_cache[role_price_key]
+
+        if not resource_cost or not role_sale_price:
+            warnings.append("Faltan costos o precios vigentes para algunas asignaciones activas.")
+            continue
+
+        cost_currency = (resource_cost.currency or "").strip().upper()
+        sale_currency = (role_sale_price.currency or "").strip().upper()
+        if not cost_currency or not sale_currency or cost_currency != sale_currency:
+            warnings.append("Hay asignaciones con monedas incompatibles entre costo y precio.")
+            continue
+        if project_currency and sale_currency != project_currency:
+            warnings.append("Hay asignaciones con moneda distinta a la moneda del proyecto.")
+            continue
+
+        cost_per_hour = _hourly_amount(resource_cost.hourly_cost, resource_cost.monthly_cost)
+        sale_per_hour = _hourly_amount(role_sale_price.hourly_price, role_sale_price.monthly_price)
+        if cost_per_hour is None or sale_per_hour is None:
+            warnings.append("No se pudo determinar tarifa horaria para algunas asignaciones.")
+            continue
+
+        covered += 1
+        estimated_hours_total += hours
+        estimated_cost += hours * cost_per_hour
+        estimated_revenue += hours * sale_per_hour
+        currency_set.add(sale_currency)
+
+    currency = project_currency or (next(iter(currency_set)) if len(currency_set) == 1 else "")
+    margin = estimated_revenue - estimated_cost
+    return {
+        "coverage_total": coverage_total,
+        "coverage_valid": covered,
+        "estimated_hours": float(estimated_hours_total),
+        "estimated_revenue": float(estimated_revenue),
+        "estimated_cost": float(estimated_cost),
+        "estimated_margin": float(margin),
+        "currency": currency or "-",
+        "warnings": sorted(set(warnings)),
+    }
 
 
 def _has_allowed_contract_extension(filename: str) -> bool:
@@ -138,6 +235,8 @@ def _active_team_role_id(*candidate_names: str) -> int | None:
 
 
 def _sync_project_manager_assignments(project: Project, payload: dict) -> None:
+    assignment_start_date = project.estimated_start_date or project.actual_start_date
+    reference_date = assignment_start_date or date.today()
     role_mapping = [
         (
             payload.get("project_manager_resource_id"),
@@ -180,6 +279,8 @@ def _sync_project_manager_assignments(project: Project, payload: dict) -> None:
             active_row.resource_id = resource_id
             active_row.is_active = True
             active_row.is_primary = True
+            active_row.start_date = assignment_start_date
+            active_row.resource_cost_id = find_applicable_cost_id(resource_id, reference_date)
             continue
 
         db.session.add(
@@ -187,9 +288,10 @@ def _sync_project_manager_assignments(project: Project, payload: dict) -> None:
                 project_id=project.id,
                 resource_id=resource_id,
                 role_id=role_id,
+                resource_cost_id=find_applicable_cost_id(resource_id, reference_date),
                 is_primary=True,
                 is_active=True,
-                start_date=project.estimated_start_date or project.actual_start_date,
+                start_date=assignment_start_date,
             )
         )
 
@@ -626,25 +728,41 @@ def contracts_by_client(client_id: int):
 def project_detail(project_id: int):
     project = _load_project_or_404(project_id)
     today = date.today()
-    task_total = len(project.tasks)
-    task_pending = sum(1 for task in project.tasks if (task.status or "").strip() == "Pendiente")
-    task_completed = sum(1 for task in project.tasks if (task.status or "").strip() == "Completada")
-    task_milestones = sum(1 for task in project.tasks if task.is_milestone)
-    task_blocked = sum(1 for task in project.tasks if (task.status or "").strip() == "Bloqueada")
+    tasks = list(project.tasks)
+    task_total = len(tasks)
+    task_completed = sum(1 for task in tasks if is_closed_status(task.status))
+    task_milestones = sum(1 for task in tasks if task.is_milestone)
+    task_blocked = sum(1 for task in tasks if is_blocked_status(task.status))
+    task_active = sum(1 for task in tasks if not is_closed_status(task.status))
     task_overdue = sum(
         1
-        for task in project.tasks
-        if task.due_date and task.due_date < today and (task.status or "").strip() != "Completada"
+        for task in tasks
+        if task.due_date and task.due_date < today and not is_closed_status(task.status)
     )
+    progress_avg = round(sum((task.progress_percent or 0) for task in tasks) / task_total) if task_total else 0
+    milestone_open = sum(1 for task in tasks if task.is_milestone and not is_closed_status(task.status))
+    milestone_upcoming = sorted(
+        [task for task in tasks if task.is_milestone and not is_closed_status(task.status)],
+        key=lambda task: (
+            task.due_date is None,
+            task.due_date or date.max,
+            task.id,
+        ),
+    )[:5]
+    financial_summary = _project_financial_summary(project)
     return render_template(
         "projects/project_detail.html",
         project=project,
         task_total=task_total,
-        task_pending=task_pending,
         task_completed=task_completed,
         task_milestones=task_milestones,
         task_blocked=task_blocked,
+        task_active=task_active,
         task_overdue=task_overdue,
+        progress_avg=progress_avg,
+        milestone_open=milestone_open,
+        milestone_upcoming=milestone_upcoming,
+        financial_summary=financial_summary,
         **_active_menu_context(),
     )
 

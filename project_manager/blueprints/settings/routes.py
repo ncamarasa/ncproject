@@ -1,3 +1,5 @@
+from datetime import date
+
 from flask import abort, g, flash, redirect, render_template, request, url_for
 from sqlalchemy import func, select
 
@@ -17,8 +19,10 @@ from project_manager.models import (
     ProjectResource,
     Resource,
     ResourceAvailability,
+    ResourceAvailabilityException,
     ResourceRole,
     SystemCatalogOptionConfig,
+    TeamCalendarHolidayConfig,
     Task,
     TaskDependency,
     TaskResource,
@@ -26,6 +30,7 @@ from project_manager.models import (
 )
 from project_manager.services.default_catalogs import seed_default_catalogs_for_user
 from project_manager.services.team_business_rules import ensure_system_team_roles
+from project_manager.utils.dates import parse_date_input
 
 
 CLIENT_CATALOG_FIELDS = {
@@ -88,11 +93,17 @@ SHARED_CLIENT_CATALOG_FIELDS_BY_MODULE = {
         "currency_code": "Moneda",
         "billing_mode": "Modalidad de facturación",
     },
+    "team": {
+        "currency_code": "Moneda",
+        "timezone": "Zona horaria",
+    },
 }
 
 TEAM_CATALOG_FIELDS = {
     "resource_types": "Tipos de recurso",
     "availability_types": "Tipos de disponibilidad",
+    "availability_exception_types": "Tipos de excepción de disponibilidad",
+    "calendars": "Calendarios",
     "positions": "Cargos",
     "areas": "Areas",
     "vendors": "Proveedores",
@@ -101,7 +112,9 @@ TEAM_CATALOG_FIELDS = {
 TEAM_CATALOG_DESCRIPTIONS = {
     "resource_types": "Define los tipos de recurso para la ficha de Equipo (interno, tercerizado, etc.).",
     "availability_types": "Configura los tipos de disponibilidad para capacidad operativa (full time, part time, custom).",
-    "positions": "Administra el catalogo de cargos disponibles para los recursos.",
+    "availability_exception_types": "Configura los tipos de excepción de disponibilidad (vacaciones, licencia, feriado, etc.).",
+    "calendars": "Define calendarios laborales (Argentina, Estados Unidos, etc.) para aplicar feriados por recurso.",
+    "positions": "Administra cargos de recursos: describen su puesto organizacional en la empresa.",
     "areas": "Administra el catalogo de areas organizativas para clasificar recursos.",
     "vendors": "Administra el catalogo de proveedores/partners para recursos tercerizados.",
 }
@@ -121,8 +134,40 @@ def _safe_strip(value: str | None) -> str:
     return (value or "").strip()
 
 
+_parse_date = parse_date_input
+
+
 def _normalize_team_catalog_name(catalog_key: str, name: str) -> str:
-    if catalog_key in {"resource_types", "availability_types"}:
+    if catalog_key == "resource_types":
+        normalized = "_".join(name.strip().lower().split())
+        if normalized == "interno":
+            return "internal"
+        if normalized == "externo":
+            return "external"
+        return normalized
+    if catalog_key == "availability_types":
+        normalized = "_".join(name.strip().lower().split())
+        aliases = {
+            "tiempo_completo": "full_time",
+            "completo": "full_time",
+            "medio_tiempo": "part_time",
+            "parcial": "part_time",
+            "personalizado": "custom",
+        }
+        return aliases.get(normalized, normalized)
+    if catalog_key == "availability_exception_types":
+        normalized = "_".join(name.strip().lower().split())
+        aliases = {
+            "ausencia": "time_off",
+            "tiempo_fuera": "time_off",
+            "vacaciones": "vacation",
+            "licencia": "leave",
+            "feriado": "holiday",
+            "bloqueado": "blocked",
+            "bloequeado": "blocked",
+        }
+        return aliases.get(normalized, normalized)
+    if catalog_key in {"resource_types", "availability_types", "availability_exception_types"}:
         return "_".join(name.strip().lower().split())
     return name
 
@@ -267,6 +312,18 @@ def _team_catalog_in_use(catalog_key: str, name: str) -> bool:
         return _count_usage(Resource, Resource.resource_type, name) > 0
     if catalog_key == "availability_types":
         return _count_usage(ResourceAvailability, ResourceAvailability.availability_type, name) > 0
+    if catalog_key == "availability_exception_types":
+        return _count_usage(ResourceAvailabilityException, ResourceAvailabilityException.exception_type, name) > 0
+    if catalog_key == "calendars":
+        resource_in_use = _count_usage(Resource, Resource.calendar_name, name) > 0
+        holiday_in_use = db.session.execute(
+            select(func.count()).select_from(TeamCalendarHolidayConfig).where(
+                TeamCalendarHolidayConfig.owner_user_id == g.user.id,
+                TeamCalendarHolidayConfig.is_active.is_(True),
+                func.lower(TeamCalendarHolidayConfig.calendar_name) == name.lower(),
+            )
+        ).scalar_one() > 0
+        return resource_in_use or holiday_in_use
     if catalog_key == "positions":
         return _count_usage(Resource, Resource.position, name) > 0
     if catalog_key == "areas":
@@ -317,7 +374,156 @@ def team_settings():
         "settings/team.html",
         team_catalog_fields=TEAM_CATALOG_FIELDS,
         team_catalog_descriptions=TEAM_CATALOG_DESCRIPTIONS,
+        shared_catalog_fields=SHARED_CLIENT_CATALOG_FIELDS_BY_MODULE.get("team", {}),
     )
+
+
+@bp.route("/team/calendars", methods=["GET", "POST"])
+@login_required
+def team_calendars():
+    _ensure_team_catalog_defaults()
+    calendar_options = db.session.execute(
+        select(SystemCatalogOptionConfig.name)
+        .where(
+            SystemCatalogOptionConfig.owner_user_id == g.user.id,
+            SystemCatalogOptionConfig.module_key == "team",
+            SystemCatalogOptionConfig.catalog_key == "calendars",
+            SystemCatalogOptionConfig.is_active.is_(True),
+        )
+        .order_by(SystemCatalogOptionConfig.name.asc())
+    ).scalars().all()
+
+    requested_calendar = _safe_strip(request.args.get("calendar"))
+    valid_calendars = set(calendar_options)
+    if requested_calendar and requested_calendar in valid_calendars:
+        selected_calendar = requested_calendar
+    else:
+        selected_calendar = calendar_options[0] if calendar_options else ""
+    holidays = []
+    if selected_calendar:
+        holidays = db.session.execute(
+            select(TeamCalendarHolidayConfig)
+            .where(
+                TeamCalendarHolidayConfig.owner_user_id == g.user.id,
+                TeamCalendarHolidayConfig.calendar_name == selected_calendar,
+                TeamCalendarHolidayConfig.is_active.is_(True),
+            )
+            .order_by(TeamCalendarHolidayConfig.holiday_date.asc())
+        ).scalars().all()
+
+    if request.method == "POST":
+        calendar_name = _safe_strip(request.form.get("calendar_name"))
+        holiday_date = _parse_date(request.form.get("holiday_date"))
+        label = _safe_strip(request.form.get("label"))
+        errors: list[str] = []
+        if calendar_name not in set(calendar_options):
+            errors.append("Calendario inválido.")
+        if not holiday_date:
+            errors.append("Fecha inválida.")
+        if len(label) < 2:
+            errors.append("Descripción inválida.")
+        if errors:
+            for error in errors:
+                flash(error, "danger")
+            return redirect(url_for("settings.team_calendars", calendar=selected_calendar or calendar_name))
+
+        existing = db.session.execute(
+            select(TeamCalendarHolidayConfig).where(
+                TeamCalendarHolidayConfig.owner_user_id == g.user.id,
+                TeamCalendarHolidayConfig.calendar_name == calendar_name,
+                TeamCalendarHolidayConfig.holiday_date == holiday_date,
+            )
+        ).scalar_one_or_none()
+        if existing:
+            existing.label = label
+            existing.is_active = True
+            flash("Feriado actualizado/reactivado.", "success")
+        else:
+            db.session.add(
+                TeamCalendarHolidayConfig(
+                    owner_user_id=g.user.id,
+                    calendar_name=calendar_name,
+                    holiday_date=holiday_date,
+                    label=label,
+                    is_active=True,
+                )
+            )
+            flash("Feriado agregado.", "success")
+        db.session.commit()
+        return redirect(url_for("settings.team_calendars", calendar=calendar_name))
+
+    return render_template(
+        "settings/team_calendars.html",
+        calendar_options=calendar_options,
+        selected_calendar=selected_calendar,
+        holidays=holidays,
+    )
+
+
+@bp.route("/team/calendars/<int:item_id>/delete", methods=["POST"])
+@login_required
+def delete_team_calendar_holiday(item_id: int):
+    item = db.session.get(TeamCalendarHolidayConfig, item_id)
+    if not item or item.owner_user_id != g.user.id:
+        abort(404)
+    item.is_active = False
+    db.session.commit()
+    flash("Feriado eliminado.", "info")
+    calendar_item_id = request.args.get("calendar_item_id")
+    if calendar_item_id:
+        try:
+            return redirect(url_for("settings.edit_team_catalog", catalog_key="calendars", item_id=int(calendar_item_id)))
+        except ValueError:
+            pass
+    return redirect(url_for("settings.team_calendars", calendar=item.calendar_name))
+
+
+@bp.route("/team/catalog/calendars/<int:item_id>/holidays/add", methods=["POST"])
+@login_required
+def add_team_calendar_holiday_from_edit(item_id: int):
+    calendar_item = db.session.get(SystemCatalogOptionConfig, item_id)
+    if (
+        not calendar_item
+        or calendar_item.owner_user_id != g.user.id
+        or calendar_item.module_key != "team"
+        or calendar_item.catalog_key != "calendars"
+        or not calendar_item.is_active
+    ):
+        abort(404)
+
+    holiday_date = _parse_date(request.form.get("holiday_date"))
+    label = _safe_strip(request.form.get("label"))
+    if not holiday_date:
+        flash("Fecha inválida.", "danger")
+        return redirect(url_for("settings.edit_team_catalog", catalog_key="calendars", item_id=calendar_item.id))
+    if len(label) < 2:
+        flash("Descripción inválida.", "danger")
+        return redirect(url_for("settings.edit_team_catalog", catalog_key="calendars", item_id=calendar_item.id))
+
+    existing = db.session.execute(
+        select(TeamCalendarHolidayConfig).where(
+            TeamCalendarHolidayConfig.owner_user_id == g.user.id,
+            TeamCalendarHolidayConfig.calendar_name == calendar_item.name,
+            TeamCalendarHolidayConfig.holiday_date == holiday_date,
+        )
+    ).scalar_one_or_none()
+    if existing:
+        existing.label = label
+        existing.is_active = True
+        flash("Feriado actualizado/reactivado.", "success")
+    else:
+        db.session.add(
+            TeamCalendarHolidayConfig(
+                owner_user_id=g.user.id,
+                calendar_name=calendar_item.name,
+                holiday_date=holiday_date,
+                label=label,
+                is_active=True,
+            )
+        )
+        flash("Feriado agregado.", "success")
+    db.session.commit()
+    return redirect(url_for("settings.edit_team_catalog", catalog_key="calendars", item_id=calendar_item.id))
 
 
 @bp.route("/team/roles", methods=["GET", "POST"])
@@ -489,8 +695,12 @@ def edit_team_catalog(catalog_key: str, item_id: int):
     if not item.is_editable:
         flash("No se puede editar: la opción es de sistema.", "danger")
         return redirect(url_for("settings.team_catalog", catalog_key=catalog_key))
+    if catalog_key in {"resource_types", "availability_types", "availability_exception_types"} and item.is_system:
+        flash("No se puede editar: la opción es de sistema.", "danger")
+        return redirect(url_for("settings.team_catalog", catalog_key=catalog_key))
 
     if request.method == "POST":
+        old_name = item.name
         name = _normalize_team_catalog_name(catalog_key, _safe_strip(request.form.get("name")))
         if len(name) < 2:
             flash(f"{catalog_label} debe tener al menos 2 caracteres.", "danger")
@@ -508,9 +718,36 @@ def edit_team_catalog(catalog_key: str, item_id: int):
                 flash(f"Ya existe un valor para {catalog_label} con ese nombre.", "danger")
             else:
                 item.name = name
+                if catalog_key == "calendars" and old_name != name:
+                    db.session.execute(
+                        TeamCalendarHolidayConfig.__table__.update()
+                        .where(
+                            TeamCalendarHolidayConfig.owner_user_id == g.user.id,
+                            TeamCalendarHolidayConfig.calendar_name == old_name,
+                        )
+                        .values(calendar_name=name)
+                    )
                 db.session.commit()
                 flash("Valor actualizado.", "success")
                 return redirect(url_for("settings.team_catalog", catalog_key=catalog_key))
+
+    if catalog_key == "calendars":
+        holidays = db.session.execute(
+            select(TeamCalendarHolidayConfig)
+            .where(
+                TeamCalendarHolidayConfig.owner_user_id == g.user.id,
+                TeamCalendarHolidayConfig.calendar_name == item.name,
+                TeamCalendarHolidayConfig.is_active.is_(True),
+            )
+            .order_by(TeamCalendarHolidayConfig.holiday_date.asc())
+        ).scalars().all()
+        return render_template(
+            "settings/edit_team_calendar.html",
+            item=item,
+            kind=catalog_label,
+            holidays=holidays,
+            back_url=url_for("settings.team_catalog", catalog_key=catalog_key),
+        )
 
     return render_template(
         "settings/edit_item.html",

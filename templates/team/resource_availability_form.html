@@ -1,0 +1,48 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Editar disponibilidad | NCProject{% endblock %}
+{% block page_title %}Editar disponibilidad{% endblock %}
+{% block page_subtitle %}Recurso: {{ resource.full_name }}{% endblock %}
+{% block page_actions %}
+<a href="{{ next_url if next_url is defined else url_for('team.manage_resource_availability', resource_id=resource.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
+{% endblock %}
+
+{% block dashboard_content %}
+{% set availability_type_labels = {'full_time': 'Tiempo completo', 'part_time': 'Medio tiempo', 'custom': 'Personalizado'} %}
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>Actualizar disponibilidad</strong></div>
+  <div class="card-body">
+    {% set selected_type = form_values.get('availability_type', availability.availability_type) %}
+    {% set selected_weekly_hours = form_values.get('weekly_hours', availability.weekly_hours) %}
+    {% set selected_daily_hours = form_values.get('daily_hours', availability.daily_hours or '') %}
+    {% set selected_valid_from = form_values.get('valid_from', availability.valid_from) %}
+    {% set selected_valid_to = form_values.get('valid_to', availability.valid_to or '') %}
+    {% set selected_observations = form_values.get('observations', availability.observations or '') %}
+    <form method="post" action="{{ url_for('team.edit_availability', availability_id=availability.id) }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ next_url if next_url is defined else url_for('team.manage_resource_availability', resource_id=resource.id) }}">
+      <div class="col-12 col-md-2">
+        <label class="form-label">Tipo</label>
+        <select name="availability_type" class="custom-select" required>
+          {% for item in availability_types %}
+          <option value="{{ item }}" {% if selected_type == item %}selected{% endif %}>{{ availability_type_labels.get(item, item|replace('_', ' ')|title) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-2"><label class="form-label">Hs/semana</label><input type="number" min="1" step="0.25" name="weekly_hours" class="form-control" required value="{{ selected_weekly_hours }}"></div>
+      <div class="col-12 col-md-2"><label class="form-label">Hs/día</label><input type="number" min="0" step="0.25" name="daily_hours" class="form-control" value="{{ selected_daily_hours }}"></div>
+      <div class="col-12 col-md-2"><label class="form-label">Desde *</label><input type="date" name="valid_from" class="form-control" required value="{{ selected_valid_from }}"></div>
+      <div class="col-12 col-md-2"><label class="form-label">Hasta</label><input type="date" name="valid_to" class="form-control" value="{{ selected_valid_to }}"></div>
+      <div class="col-12 col-md-4">
+        <label class="form-label d-block">Días laborables</label>
+        <div class="d-flex flex-wrap gap-2">
+          {% for code, label in [('mon', 'Lun'), ('tue', 'Mar'), ('wed', 'Mié'), ('thu', 'Jue'), ('fri', 'Vie'), ('sat', 'Sáb'), ('sun', 'Dom')] %}
+          <label class="mr-2 mb-0"><input type="checkbox" name="working_days" value="{{ code }}" {% if code in selected_working_days %}checked{% endif %}> {{ label }}</label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="col-12 col-md-2"><button class="btn btn-primary btn-sm btn-action-standard" type="submit">Guardar cambios</button></div>
+      <div class="col-12"><label class="form-label">Observaciones</label><input name="observations" class="form-control" value="{{ selected_observations }}"></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

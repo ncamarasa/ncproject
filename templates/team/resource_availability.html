@@ -1,0 +1,194 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Gestión de disponibilidad | NCProject{% endblock %}
+{% block page_title %}Gestión de disponibilidad{% endblock %}
+{% block page_subtitle %}Recurso: {{ resource.full_name }}{% endblock %}
+{% block page_actions %}
+<a href="{{ url_for('team.team_calendar', resource_id=resource.id, next=request.full_path.rstrip('?')) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver calendario</a>
+<a href="{{ url_for('team.resource_detail', resource_id=resource.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al detalle</a>
+{% endblock %}
+
+{% block dashboard_content %}
+{% set weekday_labels = {'mon': 'Lun', 'tue': 'Mar', 'wed': 'Mié', 'thu': 'Jue', 'fri': 'Vie', 'sat': 'Sáb', 'sun': 'Dom'} %}
+{% set availability_type_labels = {'full_time': 'Tiempo completo', 'part_time': 'Medio tiempo', 'custom': 'Personalizado'} %}
+{% set exception_type_labels = {'time_off': 'Ausencia', 'vacation': 'Vacaciones', 'leave': 'Licencia', 'holiday': 'Feriado', 'blocked': 'Bloqueado'} %}
+{% set availability_form_mode = 'edit' if edit_availability else 'create' %}
+{% set exception_form_mode = 'edit' if edit_exception else 'create' %}
+{% set availability_values = availability_form_values if availability_form_values else {} %}
+{% set exception_values = exception_form_values if exception_form_values else {} %}
+<div class="card border-0 metric-card mb-3">
+  <div class="card-header d-flex align-items-center">
+    <strong>Disponibilidades</strong>
+    <span class="badge badge-light ml-2">{{ resource.availabilities|length }} registros</span>
+  </div>
+  <div class="card-body">
+    <div class="row">
+      <div class="col-12 col-xl-4 mb-3 mb-xl-0">
+        <div class="card border-0 metric-card h-100 form-mode-card form-mode-{{ availability_form_mode }}">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>{{ 'Editar disponibilidad' if edit_availability else 'Nueva disponibilidad' }}</strong>
+            <span class="badge form-mode-badge">{{ 'Modo edición' if edit_availability else 'Modo alta' }}</span>
+          </div>
+          <div class="card-body">
+          <form method="post" action="{{ url_for('team.edit_availability', availability_id=edit_availability.id) if edit_availability else url_for('team.add_availability', resource_id=resource.id) }}" class="row g-2 align-items-end">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="{{ url_for('team.manage_resource_availability', resource_id=resource.id) }}">
+            <div class="col-12">
+              <label class="form-label">Tipo</label>
+              <select name="availability_type" class="custom-select" required>
+                {% for item in availability_types %}
+                {% set selected_type = availability_values.get('availability_type', edit_availability.availability_type if edit_availability else '') %}
+                <option value="{{ item }}" {% if selected_type == item %}selected{% endif %}>{{ availability_type_labels.get(item, item|replace('_', ' ')|title) }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6"><label class="form-label">Hs/semana</label><input type="number" min="1" step="0.25" name="weekly_hours" class="form-control" required value="{{ availability_values.get('weekly_hours', edit_availability.weekly_hours if edit_availability else 40) }}"></div>
+            <div class="col-6"><label class="form-label">Hs/día</label><input type="number" min="0" step="0.25" name="daily_hours" class="form-control" value="{{ availability_values.get('daily_hours', edit_availability.daily_hours if edit_availability else '') }}"></div>
+            <div class="col-12">
+              <label class="form-label d-block">Días laborables</label>
+              <div class="d-flex flex-wrap gap-2">
+                {% for code, label in [('mon', 'Lun'), ('tue', 'Mar'), ('wed', 'Mié'), ('thu', 'Jue'), ('fri', 'Vie'), ('sat', 'Sáb'), ('sun', 'Dom')] %}
+                <label class="mr-2 mb-1"><input type="checkbox" name="working_days" value="{{ code }}" {% if code in selected_working_days %}checked{% endif %}> {{ label }}</label>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="col-6"><label class="form-label">Desde *</label><input type="date" name="valid_from" class="form-control" required value="{{ availability_values.get('valid_from', edit_availability.valid_from if edit_availability else '') }}"></div>
+            <div class="col-6"><label class="form-label">Hasta</label><input type="date" name="valid_to" class="form-control" value="{{ availability_values.get('valid_to', edit_availability.valid_to if edit_availability else '') }}"></div>
+            <div class="col-12"><label class="form-label">Observaciones</label><input name="observations" class="form-control" value="{{ availability_values.get('observations', edit_availability.observations if edit_availability else '') }}"></div>
+            <div class="col-12 d-flex gap-2">
+              <button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar cambios' if edit_availability else 'Agregar disponibilidad' }}</button>
+              {% if edit_availability %}
+              <a href="{{ url_for('team.manage_resource_availability', resource_id=resource.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar edición</a>
+              {% endif %}
+            </div>
+          </form>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-8">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Tipo</th><th>Hs sem.</th><th>Días</th><th>Rango</th><th>Observaciones</th><th>Estado</th><th class="text-end">Acción</th></tr></thead>
+            <tbody>
+              {% for item in resource.availabilities|sort(attribute='valid_from', reverse=True) %}
+              <tr>
+                <td>{{ availability_type_labels.get(item.availability_type, item.availability_type|replace('_', ' ')|title) }}</td>
+                <td>{{ item.weekly_hours }}</td>
+                <td>
+                  {% if item.working_days %}
+                    {% for code in item.working_days.split(',') if code %}
+                      {{ weekday_labels.get(code, code)|title }}{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
+                <td>{{ item.valid_from }}{% if item.valid_to %} - {{ item.valid_to }}{% else %} - actual{% endif %}</td>
+                <td class="text-break">{{ item.observations or '-' }}</td>
+                <td>
+                  {% if item.is_active %}
+                  <span class="badge badge-success">Activo</span>
+                  {% else %}
+                  <span class="badge badge-secondary">Inactivo</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  <a href="{{ url_for('team.edit_availability', availability_id=item.id, next=url_for('team.manage_resource_availability', resource_id=resource.id)) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
+                  <form method="post" class="d-inline" action="{{ url_for('team.toggle_availability', availability_id=item.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="next" value="{{ url_for('team.manage_resource_availability', resource_id=resource.id) }}">
+                    <button class="btn btn-sm btn-outline-warning ml-1" type="submit">{{ 'Desactivar' if item.is_active else 'Activar' }}</button>
+                  </form>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="7" class="text-secondary text-center">Sin disponibilidades.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 metric-card">
+  <div class="card-header d-flex align-items-center">
+    <strong>Excepciones de disponibilidad</strong>
+    <span class="badge badge-light ml-2">{{ resource.availability_exceptions|length }} registros</span>
+  </div>
+  <div class="card-body">
+    <div class="row">
+      <div class="col-12 col-xl-4 mb-3 mb-xl-0">
+        <div class="card border-0 metric-card h-100 form-mode-card form-mode-{{ exception_form_mode }}">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>{{ 'Editar excepción' if edit_exception else 'Nueva excepción' }}</strong>
+            <span class="badge form-mode-badge">{{ 'Modo edición' if edit_exception else 'Modo alta' }}</span>
+          </div>
+          <div class="card-body">
+          <div class="d-flex align-items-center mb-3">
+            <a href="{{ url_for('settings.team_catalog', catalog_key='availability_exception_types') }}" class="btn btn-link btn-sm ml-auto p-0">Configurar tipos</a>
+          </div>
+          <form method="post" action="{{ url_for('team.edit_availability_exception', exception_id=edit_exception.id) if edit_exception else url_for('team.add_availability_exception', resource_id=resource.id) }}" class="row g-2 align-items-end">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="{{ url_for('team.manage_resource_availability', resource_id=resource.id) }}">
+            <div class="col-12">
+              <label class="form-label">Tipo</label>
+              <select name="exception_type" class="custom-select" required>
+                {% for item in availability_exception_types %}
+                {% set selected_exception_type = exception_values.get('exception_type', edit_exception.exception_type if edit_exception else '') %}
+                <option value="{{ item }}" {% if selected_exception_type == item %}selected{% endif %}>{{ exception_type_labels.get(item, item|replace('_', ' ')|title) }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-6"><label class="form-label">Desde *</label><input type="date" name="start_date" class="form-control" required value="{{ exception_values.get('start_date', edit_exception.start_date if edit_exception else '') }}"></div>
+            <div class="col-6"><label class="form-label">Hasta</label><input type="date" name="end_date" class="form-control" value="{{ exception_values.get('end_date', edit_exception.end_date if edit_exception else '') }}"></div>
+            <div class="col-12"><label class="form-label">Hs afectadas</label><input type="number" min="0" step="0.25" name="hours_lost" class="form-control" value="{{ exception_values.get('hours_lost', edit_exception.hours_lost if edit_exception else '') }}"></div>
+            <div class="col-12"><label class="form-label">Observaciones</label><input name="observations" class="form-control" value="{{ exception_values.get('observations', edit_exception.observations if edit_exception else '') }}"></div>
+            <div class="col-12 d-flex gap-2">
+              <button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar cambios' if edit_exception else 'Agregar excepción' }}</button>
+              {% if edit_exception %}
+              <a href="{{ url_for('team.manage_resource_availability', resource_id=resource.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar edición</a>
+              {% endif %}
+            </div>
+          </form>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-8">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Tipo</th><th>Rango</th><th>Hs afectadas</th><th>Observaciones</th><th>Estado</th><th class="text-end">Acción</th></tr></thead>
+            <tbody>
+              {% for item in resource.availability_exceptions|sort(attribute='start_date', reverse=True) %}
+              <tr>
+                <td>{{ exception_type_labels.get(item.exception_type, item.exception_type|replace('_', ' ')|title) }}</td>
+                <td>{{ item.start_date }}{% if item.end_date %} - {{ item.end_date }}{% else %} - actual{% endif %}</td>
+                <td>{{ item.hours_lost or '-' }}</td>
+                <td class="text-break">{{ item.observations or '-' }}</td>
+                <td>
+                  {% if item.is_active %}
+                  <span class="badge badge-success">Activa</span>
+                  {% else %}
+                  <span class="badge badge-secondary">Inactiva</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  <a href="{{ url_for('team.edit_availability_exception', exception_id=item.id, next=url_for('team.manage_resource_availability', resource_id=resource.id)) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
+                  <form method="post" class="d-inline" action="{{ url_for('team.toggle_availability_exception', exception_id=item.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="next" value="{{ url_for('team.manage_resource_availability', resource_id=resource.id) }}">
+                    <button class="btn btn-sm btn-outline-warning ml-1" type="submit">{{ 'Desactivar' if item.is_active else 'Activar' }}</button>
+                  </form>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="text-secondary text-center">Sin excepciones.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

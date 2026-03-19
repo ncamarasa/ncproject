@@ -74,7 +74,7 @@
             </a>
             <ul class="nav nav-treeview">
               {% if user_can('users.manage') %}
-              {% set users_section_active = request.endpoint in ['administration.list_users', 'administration.create_user', 'administration.edit_user', 'administration.reset_password', 'administration.toggle_user', 'administration.list_roles', 'administration.edit_role', 'administration.toggle_role'] %}
+              {% set users_section_active = request.endpoint in ['administration.list_users', 'administration.create_user', 'administration.edit_user', 'administration.reset_password', 'administration.toggle_user', 'administration.list_roles', 'administration.edit_role', 'administration.toggle_role', 'administration.team_role_prices'] %}
               <li class="nav-item {% if users_section_active %}menu-open{% endif %}">
                 <a href="#" class="nav-link {% if users_section_active %}active{% endif %}">
                   <i class="far fa-circle nav-icon"></i>
@@ -94,6 +94,12 @@
                     <a href="{{ url_for('administration.list_roles') }}" class="nav-link {% if request.endpoint in ['administration.list_roles', 'administration.edit_role', 'administration.toggle_role'] %}active{% endif %}">
                       <i class="far fa-dot-circle nav-icon"></i>
                       <p>Roles</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="{{ url_for('administration.team_role_prices') }}" class="nav-link {% if request.endpoint == 'administration.team_role_prices' %}active{% endif %}">
+                      <i class="far fa-dot-circle nav-icon"></i>
+                      <p>Precios por rol</p>
                     </a>
                   </li>
                 </ul>

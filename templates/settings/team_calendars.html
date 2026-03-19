@@ -1,0 +1,63 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Calendarios de Equipo | NCProject{% endblock %}
+{% block page_title %}Configuración / Equipo / Calendarios{% endblock %}
+{% block page_subtitle %}Feriados por calendario para disponibilidad automática{% endblock %}
+{% block page_actions %}
+<a href="{{ url_for('settings.team_catalog', catalog_key='calendars') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>Calendarios y feriados</strong></div>
+  <div class="card-body">
+    {% if not calendar_options %}
+    <p class="text-secondary mb-0">No hay calendarios definidos. Crealos desde ABM de Calendarios en Configuración / Equipo.</p>
+    {% else %}
+    <form method="get" class="row g-2 align-items-end mb-3">
+      <div class="col-12 col-md-4">
+        <label class="form-label">País / Calendario</label>
+        <select name="calendar" class="custom-select" onchange="this.form.submit()">
+          {% for option in calendar_options %}
+          <option value="{{ option }}" {% if option == selected_calendar %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-2">
+        <button class="btn btn-outline-primary btn-sm btn-action-standard" type="submit">Filtrar</button>
+      </div>
+    </form>
+
+    <form method="post" class="row g-2 align-items-end mb-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="calendar_name" value="{{ selected_calendar }}">
+      <div class="col-12 col-md-4"><label class="form-label">Calendario</label><input class="form-control" value="{{ selected_calendar }}" readonly></div>
+      <div class="col-12 col-md-3"><label class="form-label">Fecha *</label><input type="date" name="holiday_date" class="form-control" required></div>
+      <div class="col-12 col-md-3"><label class="form-label">Descripción *</label><input name="label" class="form-control" required></div>
+      <div class="col-12 col-md-2"><button class="btn btn-primary btn-sm btn-action-standard" type="submit">Agregar</button></div>
+    </form>
+
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead><tr><th>Fecha</th><th>Descripción</th><th class="text-end">Acción</th></tr></thead>
+        <tbody>
+          {% for item in holidays %}
+          <tr>
+            <td>{{ item.holiday_date }}</td>
+            <td>{{ item.label }}</td>
+            <td class="text-end">
+              <form method="post" class="d-inline" action="{{ url_for('settings.delete_team_calendar_holiday', item_id=item.id) }}" onsubmit="return confirm('¿Eliminar feriado?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="text-secondary text-center">Sin feriados cargados.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

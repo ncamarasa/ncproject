@@ -1,0 +1,47 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Editar tarifa | NCProject{% endblock %}
+{% block page_title %}Editar tarifa{% endblock %}
+{% block page_subtitle %}Recurso: {{ resource.full_name }}{% endblock %}
+{% block page_actions %}
+<a href="{{ next_url if next_url is defined else url_for('team.manage_resource_costs', resource_id=resource.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>Actualizar tarifa</strong></div>
+  <div class="card-body">
+    {% if usage_count and usage_count > 0 %}
+    <div class="alert alert-warning py-2" role="alert">
+      Esta tarifa ya está en uso ({{ usage_count }} referencia{{ '' if usage_count == 1 else 's' }}). Los cambios impactarán esos registros.
+    </div>
+    {% endif %}
+    {% set selected_type = form_values.get('cost_type', 'hourly' if cost.hourly_cost is not none else 'monthly') %}
+    {% set selected_amount = form_values.get('cost_amount', cost.hourly_cost if cost.hourly_cost is not none else cost.monthly_cost) %}
+    {% set selected_currency = form_values.get('currency', cost.currency) %}
+    <form method="post" action="{{ url_for('team.edit_cost', cost_id=cost.id) }}" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ next_url if next_url is defined else url_for('team.manage_resource_costs', resource_id=resource.id) }}">
+      <div class="col-12 col-md-2"><label class="form-label">Desde *</label><input type="date" name="valid_from" class="form-control" required value="{{ form_values.get('valid_from', cost.valid_from) }}"></div>
+      <div class="col-12 col-md-2"><label class="form-label">Hasta</label><input type="date" name="valid_to" class="form-control" value="{{ form_values.get('valid_to', cost.valid_to or '') }}"></div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Tipo *</label>
+        <select name="cost_type" class="custom-select" required>
+          <option value="hourly" {% if selected_type == 'hourly' %}selected{% endif %}>Por hora</option>
+          <option value="monthly" {% if selected_type == 'monthly' %}selected{% endif %}>Por mes</option>
+        </select>
+      </div>
+      <div class="col-12 col-md-2"><label class="form-label">Costo *</label><input type="number" min="0" step="0.01" name="cost_amount" class="form-control" required value="{{ selected_amount }}"></div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Moneda *</label>
+        <select name="currency" class="custom-select" required>
+          {% for currency in currency_options %}
+          <option value="{{ currency }}" {% if selected_currency == currency %}selected{% endif %}>{{ currency }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-2"><button class="btn btn-primary btn-sm btn-action-standard" type="submit">Guardar cambios</button></div>
+      <div class="col-12"><label class="form-label">Observaciones</label><input name="observations" class="form-control" value="{{ form_values.get('observations', cost.observations or '') }}"></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

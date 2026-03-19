@@ -1,7 +1,7 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
-from flask import abort, flash, g, redirect, render_template, request, url_for
+from flask import abort, flash, g, jsonify, redirect, render_template, request, url_for
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
@@ -10,10 +10,12 @@ from project_manager.blueprints.team import bp
 from project_manager.extensions import db
 from project_manager.models import (
     Client,
+    ClientCatalogOptionConfig,
     Project,
     ProjectResource,
     Resource,
     ResourceAvailability,
+    ResourceAvailabilityException,
     ResourceCost,
     ResourceRole,
     SystemCatalogOptionConfig,
@@ -23,16 +25,24 @@ from project_manager.models import (
 )
 from project_manager.services.default_catalogs import seed_default_catalogs_for_user
 from project_manager.services.team_business_rules import (
+    calculate_resource_net_availability,
     close_previous_cost_if_needed,
     ensure_system_team_roles,
+    estimate_planned_daily_hours,
+    find_applicable_cost_id,
     normalize_email,
+    normalize_working_days,
+    resource_cost_usage_count,
     sync_resource_full_name,
     validate_assignment,
     validate_availability_payload,
+    validate_availability_exception_payload,
     validate_cost_payload,
     validate_resource_payload,
     validate_task_assignment_project_consistency,
 )
+from project_manager.utils.dates import parse_date_input
+from urllib.parse import urlsplit
 
 
 @bp.before_request
@@ -71,13 +81,7 @@ def _to_decimal(value: str | None):
         return None
 
 
-def _parse_date(value: str | None):
-    if not value:
-        return None
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        return None
+_parse_date = parse_date_input
 
 
 def _to_bool(value: str | None) -> bool:
@@ -89,6 +93,15 @@ def _canonical_assignment_role_name(role_name: str | None) -> str:
     if normalized == "project manager":
         return "Project Manager"
     return role_name or "-"
+
+
+def _canonical_resource_type(value: str | None) -> str:
+    normalized = _safe_strip(value).lower()
+    if normalized == "interno":
+        return "internal"
+    if normalized == "externo":
+        return "external"
+    return normalized
 
 
 def _active_roles():
@@ -128,6 +141,33 @@ def _team_catalog_values(catalog_key: str, fallback: list[str]) -> list[str]:
     return values or fallback
 
 
+def _shared_client_catalog_values(field_key: str, fallback: list[str]) -> list[str]:
+    if not g.get("user"):
+        return fallback
+    values = db.session.execute(
+        select(ClientCatalogOptionConfig.name)
+        .where(
+            ClientCatalogOptionConfig.owner_user_id == g.user.id,
+            ClientCatalogOptionConfig.field_key == field_key,
+            ClientCatalogOptionConfig.is_active.is_(True),
+        )
+        .order_by(ClientCatalogOptionConfig.is_system.asc(), ClientCatalogOptionConfig.name.asc())
+    ).scalars().all()
+    if not values:
+        seed_default_catalogs_for_user(g.user.id)
+        db.session.commit()
+        values = db.session.execute(
+            select(ClientCatalogOptionConfig.name)
+            .where(
+                ClientCatalogOptionConfig.owner_user_id == g.user.id,
+                ClientCatalogOptionConfig.field_key == field_key,
+                ClientCatalogOptionConfig.is_active.is_(True),
+            )
+            .order_by(ClientCatalogOptionConfig.is_system.asc(), ClientCatalogOptionConfig.name.asc())
+        ).scalars().all()
+    return values or fallback
+
+
 def _validate_catalog_value(value: str, options: list[str], field_label: str, errors: list[str]) -> str:
     cleaned = _safe_strip(value)
     if not cleaned:
@@ -144,6 +184,7 @@ def _resource_or_404(resource_id: int) -> Resource:
         .options(
             selectinload(Resource.role_links).selectinload(ResourceRole.role),
             selectinload(Resource.availabilities),
+            selectinload(Resource.availability_exceptions),
             selectinload(Resource.costs),
             selectinload(Resource.project_assignments).selectinload(ProjectResource.project),
             selectinload(Resource.project_assignments).selectinload(ProjectResource.role),
@@ -155,6 +196,25 @@ def _resource_or_404(resource_id: int) -> Resource:
     if not resource:
         abort(404)
     return resource
+
+
+def _safe_next_url() -> str | None:
+    candidate = _safe_strip(request.form.get("next") or request.args.get("next"))
+    if not candidate:
+        return None
+    parsed = urlsplit(candidate)
+    if parsed.scheme or parsed.netloc:
+        return None
+    if not parsed.path.startswith("/"):
+        return None
+    return candidate
+
+
+def _redirect_with_next(default_endpoint: str, **kwargs):
+    next_url = _safe_next_url()
+    if next_url:
+        return redirect(next_url)
+    return redirect(url_for(default_endpoint, **kwargs))
 
 
 def _resource_usage_messages(resource_id: int) -> list[str]:
@@ -228,7 +288,7 @@ def index():
 def list_resources():
     q = _safe_strip(request.args.get("q"))
     active = _safe_strip(request.args.get("active", "1"))
-    resource_type = _safe_strip(request.args.get("resource_type"))
+    resource_type = _canonical_resource_type(request.args.get("resource_type"))
     role_id = _to_int(request.args.get("role_id"))
 
     stmt = select(Resource).order_by(Resource.updated_at.desc())
@@ -265,10 +325,52 @@ def list_resources():
     )
 
 
+@bp.route("/calendar")
+@login_required
+def team_calendar():
+    resources = db.session.execute(
+        select(Resource)
+        .where(Resource.is_active.is_(True))
+        .options(selectinload(Resource.role_links).selectinload(ResourceRole.role))
+        .order_by(Resource.full_name.asc())
+    ).scalars().all()
+    roles = _active_roles()
+    requested_resource_id = _to_int(request.args.get("resource_id"))
+    selected_resource = None
+    if requested_resource_id:
+        selected_resource = next((item for item in resources if item.id == requested_resource_id), None)
+    if not selected_resource and resources:
+        selected_resource = resources[0]
+    requested_role_id = _to_int(request.args.get("role_id"))
+    selected_role_id = requested_role_id if requested_role_id and any(role.id == requested_role_id for role in roles) else None
+    back_url = _safe_next_url() or url_for("team.list_resources")
+    resources_meta = [
+        {
+            "id": resource.id,
+            "full_name": resource.full_name,
+            "role_ids": [link.role_id for link in resource.role_links if link.role and link.role.is_active],
+            "role_names": [link.role.name for link in resource.role_links if link.role and link.role.is_active],
+        }
+        for resource in resources
+    ]
+
+    return render_template(
+        "team/team_calendar.html",
+        resources=resources,
+        roles=roles,
+        selected_resource=selected_resource,
+        selected_role_id=selected_role_id,
+        resources_meta=resources_meta,
+        back_url=back_url,
+    )
+
+
 @bp.route("/resources/new", methods=["GET", "POST"])
 @login_required
 def create_resource():
     resource_types = _team_catalog_values("resource_types", ["internal", "external"])
+    calendar_options = _team_catalog_values("calendars", [])
+    timezone_options = _shared_client_catalog_values("timezone", [])
     position_options = _team_catalog_values("positions", [])
     area_options = _team_catalog_values("areas", [])
     vendor_options = _team_catalog_values("vendors", [])
@@ -280,11 +382,19 @@ def create_resource():
             "phone": _safe_strip(request.form.get("phone")),
             "position": "",
             "area": "",
-            "resource_type": _safe_strip(request.form.get("resource_type")).lower(),
+            "resource_type": _canonical_resource_type(request.form.get("resource_type")),
+            "calendar_name": "",
+            "timezone": "",
             "vendor_name": "",
             "is_active": _to_bool(request.form.get("is_active", "1")),
         }
         errors = validate_resource_payload(payload, allowed_resource_types=resource_types)
+        payload["calendar_name"] = _validate_catalog_value(
+            request.form.get("calendar_name"), calendar_options, "Calendario", errors
+        )
+        payload["timezone"] = _validate_catalog_value(
+            request.form.get("timezone"), timezone_options, "Zona horaria", errors
+        )
         payload["position"] = _validate_catalog_value(request.form.get("position"), position_options, "Cargo", errors)
         payload["area"] = _validate_catalog_value(request.form.get("area"), area_options, "Area", errors)
         payload["vendor_name"] = _validate_catalog_value(request.form.get("vendor_name"), vendor_options, "Proveedor", errors)
@@ -296,6 +406,8 @@ def create_resource():
                 resource=None,
                 form_values=request.form,
                 resource_types=resource_types,
+                calendar_options=calendar_options,
+                timezone_options=timezone_options,
                 position_options=position_options,
                 area_options=area_options,
                 vendor_options=vendor_options,
@@ -313,6 +425,8 @@ def create_resource():
         resource=None,
         form_values={},
         resource_types=resource_types,
+        calendar_options=calendar_options,
+        timezone_options=timezone_options,
         position_options=position_options,
         area_options=area_options,
         vendor_options=vendor_options,
@@ -324,6 +438,8 @@ def create_resource():
 def edit_resource(resource_id: int):
     resource = _resource_or_404(resource_id)
     resource_types = _team_catalog_values("resource_types", ["internal", "external"])
+    calendar_options = _team_catalog_values("calendars", [])
+    timezone_options = _shared_client_catalog_values("timezone", [])
     position_options = _team_catalog_values("positions", [])
     area_options = _team_catalog_values("areas", [])
     vendor_options = _team_catalog_values("vendors", [])
@@ -336,7 +452,9 @@ def edit_resource(resource_id: int):
             "phone": _safe_strip(request.form.get("phone")),
             "position": "",
             "area": "",
-            "resource_type": _safe_strip(request.form.get("resource_type")).lower(),
+            "resource_type": _canonical_resource_type(request.form.get("resource_type")),
+            "calendar_name": "",
+            "timezone": "",
             "vendor_name": "",
             "is_active": _to_bool(request.form.get("is_active", "1")),
         }
@@ -344,6 +462,12 @@ def edit_resource(resource_id: int):
             payload,
             current_resource_id=resource.id,
             allowed_resource_types=resource_types,
+        )
+        payload["calendar_name"] = _validate_catalog_value(
+            request.form.get("calendar_name"), calendar_options, "Calendario", errors
+        )
+        payload["timezone"] = _validate_catalog_value(
+            request.form.get("timezone"), timezone_options, "Zona horaria", errors
         )
         payload["position"] = _validate_catalog_value(request.form.get("position"), position_options, "Cargo", errors)
         payload["area"] = _validate_catalog_value(request.form.get("area"), area_options, "Area", errors)
@@ -356,6 +480,8 @@ def edit_resource(resource_id: int):
                 resource=resource,
                 form_values=request.form,
                 resource_types=resource_types,
+                calendar_options=calendar_options,
+                timezone_options=timezone_options,
                 position_options=position_options,
                 area_options=area_options,
                 vendor_options=vendor_options,
@@ -373,6 +499,8 @@ def edit_resource(resource_id: int):
         resource=resource,
         form_values={},
         resource_types=resource_types,
+        calendar_options=calendar_options,
+        timezone_options=timezone_options,
         position_options=position_options,
         area_options=area_options,
         vendor_options=vendor_options,
@@ -401,7 +529,6 @@ def delete_resource(resource_id: int):
 @login_required
 def resource_detail(resource_id: int):
     resource = _resource_or_404(resource_id)
-    role_ids = {link.role_id for link in resource.role_links}
     assignment_rows: list[dict[str, object]] = []
     seen_keys: set[tuple[str, int, str]] = set()
 
@@ -450,6 +577,8 @@ def resource_detail(resource_id: int):
             assignment_rows.append(
                 {
                     "entity_type": "Cliente",
+                    "client_id": row[0],
+                    "project_id": None,
                     "client_name": row[1],
                     "project_name": "-",
                     "role_name": display_role,
@@ -479,6 +608,8 @@ def resource_detail(resource_id: int):
         assignment_rows.append(
             {
                 "entity_type": "Proyecto",
+                "client_id": item.project.client_id,
+                "project_id": item.project.id,
                 "project_name": _project_label(item.project.project_code, item.project.name),
                 "client_name": project_client_map.get(item.project_id, "-"),
                 "role_name": role_name,
@@ -504,6 +635,7 @@ def resource_detail(resource_id: int):
             Project.commercial_manager_resource_id,
             Project.functional_manager_resource_id,
             Project.technical_manager_resource_id,
+            Project.client_id,
         )
         .join(Client, Client.id == Project.client_id)
         .where(
@@ -534,6 +666,8 @@ def resource_detail(resource_id: int):
             assignment_rows.append(
                 {
                     "entity_type": "Proyecto",
+                    "client_id": row[14],
+                    "project_id": row[0],
                     "project_name": _project_label(row[2], row[1]),
                     "client_name": row[4],
                     "role_name": label,
@@ -547,14 +681,101 @@ def resource_detail(resource_id: int):
         key=lambda item: (item.get("start_date") is None, item.get("start_date")),
         reverse=True,
     )
+    usage_by_cost_id = {item.id: resource_cost_usage_count(item.id) for item in resource.costs}
 
     return render_template(
         "team/resource_detail.html",
         resource=resource,
+        assignment_rows=assignment_rows,
+        today=date.today(),
+        current_availability=next(
+            (
+                item
+                for item in sorted(resource.availabilities, key=lambda row: row.valid_from, reverse=True)
+                if item.is_active and item.valid_from <= date.today() and (item.valid_to is None or item.valid_to >= date.today())
+            ),
+            None,
+        ),
+        current_cost=next(
+            (
+                item
+                for item in sorted(resource.costs, key=lambda row: row.valid_from, reverse=True)
+                if item.valid_from <= date.today() and (item.valid_to is None or item.valid_to >= date.today())
+            ),
+            None,
+        ),
+        usage_by_cost_id=usage_by_cost_id,
+    )
+
+
+@bp.route("/resources/<int:resource_id>/roles")
+@login_required
+def manage_resource_roles(resource_id: int):
+    resource = _resource_or_404(resource_id)
+    role_ids = {link.role_id for link in resource.role_links}
+    return render_template(
+        "team/resource_roles.html",
+        resource=resource,
         roles=_active_roles(),
         role_ids=role_ids,
-        assignment_rows=assignment_rows,
+    )
+
+
+@bp.route("/resources/<int:resource_id>/availability")
+@login_required
+def manage_resource_availability(resource_id: int):
+    resource = _resource_or_404(resource_id)
+    edit_availability = None
+    edit_exception = None
+
+    edit_availability_id = _to_int(request.args.get("edit_availability_id"))
+    if edit_availability_id:
+        edit_availability = db.session.get(ResourceAvailability, edit_availability_id)
+        if not edit_availability or edit_availability.resource_id != resource.id:
+            abort(404)
+
+    edit_exception_id = _to_int(request.args.get("edit_exception_id"))
+    if edit_exception_id:
+        edit_exception = db.session.get(ResourceAvailabilityException, edit_exception_id)
+        if not edit_exception or edit_exception.resource_id != resource.id:
+            abort(404)
+
+    selected_working_days = set((edit_availability.working_days or "").split(",")) if edit_availability else {"mon", "tue", "wed", "thu", "fri"}
+    return render_template(
+        "team/resource_availability.html",
+        resource=resource,
         availability_types=_team_catalog_values("availability_types", ["full_time", "part_time", "custom"]),
+        availability_exception_types=_team_catalog_values(
+            "availability_exception_types",
+            ["time_off", "vacation", "leave", "holiday", "blocked"],
+        ),
+        edit_availability=edit_availability,
+        edit_exception=edit_exception,
+        availability_form_values={},
+        exception_form_values={},
+        selected_working_days=selected_working_days,
+    )
+
+
+@bp.route("/resources/<int:resource_id>/costs")
+@login_required
+def manage_resource_costs(resource_id: int):
+    resource = _resource_or_404(resource_id)
+    edit_cost = None
+    edit_cost_id = _to_int(request.args.get("edit_cost_id"))
+    if edit_cost_id:
+        edit_cost = db.session.get(ResourceCost, edit_cost_id)
+        if not edit_cost or edit_cost.resource_id != resource.id:
+            abort(404)
+
+    return render_template(
+        "team/resource_costs.html",
+        resource=resource,
+        currency_options=_shared_client_catalog_values("currency_code", ["USD"]),
+        usage_by_cost_id={item.id: resource_cost_usage_count(item.id) for item in resource.costs},
+        edit_cost=edit_cost,
+        edit_cost_usage_count=resource_cost_usage_count(edit_cost.id) if edit_cost else 0,
+        cost_form_values={},
     )
 
 
@@ -565,13 +786,13 @@ def add_resource_role(resource_id: int):
     role_id = _to_int(request.form.get("role_id"))
     if not role_id:
         flash("Selecciona un rol.", "danger")
-        return redirect(url_for("team.resource_detail", resource_id=resource.id))
+        return _redirect_with_next("team.manage_resource_roles", resource_id=resource.id)
 
     errors = validate_assignment(resource.id, role_id)
     if errors:
         for error in errors:
             flash(error, "danger")
-        return redirect(url_for("team.resource_detail", resource_id=resource.id))
+        return _redirect_with_next("team.manage_resource_roles", resource_id=resource.id)
 
     existing = db.session.execute(
         select(ResourceRole).where(ResourceRole.resource_id == resource.id, ResourceRole.role_id == role_id)
@@ -582,7 +803,7 @@ def add_resource_role(resource_id: int):
         db.session.add(ResourceRole(resource_id=resource.id, role_id=role_id))
         db.session.commit()
         flash("Rol asignado.", "success")
-    return redirect(url_for("team.resource_detail", resource_id=resource.id))
+    return _redirect_with_next("team.manage_resource_roles", resource_id=resource.id)
 
 
 @bp.route("/resource-role/<int:link_id>/delete", methods=["POST"])
@@ -607,24 +828,26 @@ def remove_resource_role(link_id: int):
     if project_names:
         flash("No se puede remover el rol porque el recurso lo tiene asignado en proyectos activos.", "danger")
         flash(f"Proyectos detectados: {', '.join(project_names)}.", "warning")
-        return redirect(url_for("team.resource_detail", resource_id=link.resource_id))
+        return _redirect_with_next("team.manage_resource_roles", resource_id=link.resource_id)
 
     resource_id = link.resource_id
     db.session.delete(link)
     db.session.commit()
     flash("Rol removido.", "info")
-    return redirect(url_for("team.resource_detail", resource_id=resource_id))
+    return _redirect_with_next("team.manage_resource_roles", resource_id=resource_id)
 
 
 @bp.route("/resources/<int:resource_id>/availability/add", methods=["POST"])
 @login_required
 def add_availability(resource_id: int):
     resource = _resource_or_404(resource_id)
+    working_days = normalize_working_days(request.form.getlist("working_days"))
 
     payload = {
         "availability_type": _safe_strip(request.form.get("availability_type")).lower(),
         "weekly_hours": _to_decimal(request.form.get("weekly_hours")),
         "daily_hours": _to_decimal(request.form.get("daily_hours")),
+        "working_days": working_days,
         "valid_from": _parse_date(request.form.get("valid_from")),
         "valid_to": _parse_date(request.form.get("valid_to")),
         "observations": _safe_strip(request.form.get("observations")),
@@ -638,12 +861,43 @@ def add_availability(resource_id: int):
     if errors:
         for error in errors:
             flash(error, "danger")
-        return redirect(url_for("team.resource_detail", resource_id=resource.id))
+        return _redirect_with_next("team.manage_resource_availability", resource_id=resource.id)
 
     db.session.add(ResourceAvailability(resource_id=resource.id, **payload))
     db.session.commit()
     flash("Disponibilidad guardada.", "success")
-    return redirect(url_for("team.resource_detail", resource_id=resource.id))
+    return _redirect_with_next("team.manage_resource_availability", resource_id=resource.id)
+
+
+@bp.route("/resources/<int:resource_id>/availability-exceptions/add", methods=["POST"])
+@login_required
+def add_availability_exception(resource_id: int):
+    resource = _resource_or_404(resource_id)
+    availability_exception_types = _team_catalog_values(
+        "availability_exception_types",
+        ["time_off", "vacation", "leave", "holiday", "blocked"],
+    )
+    payload = {
+        "exception_type": _safe_strip(request.form.get("exception_type")).lower(),
+        "start_date": _parse_date(request.form.get("start_date")),
+        "end_date": _parse_date(request.form.get("end_date")),
+        "hours_lost": _to_decimal(request.form.get("hours_lost")),
+        "observations": _safe_strip(request.form.get("observations")),
+        "is_active": True,
+    }
+    errors = validate_availability_exception_payload(
+        resource.id,
+        payload,
+        allowed_exception_types=availability_exception_types,
+    )
+    if errors:
+        for error in errors:
+            flash(error, "danger")
+        return _redirect_with_next("team.manage_resource_availability", resource_id=resource.id)
+    db.session.add(ResourceAvailabilityException(resource_id=resource.id, **payload))
+    db.session.commit()
+    flash("Excepción de disponibilidad guardada.", "success")
+    return _redirect_with_next("team.manage_resource_availability", resource_id=resource.id)
 
 
 @bp.route("/availability/<int:availability_id>/toggle", methods=["POST"])
@@ -655,34 +909,248 @@ def toggle_availability(availability_id: int):
     availability.is_active = not availability.is_active
     db.session.commit()
     flash("Estado de disponibilidad actualizado.", "info")
-    return redirect(url_for("team.resource_detail", resource_id=availability.resource_id))
+    return _redirect_with_next("team.manage_resource_availability", resource_id=availability.resource_id)
+
+
+@bp.route("/availability/<int:availability_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_availability(availability_id: int):
+    availability = db.session.get(ResourceAvailability, availability_id)
+    if not availability:
+        abort(404)
+    resource = _resource_or_404(availability.resource_id)
+    availability_types = _team_catalog_values("availability_types", ["full_time", "part_time", "custom"])
+
+    if request.method == "GET":
+        return redirect(
+            url_for(
+                "team.manage_resource_availability",
+                resource_id=resource.id,
+                edit_availability_id=availability.id,
+            )
+        )
+
+    if request.method == "POST":
+        working_days = normalize_working_days(request.form.getlist("working_days"))
+        payload = {
+            "availability_type": _safe_strip(request.form.get("availability_type")).lower(),
+            "weekly_hours": _to_decimal(request.form.get("weekly_hours")),
+            "daily_hours": _to_decimal(request.form.get("daily_hours")),
+            "working_days": working_days,
+            "valid_from": _parse_date(request.form.get("valid_from")),
+            "valid_to": _parse_date(request.form.get("valid_to")),
+            "observations": _safe_strip(request.form.get("observations")),
+            "is_active": availability.is_active,
+        }
+        errors = validate_availability_payload(
+            resource.id,
+            payload,
+            current_id=availability.id,
+            allowed_availability_types=availability_types,
+        )
+        if errors:
+            for error in errors:
+                flash(error, "danger")
+            return render_template(
+                "team/resource_availability.html",
+                resource=resource,
+                availability_types=availability_types,
+                availability_exception_types=_team_catalog_values(
+                    "availability_exception_types",
+                    ["time_off", "vacation", "leave", "holiday", "blocked"],
+                ),
+                edit_availability=availability,
+                edit_exception=None,
+                availability_form_values=request.form,
+                exception_form_values={},
+                selected_working_days=set(request.form.getlist("working_days")),
+            )
+
+        availability.availability_type = payload["availability_type"]
+        availability.weekly_hours = payload["weekly_hours"]
+        availability.daily_hours = payload["daily_hours"]
+        availability.working_days = payload["working_days"]
+        availability.valid_from = payload["valid_from"]
+        availability.valid_to = payload["valid_to"]
+        availability.observations = payload["observations"]
+        db.session.commit()
+        flash("Disponibilidad actualizada.", "success")
+        return _redirect_with_next("team.manage_resource_availability", resource_id=resource.id)
+
+    return _redirect_with_next("team.manage_resource_availability", resource_id=resource.id)
+
+
+@bp.route("/availability-exception/<int:exception_id>/toggle", methods=["POST"])
+@login_required
+def toggle_availability_exception(exception_id: int):
+    availability_exception = db.session.get(ResourceAvailabilityException, exception_id)
+    if not availability_exception:
+        abort(404)
+    availability_exception.is_active = not availability_exception.is_active
+    db.session.commit()
+    flash("Estado de excepción actualizado.", "info")
+    return _redirect_with_next("team.manage_resource_availability", resource_id=availability_exception.resource_id)
+
+
+@bp.route("/availability-exception/<int:exception_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_availability_exception(exception_id: int):
+    availability_exception = db.session.get(ResourceAvailabilityException, exception_id)
+    if not availability_exception:
+        abort(404)
+    resource = _resource_or_404(availability_exception.resource_id)
+    availability_exception_types = _team_catalog_values(
+        "availability_exception_types",
+        ["time_off", "vacation", "leave", "holiday", "blocked"],
+    )
+    if request.method == "GET":
+        return redirect(
+            url_for(
+                "team.manage_resource_availability",
+                resource_id=resource.id,
+                edit_exception_id=availability_exception.id,
+            )
+        )
+
+    if request.method == "POST":
+        payload = {
+            "exception_type": _safe_strip(request.form.get("exception_type")).lower(),
+            "start_date": _parse_date(request.form.get("start_date")),
+            "end_date": _parse_date(request.form.get("end_date")),
+            "hours_lost": _to_decimal(request.form.get("hours_lost")),
+            "observations": _safe_strip(request.form.get("observations")),
+            "is_active": availability_exception.is_active,
+        }
+        errors = validate_availability_exception_payload(
+            resource.id,
+            payload,
+            current_id=availability_exception.id,
+            allowed_exception_types=availability_exception_types,
+        )
+        if errors:
+            for error in errors:
+                flash(error, "danger")
+            return render_template(
+                "team/resource_availability.html",
+                resource=resource,
+                availability_types=_team_catalog_values("availability_types", ["full_time", "part_time", "custom"]),
+                availability_exception_types=availability_exception_types,
+                edit_availability=None,
+                edit_exception=availability_exception,
+                availability_form_values={},
+                exception_form_values=request.form,
+                selected_working_days={"mon", "tue", "wed", "thu", "fri"},
+            )
+
+        availability_exception.exception_type = payload["exception_type"]
+        availability_exception.start_date = payload["start_date"]
+        availability_exception.end_date = payload["end_date"]
+        availability_exception.hours_lost = payload["hours_lost"]
+        availability_exception.observations = payload["observations"]
+        db.session.commit()
+        flash("Excepción de disponibilidad actualizada.", "success")
+        return _redirect_with_next("team.manage_resource_availability", resource_id=resource.id)
+
+    return _redirect_with_next("team.manage_resource_availability", resource_id=resource.id)
 
 
 @bp.route("/resources/<int:resource_id>/costs/add", methods=["POST"])
 @login_required
 def add_cost(resource_id: int):
     resource = _resource_or_404(resource_id)
+    cost_type = _safe_strip(request.form.get("cost_type")).lower()
+    cost_amount = _to_decimal(request.form.get("cost_amount"))
+    currency_options = _shared_client_catalog_values("currency_code", ["USD"])
+    currency = _safe_strip(request.form.get("currency")).upper()
+
     payload = {
         "valid_from": _parse_date(request.form.get("valid_from")),
         "valid_to": _parse_date(request.form.get("valid_to")),
-        "hourly_cost": _to_decimal(request.form.get("hourly_cost")),
-        "monthly_cost": _to_decimal(request.form.get("monthly_cost")),
-        "currency": _safe_strip(request.form.get("currency")).upper(),
+        "hourly_cost": cost_amount if cost_type == "hourly" else None,
+        "monthly_cost": cost_amount if cost_type == "monthly" else None,
+        "cost_type": cost_type,
+        "currency": currency,
         "observations": _safe_strip(request.form.get("observations")),
-        "is_active": _to_bool(request.form.get("is_active", "1")),
+        "is_active": True,
     }
 
     errors = validate_cost_payload(resource.id, payload)
+    if currency not in set(currency_options):
+        errors.append("Moneda inválida.")
     if errors:
         for error in errors:
             flash(error, "danger")
-        return redirect(url_for("team.resource_detail", resource_id=resource.id))
+        return _redirect_with_next("team.manage_resource_costs", resource_id=resource.id)
 
     close_previous_cost_if_needed(resource.id, payload["valid_from"])
-    db.session.add(ResourceCost(resource_id=resource.id, **payload))
+    persist_payload = {k: v for k, v in payload.items() if k != "cost_type"}
+    db.session.add(ResourceCost(resource_id=resource.id, **persist_payload))
     db.session.commit()
     flash("Costo guardado.", "success")
-    return redirect(url_for("team.resource_detail", resource_id=resource.id))
+    return _redirect_with_next("team.manage_resource_costs", resource_id=resource.id)
+
+
+@bp.route("/cost/<int:cost_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_cost(cost_id: int):
+    cost = db.session.get(ResourceCost, cost_id)
+    if not cost:
+        abort(404)
+    usage_count = resource_cost_usage_count(cost.id)
+
+    resource = _resource_or_404(cost.resource_id)
+    currency_options = _shared_client_catalog_values("currency_code", ["USD"])
+    if request.method == "GET":
+        return redirect(
+            url_for(
+                "team.manage_resource_costs",
+                resource_id=resource.id,
+                edit_cost_id=cost.id,
+            )
+        )
+
+    if request.method == "POST":
+        cost_type = _safe_strip(request.form.get("cost_type")).lower()
+        cost_amount = _to_decimal(request.form.get("cost_amount"))
+        currency = _safe_strip(request.form.get("currency")).upper()
+        payload = {
+            "valid_from": _parse_date(request.form.get("valid_from")),
+            "valid_to": _parse_date(request.form.get("valid_to")),
+            "hourly_cost": cost_amount if cost_type == "hourly" else None,
+            "monthly_cost": cost_amount if cost_type == "monthly" else None,
+            "cost_type": cost_type,
+            "currency": currency,
+            "observations": _safe_strip(request.form.get("observations")),
+            "is_active": True,
+        }
+        errors = validate_cost_payload(resource.id, payload, current_id=cost.id)
+        if currency not in set(currency_options):
+            errors.append("Moneda inválida.")
+        if errors:
+            for error in errors:
+                flash(error, "danger")
+            return render_template(
+                "team/resource_costs.html",
+                resource=resource,
+                currency_options=currency_options,
+                usage_by_cost_id={item.id: resource_cost_usage_count(item.id) for item in resource.costs},
+                edit_cost=cost,
+                edit_cost_usage_count=usage_count,
+                cost_form_values=request.form,
+            )
+
+        close_previous_cost_if_needed(resource.id, payload["valid_from"], current_cost_id=cost.id)
+        cost.valid_from = payload["valid_from"]
+        cost.valid_to = payload["valid_to"]
+        cost.hourly_cost = payload["hourly_cost"]
+        cost.monthly_cost = payload["monthly_cost"]
+        cost.currency = payload["currency"]
+        cost.observations = payload["observations"]
+        db.session.commit()
+        flash("Tarifa actualizada.", "success")
+        return _redirect_with_next("team.manage_resource_costs", resource_id=resource.id)
+
+    return _redirect_with_next("team.manage_resource_costs", resource_id=resource.id)
 
 
 @bp.route("/cost/<int:cost_id>/toggle", methods=["POST"])
@@ -691,16 +1159,152 @@ def toggle_cost(cost_id: int):
     cost = db.session.get(ResourceCost, cost_id)
     if not cost:
         abort(404)
-    cost.is_active = not cost.is_active
+    flash("Las tarifas no se pueden desactivar ni eliminar porque se usan para costeo histórico.", "warning")
+    return _redirect_with_next("team.manage_resource_costs", resource_id=cost.resource_id)
+
+
+@bp.route("/cost/<int:cost_id>/delete", methods=["POST"])
+@login_required
+def delete_cost(cost_id: int):
+    cost = db.session.get(ResourceCost, cost_id)
+    if not cost:
+        abort(404)
+    usage_count = resource_cost_usage_count(cost.id)
+    if usage_count > 0:
+        flash("No se puede eliminar la tarifa porque está en uso.", "danger")
+        return _redirect_with_next("team.manage_resource_costs", resource_id=cost.resource_id)
+
+    resource_id = cost.resource_id
+    db.session.delete(cost)
     db.session.commit()
-    flash("Estado de costo actualizado.", "info")
-    return redirect(url_for("team.resource_detail", resource_id=cost.resource_id))
+    flash("Tarifa eliminada.", "info")
+    return _redirect_with_next("team.manage_resource_costs", resource_id=resource_id)
 
 
 def _validate_assignment_dates(start_date, end_date) -> list[str]:
     if start_date and end_date and start_date > end_date:
         return ["Rango de fechas inválido."]
     return []
+
+
+@bp.route("/resources/<int:resource_id>/availability/net", methods=["GET"])
+@login_required
+def resource_net_availability(resource_id: int):
+    _resource_or_404(resource_id)
+    date_from = _parse_date(request.args.get("date_from")) or date.today()
+    date_to = _parse_date(request.args.get("date_to")) or (date_from + timedelta(days=13))
+    if date_to < date_from:
+        return jsonify({"error": "Rango de fechas inválido."}), 400
+    if (date_to - date_from).days > 180:
+        return jsonify({"error": "El rango máximo permitido es de 180 días."}), 400
+    payload = calculate_resource_net_availability(resource_id, date_from, date_to, owner_user_id=g.user.id)
+    return jsonify(payload)
+
+
+@bp.route("/calendar/role-capacity", methods=["GET"])
+@login_required
+def role_capacity_calendar():
+    date_from = _parse_date(request.args.get("date_from")) or date.today()
+    date_to = _parse_date(request.args.get("date_to")) or (date_from + timedelta(days=31))
+    if date_to < date_from:
+        return jsonify({"error": "Rango de fechas inválido."}), 400
+    if (date_to - date_from).days > 180:
+        return jsonify({"error": "El rango máximo permitido es de 180 días."}), 400
+
+    role_id = _to_int(request.args.get("role_id"))
+    resources_stmt = (
+        select(Resource)
+        .where(Resource.is_active.is_(True))
+        .options(selectinload(Resource.role_links).selectinload(ResourceRole.role))
+        .order_by(Resource.full_name.asc())
+    )
+    if role_id:
+        role = db.session.get(TeamRole, role_id)
+        if not role or not role.is_active:
+            return jsonify({"error": "Rol inválido."}), 400
+        resources_stmt = resources_stmt.join(ResourceRole, ResourceRole.resource_id == Resource.id).where(
+            ResourceRole.role_id == role_id
+        )
+
+    resources = db.session.execute(resources_stmt).scalars().unique().all()
+
+    day_buckets: dict[str, dict] = {}
+    cursor = date_from
+    while cursor <= date_to:
+        iso = cursor.isoformat()
+        day_buckets[iso] = {
+            "date": iso,
+            "base_hours": 0.0,
+            "exception_hours": 0.0,
+            "assigned_hours": 0.0,
+            "net_available_hours": 0.0,
+            "overbooked_hours": 0.0,
+            "entries": [],
+        }
+        cursor += timedelta(days=1)
+
+    totals = {
+        "base_hours": 0.0,
+        "exception_hours": 0.0,
+        "assigned_hours": 0.0,
+        "net_available_hours": 0.0,
+        "overbooked_hours": 0.0,
+    }
+
+    for resource in resources:
+        role_names = [link.role.name for link in resource.role_links if link.role and link.role.is_active]
+        payload = calculate_resource_net_availability(resource.id, date_from, date_to, owner_user_id=g.user.id)
+        payload_totals = payload.get("totals", {})
+        totals["base_hours"] += float(payload_totals.get("base_hours", 0.0))
+        totals["exception_hours"] += float(payload_totals.get("exception_hours", 0.0))
+        totals["assigned_hours"] += float(payload_totals.get("assigned_hours", 0.0))
+        totals["net_available_hours"] += float(payload_totals.get("net_available_hours", 0.0))
+        totals["overbooked_hours"] += float(payload_totals.get("overbooked_hours", 0.0))
+
+        for day in payload.get("days", []):
+            bucket = day_buckets.get(day["date"])
+            if not bucket:
+                continue
+            bucket["base_hours"] += float(day.get("base_hours", 0.0))
+            bucket["exception_hours"] += float(day.get("exception_hours", 0.0))
+            bucket["assigned_hours"] += float(day.get("assigned_hours", 0.0))
+            bucket["net_available_hours"] += float(day.get("net_available_hours", 0.0))
+            bucket["overbooked_hours"] += float(day.get("overbooked_hours", 0.0))
+            bucket["entries"].append(
+                {
+                    "resource_id": resource.id,
+                    "resource_full_name": resource.full_name,
+                    "role_names": role_names,
+                    "base_hours": float(day.get("base_hours", 0.0)),
+                    "exception_hours": float(day.get("exception_hours", 0.0)),
+                    "assigned_hours": float(day.get("assigned_hours", 0.0)),
+                    "net_available_hours": float(day.get("net_available_hours", 0.0)),
+                    "overbooked_hours": float(day.get("overbooked_hours", 0.0)),
+                    "calendar_holiday": bool(day.get("calendar_holiday")),
+                    "calendar_holiday_label": day.get("calendar_holiday_label"),
+                }
+            )
+
+    days = []
+    for iso in sorted(day_buckets.keys()):
+        bucket = day_buckets[iso]
+        bucket["entries"] = sorted(
+            bucket["entries"],
+            key=lambda item: (item["net_available_hours"], item["resource_full_name"]),
+            reverse=True,
+        )
+        days.append(bucket)
+
+    return jsonify(
+        {
+            "role_id": role_id,
+            "resource_count": len(resources),
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "totals": totals,
+            "days": days,
+        }
+    )
 
 
 @bp.route("/resources/<int:resource_id>/assign/client", methods=["POST"])
@@ -721,10 +1325,14 @@ def assign_project(resource_id: int):
         "is_primary": _to_bool(request.form.get("is_primary")),
         "allocation_percent": _to_decimal(request.form.get("allocation_percent")),
         "planned_hours": _to_decimal(request.form.get("planned_hours")),
+        "planned_daily_hours": None,
         "start_date": _parse_date(request.form.get("start_date")),
         "end_date": _parse_date(request.form.get("end_date")),
         "is_active": True,
     }
+    payload["planned_daily_hours"] = estimate_planned_daily_hours(
+        payload["planned_hours"], payload["start_date"], payload["end_date"]
+    )
 
     errors = validate_assignment(resource.id, role_id)
     errors.extend(_validate_assignment_dates(payload["start_date"], payload["end_date"]))
@@ -736,7 +1344,17 @@ def assign_project(resource_id: int):
             flash(error, "danger")
         return redirect(url_for("team.resource_detail", resource_id=resource.id))
 
-    db.session.add(ProjectResource(project_id=project.id, resource_id=resource.id, role_id=role_id, **payload))
+    reference_date = payload["start_date"] or date.today()
+    applied_cost_id = find_applicable_cost_id(resource.id, reference_date)
+    db.session.add(
+        ProjectResource(
+            project_id=project.id,
+            resource_id=resource.id,
+            role_id=role_id,
+            resource_cost_id=applied_cost_id,
+            **payload,
+        )
+    )
     db.session.commit()
     flash("Asignación a proyecto creada.", "success")
     return redirect(url_for("team.resource_detail", resource_id=resource.id))
@@ -752,10 +1370,14 @@ def assign_task(resource_id: int):
         "is_primary": _to_bool(request.form.get("is_primary")),
         "allocation_percent": _to_decimal(request.form.get("allocation_percent")),
         "planned_hours": _to_decimal(request.form.get("planned_hours")),
+        "planned_daily_hours": None,
         "start_date": _parse_date(request.form.get("start_date")),
         "end_date": _parse_date(request.form.get("end_date")),
         "is_active": True,
     }
+    payload["planned_daily_hours"] = estimate_planned_daily_hours(
+        payload["planned_hours"], payload["start_date"], payload["end_date"]
+    )
 
     errors = validate_assignment(resource.id, role_id)
     errors.extend(_validate_assignment_dates(payload["start_date"], payload["end_date"]))
@@ -770,7 +1392,17 @@ def assign_task(resource_id: int):
             flash(error, "danger")
         return redirect(url_for("team.resource_detail", resource_id=resource.id))
 
-    db.session.add(TaskResource(task_id=task.id, resource_id=resource.id, role_id=role_id, **payload))
+    reference_date = payload["start_date"] or date.today()
+    applied_cost_id = find_applicable_cost_id(resource.id, reference_date)
+    db.session.add(
+        TaskResource(
+            task_id=task.id,
+            resource_id=resource.id,
+            role_id=role_id,
+            resource_cost_id=applied_cost_id,
+            **payload,
+        )
+    )
     db.session.commit()
     flash("Asignación a tarea creada.", "success")
     return redirect(url_for("team.resource_detail", resource_id=resource.id))

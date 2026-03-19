@@ -29,9 +29,25 @@
       <tbody>
         {% for item in items %}
         <tr>
-          <td>{{ item.name|replace('_', ' ')|title }}</td>
+          {% set normalized_item = (item.name or '')|lower %}
+          <td>
+            {% if catalog_key == 'resource_types' and normalized_item in ['internal', 'interno'] %}Interno
+            {% elif catalog_key == 'resource_types' and normalized_item in ['external', 'externo'] %}Externo
+            {% elif catalog_key == 'availability_types' and normalized_item == 'full_time' %}Tiempo completo
+            {% elif catalog_key == 'availability_types' and normalized_item == 'part_time' %}Medio tiempo
+            {% elif catalog_key == 'availability_types' and normalized_item == 'custom' %}Personalizado
+            {% elif catalog_key == 'availability_exception_types' and normalized_item == 'time_off' %}Ausencia
+            {% elif catalog_key == 'availability_exception_types' and normalized_item == 'vacation' %}Vacaciones
+            {% elif catalog_key == 'availability_exception_types' and normalized_item == 'leave' %}Licencia
+            {% elif catalog_key == 'availability_exception_types' and normalized_item == 'holiday' %}Feriado
+            {% elif catalog_key == 'availability_exception_types' and normalized_item == 'blocked' %}Bloqueado
+            {% else %}{{ item.name|replace('_', ' ')|title }}{% endif %}
+          </td>
           <td>{% if item.is_system %}<span class="badge badge-secondary">Sistema</span>{% else %}<span class="badge badge-light">Configurable</span>{% endif %}</td>
           <td class="text-end">
+            {% if catalog_key == 'calendars' %}
+              <a class="btn btn-sm btn-outline-primary mr-1" href="{{ url_for('settings.team_calendars', calendar=item.name) }}" title="Días no laborables">Días no laborables</a>
+            {% endif %}
             {% if item.is_editable %}
               <a class="btn btn-sm btn-outline-secondary btn-action-icon mr-1" href="{{ url_for('settings.edit_team_catalog', catalog_key=catalog_key, item_id=item.id) }}" title="Editar"><i class="fas fa-pen"></i></a>
             {% endif %}

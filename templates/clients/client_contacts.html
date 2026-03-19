@@ -1,8 +1,9 @@
 {% extends 'dashboard/layout.html' %}
-{% block title %}ABM Contactos | NCProject{% endblock %}
-{% block page_title %}ABM Contactos - {{ client.name }}{% endblock %}
+{% block title %}Gestión de contactos | NCProject{% endblock %}
+{% block page_title %}Gestión de contactos{% endblock %}
+{% block page_subtitle %}Cliente: {{ client.name }}{% endblock %}
 {% block page_actions %}
-<a href="{{ url_for('clients.client_detail', client_id=client.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver a Vista 360</a>
+<a href="{{ url_for('clients.client_detail', client_id=client.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al detalle</a>
 {% endblock %}
 {% block dashboard_content %}
 {% set contact_form_mode = 'edit' if edit_contact else 'create' %}

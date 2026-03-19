@@ -1,0 +1,535 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Calendario de equipo | NCProject{% endblock %}
+{% block page_title %}Calendario de equipo{% endblock %}
+{% block page_subtitle %}Disponibilidad neta por recurso y por día{% endblock %}
+{% block page_actions %}
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+  .availability-calendar-grid th,
+  .availability-calendar-grid td {
+    width: 14.28%;
+    vertical-align: top;
+  }
+  .availability-calendar-day {
+    min-height: 96px;
+    border-radius: 0.35rem;
+    padding: 0.4rem;
+    border: 1px solid #dee2e6;
+    background: #fff;
+  }
+  .availability-calendar-day.muted {
+    background: #f8f9fa;
+    color: #6c757d;
+  }
+  .availability-calendar-day.available {
+    background: #e9f7ef;
+    border-color: #b7e4c7;
+  }
+  .availability-calendar-day.partial {
+    background: #fff4e6;
+    border-color: #ffd8a8;
+  }
+  .availability-calendar-day.overbooked {
+    background: #fdecea;
+    border-color: #f5c2c7;
+  }
+  .availability-calendar-hours {
+    font-size: 0.8rem;
+    line-height: 1.25;
+  }
+  .availability-bars {
+    margin-top: 0.35rem;
+    display: grid;
+    gap: 0.2rem;
+  }
+  .availability-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.1rem 0.4rem;
+    font-size: 0.72rem;
+    line-height: 1.15;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .availability-bar.available {
+    background: #e9f7ef;
+    border-color: #b7e4c7;
+    color: #1f5130;
+  }
+  .availability-bar.partial {
+    background: #fff4e6;
+    border-color: #ffd8a8;
+    color: #7a4e00;
+  }
+  .availability-bar.overbooked {
+    background: #fdecea;
+    border-color: #f5c2c7;
+    color: #7b1f28;
+  }
+  .availability-bar.muted {
+    background: #f1f3f5;
+    border-color: #dee2e6;
+    color: #6c757d;
+  }
+</style>
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="card border-0 metric-card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Calendario de disponibilidad neta</strong>
+    <div class="d-flex align-items-center gap-2">
+      <label for="calendarViewMode" class="mb-0 small text-secondary">Vista</label>
+      <select id="calendarViewMode" class="custom-select custom-select-sm" style="min-width: 170px;">
+        <option value="resource">Por recurso</option>
+        <option value="role" selected>Por rol</option>
+      </select>
+      <div id="resourceFilterGroup" class="d-flex align-items-center gap-2">
+        <label for="calendarResourceId" class="mb-0 small text-secondary">Recurso</label>
+        <select id="calendarResourceId" class="custom-select custom-select-sm" style="min-width: 260px;">
+          {% for item in resources %}
+          <option value="{{ item.id }}" {% if selected_resource and selected_resource.id == item.id %}selected{% endif %}>{{ item.full_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <label for="calendarRoleId" class="mb-0 small text-secondary">Rol</label>
+      <select id="calendarRoleId" class="custom-select custom-select-sm" style="min-width: 220px;">
+        <option value="">Todos</option>
+        {% for role in roles %}
+        <option value="{{ role.id }}" {% if selected_role_id and selected_role_id == role.id %}selected{% endif %}>{{ role.name }}</option>
+        {% endfor %}
+      </select>
+      <button id="calendarPrevMonth" type="button" class="btn btn-outline-secondary btn-sm btn-action-standard" title="Mes anterior" aria-label="Mes anterior">
+        <i class="fas fa-chevron-left"></i>
+      </button>
+      <span id="calendarCurrentMonthLabel" class="small font-weight-bold text-secondary" style="min-width: 140px; text-align: center;"></span>
+      <button id="calendarNextMonth" type="button" class="btn btn-outline-secondary btn-sm btn-action-standard" title="Mes siguiente" aria-label="Mes siguiente">
+        <i class="fas fa-chevron-right"></i>
+      </button>
+    </div>
+  </div>
+  <div class="card-body">
+    {% if not resources %}
+    <p class="text-secondary mb-0">No hay recursos activos para mostrar en calendario.</p>
+    {% else %}
+    <div class="small mb-2">
+      <span class="badge badge-light mr-1">Sin jornada</span>
+      <span class="badge badge-success mr-1">Disponible</span>
+      <span class="badge badge-warning mr-1">Parcial / excepción</span>
+      <span class="badge badge-danger">Sobrecargado</span>
+    </div>
+    <div id="calendarSummary" class="small text-secondary mb-3">Cargando...</div>
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 availability-calendar-grid">
+        <thead>
+          <tr>
+            <th>Lun</th><th>Mar</th><th>Mié</th><th>Jue</th><th>Vie</th><th>Sáb</th><th>Dom</th>
+          </tr>
+        </thead>
+        <tbody id="calendarBody"></tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="modal fade" id="calendarDayDetailModal" tabindex="-1" role="dialog" aria-labelledby="calendarDayDetailModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="calendarDayDetailModalLabel">Detalle diario</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div id="calendarDayDetailSummary" class="small text-secondary mb-2"></div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead>
+              <tr>
+                <th>Recurso</th>
+                <th>Roles</th>
+                <th>Base</th>
+                <th>Asignado</th>
+                <th>Excepciones</th>
+                <th>Disponible</th>
+              </tr>
+            </thead>
+            <tbody id="calendarDayDetailBody">
+              <tr><td colspan="6" class="text-secondary text-center">Sin datos.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary btn-sm btn-action-standard" data-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{% if resources %}
+<script>
+  (() => {
+    const resourcesMeta = {{ resources_meta|tojson }};
+    const resourceFilterGroup = document.getElementById("resourceFilterGroup");
+    const resourceSelect = document.getElementById("calendarResourceId");
+    const roleSelect = document.getElementById("calendarRoleId");
+    const viewModeSelect = document.getElementById("calendarViewMode");
+    const prevMonthButton = document.getElementById("calendarPrevMonth");
+    const nextMonthButton = document.getElementById("calendarNextMonth");
+    const monthLabel = document.getElementById("calendarCurrentMonthLabel");
+    const calendarBody = document.getElementById("calendarBody");
+    const summary = document.getElementById("calendarSummary");
+    const dayDetailModal = document.getElementById("calendarDayDetailModal");
+    const dayDetailTitle = document.getElementById("calendarDayDetailModalLabel");
+    const dayDetailSummary = document.getElementById("calendarDayDetailSummary");
+    const dayDetailBody = document.getElementById("calendarDayDetailBody");
+    if (!resourceSelect || !roleSelect || !viewModeSelect || !prevMonthButton || !nextMonthButton || !monthLabel || !calendarBody || !summary) return;
+    if (!dayDetailModal || !dayDetailTitle || !dayDetailSummary || !dayDetailBody || typeof window.jQuery !== "function") return;
+
+    const toIsoDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const firstDayOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
+    const lastDayOfMonth = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const formatMonthLabel = (d) => d.toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+    const MAX_BARS_PER_DAY = 4;
+    const availabilityCache = new Map();
+    const roleCapacityCache = new Map();
+    let currentDayEntriesByIso = new Map();
+    let currentViewDate = new Date();
+    viewModeSelect.value = "role";
+    if (!roleSelect.value) {
+      roleSelect.value = "";
+    }
+
+    const updateMonthLabel = () => {
+      monthLabel.textContent = formatMonthLabel(currentViewDate).replace(/^./, (c) => c.toUpperCase());
+    };
+
+    const initials = (fullName) => {
+      const tokens = (fullName || "").trim().split(/\s+/).filter(Boolean);
+      if (!tokens.length) return "--";
+      if (tokens.length === 1) return tokens[0].slice(0, 2).toUpperCase();
+      return `${tokens[0][0]}${tokens[tokens.length - 1][0]}`.toUpperCase();
+    };
+
+    const escapeHtml = (value) => (String(value || ""))
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+
+    const classifyEntry = (entry) => {
+      if (!entry || entry.base_hours <= 0) return "muted";
+      if (entry.overbooked_hours > 0) return "overbooked";
+      if (entry.exception_hours > 0 || entry.net_available_hours < entry.base_hours) return "partial";
+      return "available";
+    };
+
+    const classifyDayFromEntries = (entries) => {
+      if (!entries.length) return "muted";
+      if (entries.some((entry) => classifyEntry(entry) === "overbooked")) return "overbooked";
+      if (entries.some((entry) => classifyEntry(entry) === "partial")) return "partial";
+      if (entries.some((entry) => classifyEntry(entry) === "available")) return "available";
+      return "muted";
+    };
+
+    const selectedRoleId = () => Number(roleSelect.value || 0);
+    const selectedResourceId = () => Number(resourceSelect.value || 0);
+    const selectedViewMode = () => viewModeSelect.value === "role" ? "role" : "resource";
+
+    const resourcesForCurrentFilters = () => {
+      const roleId = selectedRoleId();
+      const mode = selectedViewMode();
+      let base = resourcesMeta;
+      if (mode === "resource") {
+        const resourceId = selectedResourceId();
+        base = base.filter((item) => item.id === resourceId);
+      }
+      if (roleId) {
+        base = base.filter((item) => (item.role_ids || []).includes(roleId));
+      }
+      return base;
+    };
+
+    const syncFilterVisibility = () => {
+      const mode = selectedViewMode();
+      resourceSelect.disabled = mode !== "resource";
+      if (resourceFilterGroup) {
+        resourceFilterGroup.classList.toggle("d-none", mode !== "resource");
+      }
+      roleSelect.disabled = false;
+    };
+
+    const fetchAvailability = async (resourceId, dateFrom, dateTo) => {
+      const cacheKey = `${resourceId}:${dateFrom}:${dateTo}`;
+      if (availabilityCache.has(cacheKey)) {
+        return availabilityCache.get(cacheKey);
+      }
+      const url = `/team/resources/${resourceId}/availability/net?date_from=${dateFrom}&date_to=${dateTo}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error("availability fetch failed");
+      }
+      const payload = await response.json();
+      availabilityCache.set(cacheKey, payload);
+      return payload;
+    };
+
+    const fetchRoleCapacity = async (roleId, dateFrom, dateTo) => {
+      const cacheKey = `${roleId || 0}:${dateFrom}:${dateTo}`;
+      if (roleCapacityCache.has(cacheKey)) {
+        return roleCapacityCache.get(cacheKey);
+      }
+      const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+      if (roleId) {
+        params.set("role_id", String(roleId));
+      }
+      const response = await fetch(`/team/calendar/role-capacity?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error("role capacity fetch failed");
+      }
+      const payload = await response.json();
+      roleCapacityCache.set(cacheKey, payload);
+      return payload;
+    };
+
+    const entryTitle = (resourceFullName, roleNames, day) => {
+      const roleLabel = (roleNames || []).join(", ") || "-";
+      return [
+        resourceFullName,
+        `Roles: ${roleLabel}`,
+        `Base: ${day.base_hours.toFixed(1)}h`,
+        `Excepciones: ${day.exception_hours.toFixed(1)}h`,
+        `Asignado: ${day.assigned_hours.toFixed(1)}h`,
+        `Disponible: ${day.net_available_hours.toFixed(1)}h`,
+      ].join(" | ");
+    };
+
+    const barHtml = (resourceFullName, roleNames, day) => {
+      const status = classifyEntry(day);
+      return `
+        <div class="availability-bar ${status}" title="${escapeHtml(entryTitle(resourceFullName, roleNames, day))}">
+          <span>${escapeHtml(initials(resourceFullName))}</span>
+          <strong>${day.net_available_hours.toFixed(1)}h</strong>
+        </div>
+      `;
+    };
+
+    const toDisplayDate = (isoDate) => {
+      const [year, month, day] = String(isoDate || "").split("-");
+      if (!year || !month || !day) return isoDate || "";
+      return `${day}/${month}/${year}`;
+    };
+
+    const openDayDetail = (isoDate) => {
+      const entries = (currentDayEntriesByIso.get(isoDate) || []).slice();
+      dayDetailTitle.textContent = `Detalle diario ${toDisplayDate(isoDate)}`;
+      if (!entries.length) {
+        dayDetailSummary.textContent = "Sin recursos con datos para este día.";
+        dayDetailBody.innerHTML = '<tr><td colspan="6" class="text-secondary text-center">Sin datos.</td></tr>';
+        window.jQuery(dayDetailModal).modal("show");
+        return;
+      }
+      const totals = entries.reduce(
+        (acc, item) => {
+          acc.base += item.base_hours || 0;
+          acc.assigned += item.assigned_hours || 0;
+          acc.exceptions += item.exception_hours || 0;
+          acc.available += item.net_available_hours || 0;
+          return acc;
+        },
+        { base: 0, assigned: 0, exceptions: 0, available: 0 },
+      );
+      dayDetailSummary.textContent = `Recursos: ${entries.length} | Base: ${totals.base.toFixed(2)} hs | Asignado: ${totals.assigned.toFixed(2)} hs | Excepciones: ${totals.exceptions.toFixed(2)} hs | Disponible: ${totals.available.toFixed(2)} hs`;
+      dayDetailBody.innerHTML = entries
+        .sort((a, b) => (b.net_available_hours || 0) - (a.net_available_hours || 0))
+        .map((item) => {
+          const roles = (item.role_names || []).join(", ") || "-";
+          return `
+            <tr>
+              <td>${escapeHtml(item.resource_full_name || "-")}</td>
+              <td>${escapeHtml(roles)}</td>
+              <td>${(item.base_hours || 0).toFixed(1)} hs</td>
+              <td>${(item.assigned_hours || 0).toFixed(1)} hs</td>
+              <td>${(item.exception_hours || 0).toFixed(1)} hs</td>
+              <td>${(item.net_available_hours || 0).toFixed(1)} hs</td>
+            </tr>
+          `;
+        })
+        .join("");
+      window.jQuery(dayDetailModal).modal("show");
+    };
+
+    const renderMonth = async () => {
+      const filteredResources = resourcesForCurrentFilters();
+      if (!filteredResources.length) {
+        calendarBody.innerHTML = "";
+        summary.textContent = "No hay recursos para los filtros seleccionados.";
+        currentDayEntriesByIso = new Map();
+        return;
+      }
+
+      const start = firstDayOfMonth(currentViewDate);
+      const end = lastDayOfMonth(currentViewDate);
+      const startIso = toIsoDate(start);
+      const endIso = toIsoDate(end);
+      updateMonthLabel();
+
+      summary.textContent = "Cargando calendario...";
+      calendarBody.innerHTML = "";
+
+      try {
+        let dayEntriesByIso = new Map();
+        let totals = { base: 0, exceptions: 0, assigned: 0, available: 0 };
+
+        if (selectedViewMode() === "role") {
+          const rolePayload = await fetchRoleCapacity(selectedRoleId(), startIso, endIso);
+          totals = {
+            base: rolePayload?.totals?.base_hours || 0,
+            exceptions: rolePayload?.totals?.exception_hours || 0,
+            assigned: rolePayload?.totals?.assigned_hours || 0,
+            available: rolePayload?.totals?.net_available_hours || 0,
+          };
+          dayEntriesByIso = new Map(
+            (rolePayload.days || []).map((item) => [item.date, item.entries || []]),
+          );
+          summary.textContent = `Recursos: ${rolePayload.resource_count || 0} | Base: ${totals.base.toFixed(2)} hs | Excepciones: ${totals.exceptions.toFixed(2)} hs | Asignado: ${totals.assigned.toFixed(2)} hs | Disponible: ${totals.available.toFixed(2)} hs`;
+        } else {
+          const payloads = await Promise.all(
+            filteredResources.map(async (resource) => {
+              const payload = await fetchAvailability(resource.id, startIso, endIso);
+              return { resource, payload, dayMap: new Map((payload.days || []).map((d) => [d.date, d])) };
+            }),
+          );
+          totals = payloads.reduce(
+            (acc, item) => {
+              acc.base += item.payload.totals.base_hours || 0;
+              acc.exceptions += item.payload.totals.exception_hours || 0;
+              acc.assigned += item.payload.totals.assigned_hours || 0;
+              acc.available += item.payload.totals.net_available_hours || 0;
+              return acc;
+            },
+            { base: 0, exceptions: 0, assigned: 0, available: 0 },
+          );
+          summary.textContent = `Recursos: ${filteredResources.length} | Base: ${totals.base.toFixed(2)} hs | Excepciones: ${totals.exceptions.toFixed(2)} hs | Asignado: ${totals.assigned.toFixed(2)} hs | Disponible: ${totals.available.toFixed(2)} hs`;
+          const dayMap = new Map();
+          for (let day = 1; day <= end.getDate(); day += 1) {
+            const current = new Date(start.getFullYear(), start.getMonth(), day);
+            dayMap.set(toIsoDate(current), []);
+          }
+          payloads.forEach((item) => {
+            dayMap.forEach((entries, iso) => {
+              const dayInfo = item.dayMap.get(iso);
+              if (!dayInfo) return;
+              entries.push({
+                resource_id: item.resource.id,
+                resource_full_name: item.resource.full_name,
+                role_names: item.resource.role_names || [],
+                ...dayInfo,
+              });
+            });
+          });
+          dayEntriesByIso = dayMap;
+        }
+        currentDayEntriesByIso = dayEntriesByIso;
+
+        const firstWeekday = ((start.getDay() + 6) % 7);
+        const totalDays = end.getDate();
+        let html = "<tr>";
+        for (let i = 0; i < firstWeekday; i += 1) {
+          html += "<td></td>";
+        }
+
+        for (let day = 1; day <= totalDays; day += 1) {
+          const current = new Date(start.getFullYear(), start.getMonth(), day);
+          const iso = toIsoDate(current);
+          const dayEntries = (dayEntriesByIso.get(iso) || []).slice();
+          const dayClass = classifyDayFromEntries(dayEntries);
+          const dailyAvailable = dayEntries.reduce((sum, item) => sum + (item.net_available_hours || 0), 0);
+          const dailyBase = dayEntries.reduce((sum, item) => sum + (item.base_hours || 0), 0);
+          const holidays = dayEntries
+            .filter((item) => item.calendar_holiday)
+            .map((item) => item.calendar_holiday_label || "Feriado");
+          const holidayHtml = holidays.length
+            ? `<div class="text-danger small">${escapeHtml(Array.from(new Set(holidays)).join(", "))}</div>`
+            : "";
+          const sortedEntries = dayEntries.sort((a, b) => (b.net_available_hours || 0) - (a.net_available_hours || 0));
+          const visibleEntries = sortedEntries.slice(0, MAX_BARS_PER_DAY);
+          const hiddenCount = Math.max(0, sortedEntries.length - visibleEntries.length);
+          const bars = sortedEntries.length
+            ? `<div class="availability-bars">${visibleEntries
+              .map((item) => barHtml(item.resource_full_name, item.role_names || [], item))
+              .join("")}${hiddenCount > 0 ? `<button type="button" class="btn btn-link btn-sm p-0 small js-day-details" data-date="${iso}">+${hiddenCount} más</button>` : ""}</div>`
+            : "";
+
+          html += `
+            <td>
+              <div class="availability-calendar-day ${dayClass}">
+                <div class="d-flex justify-content-between align-items-center mb-1"><strong>${day}</strong></div>
+                <div class="availability-calendar-hours">Base: ${dailyBase.toFixed(1)} hs<br>Disp.: ${dailyAvailable.toFixed(1)} hs</div>
+                ${holidayHtml}
+                ${bars}
+              </div>
+            </td>
+          `;
+
+          const weekdayIndex = ((firstWeekday + day - 1) % 7);
+          if (weekdayIndex === 6 && day !== totalDays) html += "</tr><tr>";
+        }
+
+        const filledCells = firstWeekday + totalDays;
+        const trailing = (7 - (filledCells % 7)) % 7;
+        for (let i = 0; i < trailing; i += 1) {
+          html += "<td></td>";
+        }
+        html += "</tr>";
+        calendarBody.innerHTML = html;
+      } catch (_) {
+        summary.textContent = "No se pudo cargar la disponibilidad neta.";
+        currentDayEntriesByIso = new Map();
+      }
+    };
+
+    prevMonthButton.addEventListener("click", () => {
+      currentViewDate = new Date(currentViewDate.getFullYear(), currentViewDate.getMonth() - 1, 1);
+      renderMonth();
+    });
+    nextMonthButton.addEventListener("click", () => {
+      currentViewDate = new Date(currentViewDate.getFullYear(), currentViewDate.getMonth() + 1, 1);
+      renderMonth();
+    });
+    resourceSelect.addEventListener("change", renderMonth);
+    roleSelect.addEventListener("change", () => {
+      if (roleSelect.value) {
+        viewModeSelect.value = "role";
+      }
+      syncFilterVisibility();
+      renderMonth();
+    });
+    viewModeSelect.addEventListener("change", () => {
+      syncFilterVisibility();
+      renderMonth();
+    });
+    calendarBody.addEventListener("click", (event) => {
+      const trigger = event.target.closest(".js-day-details");
+      if (!trigger) return;
+      const isoDate = trigger.getAttribute("data-date");
+      if (!isoDate) return;
+      openDayDetail(isoDate);
+    });
+    syncFilterVisibility();
+    renderMonth();
+  })();
+</script>
+{% endif %}
+{% endblock %}

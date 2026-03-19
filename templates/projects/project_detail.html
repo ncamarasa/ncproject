@@ -1,53 +1,39 @@
 {% extends 'dashboard/layout.html' %}
 
 {% block title %}Vista 360 de proyecto | NCProject{% endblock %}
-{% block page_title %}{{ project.name }}{% endblock %}
+{% block page_title %}
+  {{ project.name }}
+  {% if project.project_code %}
+    <span class="entity-code-muted">({{ project.project_code }})</span>
+  {% endif %}
+{% endblock %}
 {% block page_subtitle %}Vista 360: solo visualización{% endblock %}
 {% block page_actions %}
-<a href="{{ url_for('projects.edit_project', project_id=project.id) }}" class="btn btn-primary btn-sm mr-2 btn-action-standard">
-  <i class="fas fa-pen"></i> Editar proyecto
-</a>
-<a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="btn btn-outline-primary btn-sm btn-action-standard">
-  <i class="fas fa-tasks"></i> Gestionar tareas
-</a>
-<a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="btn btn-outline-info btn-sm btn-action-standard">
-  <i class="fas fa-project-diagram"></i> Ver Gantt
-</a>
-<a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-dark btn-sm btn-action-standard">
-  <i class="fas fa-arrow-left"></i> Volver al listado
-</a>
+<a href="{{ url_for('projects.edit_project', project_id=project.id) }}" class="btn btn-primary btn-sm btn-action-standard">Editar</a>
+<a href="{{ url_for('clients.client_detail', client_id=project.client_id) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver cliente</a>
+<a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al listado</a>
 {% endblock %}
 
 {% block dashboard_content %}
 <div class="row g-3 mb-2">
-  <div class="col-6 col-lg-2">
+  <div class="col-6 col-lg-3">
     <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="text-reset d-block">
-      <div class="small-box bg-info"><div class="inner"><h4>{{ task_total }}</h4><p>Tareas totales</p></div></div>
+      <div class="small-box bg-info"><div class="inner"><h4>{{ progress_avg }}%</h4><p>Avance general</p></div></div>
     </a>
   </div>
-  <div class="col-6 col-lg-2">
-    <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="text-reset d-block">
-      <div class="small-box bg-primary"><div class="inner"><h4>{{ task_pending }}</h4><p>Tareas pendientes</p></div></div>
+  <div class="col-6 col-lg-3">
+    <a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="text-reset d-block">
+      <div class="small-box bg-warning"><div class="inner"><h4>{{ task_milestones }}</h4><p>Hitos totales</p></div></div>
     </a>
   </div>
-  <div class="col-6 col-lg-2">
+  <div class="col-6 col-lg-3">
+    <a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="text-reset d-block">
+      <div class="small-box bg-primary"><div class="inner"><h4>{{ milestone_open }}</h4><p>Hitos pendientes</p></div></div>
+    </a>
+  </div>
+  <div class="col-6 col-lg-3">
     <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="text-reset d-block">
       <div class="small-box bg-danger"><div class="inner"><h4>{{ task_overdue }}</h4><p>Tareas atrasadas</p></div></div>
-    </a>
-  </div>
-  <div class="col-6 col-lg-2">
-    <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="text-reset d-block">
-      <div class="small-box bg-success"><div class="inner"><h4>{{ task_completed }}</h4><p>Completadas</p></div></div>
-    </a>
-  </div>
-  <div class="col-6 col-lg-2">
-    <a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="text-reset d-block">
-      <div class="small-box bg-warning"><div class="inner"><h4>{{ task_milestones }}</h4><p>Hitos</p></div></div>
-    </a>
-  </div>
-  <div class="col-6 col-lg-2">
-    <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="text-reset d-block">
-      <div class="small-box bg-secondary"><div class="inner"><h4>{{ task_blocked }}</h4><p>Bloqueadas</p></div></div>
     </a>
   </div>
 </div>
@@ -59,7 +45,8 @@
       <div class="card-body">
         <dl class="row mb-0">
           <dt class="col-sm-5">Código</dt><dd class="col-sm-7">{{ project.project_code or '-' }}</dd>
-          <dt class="col-sm-5">Cliente</dt><dd class="col-sm-7">{{ project.client.name }}</dd>
+          <dt class="col-sm-5">Cliente</dt>
+          <dd class="col-sm-7"><a href="{{ url_for('clients.client_detail', client_id=project.client_id) }}">{{ project.client.name }}</a></dd>
           <dt class="col-sm-5">Contrato asociado</dt>
           <dd class="col-sm-7">
             {% if project.client_contract %}
@@ -100,10 +87,38 @@
       <div class="card-body">
         <dl class="row mb-0">
           <dt class="col-sm-5">Responsable</dt><dd class="col-sm-7">{{ project.owner or '-' }}</dd>
-          <dt class="col-sm-5">Project Manager</dt><dd class="col-sm-7">{{ project.project_manager or '-' }}</dd>
-          <dt class="col-sm-5">Responsable comercial</dt><dd class="col-sm-7">{{ project.commercial_manager or '-' }}</dd>
-          <dt class="col-sm-5">Responsable funcional</dt><dd class="col-sm-7">{{ project.functional_manager or '-' }}</dd>
-          <dt class="col-sm-5">Responsable técnico</dt><dd class="col-sm-7">{{ project.technical_manager or '-' }}</dd>
+          <dt class="col-sm-5">Project Manager</dt>
+          <dd class="col-sm-7">
+            {% if project.project_manager_resource_id %}
+            <a href="{{ url_for('team.resource_detail', resource_id=project.project_manager_resource_id) }}">{{ project.project_manager or '-' }}</a>
+            {% else %}
+            {{ project.project_manager or '-' }}
+            {% endif %}
+          </dd>
+          <dt class="col-sm-5">Responsable comercial</dt>
+          <dd class="col-sm-7">
+            {% if project.commercial_manager_resource_id %}
+            <a href="{{ url_for('team.resource_detail', resource_id=project.commercial_manager_resource_id) }}">{{ project.commercial_manager or '-' }}</a>
+            {% else %}
+            {{ project.commercial_manager or '-' }}
+            {% endif %}
+          </dd>
+          <dt class="col-sm-5">Responsable funcional</dt>
+          <dd class="col-sm-7">
+            {% if project.functional_manager_resource_id %}
+            <a href="{{ url_for('team.resource_detail', resource_id=project.functional_manager_resource_id) }}">{{ project.functional_manager or '-' }}</a>
+            {% else %}
+            {{ project.functional_manager or '-' }}
+            {% endif %}
+          </dd>
+          <dt class="col-sm-5">Responsable técnico</dt>
+          <dd class="col-sm-7">
+            {% if project.technical_manager_resource_id %}
+            <a href="{{ url_for('team.resource_detail', resource_id=project.technical_manager_resource_id) }}">{{ project.technical_manager or '-' }}</a>
+            {% else %}
+            {{ project.technical_manager or '-' }}
+            {% endif %}
+          </dd>
           <dt class="col-sm-5">Sponsor del cliente</dt><dd class="col-sm-7">{{ project.client_sponsor or '-' }}</dd>
           <dt class="col-sm-5">Key user</dt><dd class="col-sm-7">{{ project.key_user or '-' }}</dd>
         </dl>
@@ -178,32 +193,52 @@
   <div class="col-12">
     <div class="card border-0 metric-card">
       <div class="card-header view360-tone-6 d-flex justify-content-between align-items-center">
-        <strong>6. Tareas e hitos</strong>
+        <strong>6. Seguimiento general</strong>
         <div class="d-flex gap-2 ml-auto">
           <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="btn btn-success btn-sm btn-manage-action btn-action-standard">Gestionar tareas</a>
           <a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="btn btn-secondary btn-sm btn-manage-action btn-action-standard">Ver Gantt</a>
         </div>
       </div>
       <div class="card-body">
+        <div class="row g-2 mb-3">
+          <div class="col-12 col-md-6 col-xl-3"><strong>Tareas totales:</strong> {{ task_total }}</div>
+          <div class="col-12 col-md-6 col-xl-3"><strong>Completadas:</strong> {{ task_completed }}</div>
+          <div class="col-12 col-md-6 col-xl-3"><strong>Activas:</strong> {{ task_active }}</div>
+          <div class="col-12 col-md-6 col-xl-3"><strong>Bloqueadas:</strong> {{ task_blocked }}</div>
+        </div>
+        <div class="mb-4">
+          <div class="d-flex justify-content-between small text-secondary mb-1">
+            <span>Avance promedio del proyecto</span>
+            <span>{{ progress_avg }}%</span>
+          </div>
+          <div class="progress" style="height: 8px;">
+            <div class="progress-bar bg-info" role="progressbar" style="width: {{ progress_avg }}%;" aria-valuenow="{{ progress_avg }}" aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+        </div>
+        <h6 class="mb-2">Próximos hitos</h6>
         <div class="table-responsive">
           <table class="table table-sm table-hover">
-            <thead><tr><th>Tarea</th><th>Tipo</th><th>Estado</th><th>Responsable</th><th>Fechas</th><th>Avance</th></tr></thead>
+            <thead><tr><th>Hito</th><th>Estado</th><th>Responsable</th><th>Fecha objetivo</th><th>Avance</th></tr></thead>
             <tbody>
-              {% for task in project.tasks %}
+              {% for task in milestone_upcoming %}
               <tr>
                 <td>
                   <strong>{{ task.title }}</strong>
-                  {% if task.parent_task_id %}<span class="badge badge-light">Subtarea #{{ task.parent_task_id }}</span>{% endif %}
-                  {% if task.is_milestone %}<span class="badge badge-warning">Hito</span>{% endif %}
+                  <span class="badge badge-warning">Hito</span>
                 </td>
-                <td>{{ task.task_type or '-' }}</td>
                 <td>{{ task.status or '-' }}</td>
-                <td>{{ task.responsible or '-' }}</td>
-                <td><small>{{ task.start_date or '-' }}<br>{{ task.due_date or '-' }}</small></td>
+                <td>
+                  {% if task.responsible_resource_id %}
+                  <a href="{{ url_for('team.resource_detail', resource_id=task.responsible_resource_id) }}">{{ task.responsible or '-' }}</a>
+                  {% else %}
+                  {{ task.responsible or '-' }}
+                  {% endif %}
+                </td>
+                <td>{{ task.due_date or '-' }}</td>
                 <td>{{ task.progress_percent or 0 }}%</td>
               </tr>
               {% else %}
-              <tr><td colspan="6" class="text-center text-secondary">Sin tareas registradas.</td></tr>
+              <tr><td colspan="5" class="text-center text-secondary">Sin hitos pendientes.</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -216,13 +251,24 @@
     <div class="card border-0 metric-card h-100">
       <div class="card-header view360-tone-7"><strong>7. Presupuesto y horas</strong></div>
       <div class="card-body">
+        {% if financial_summary.warnings %}
+        <div class="alert alert-warning py-2" role="alert">
+          {% for msg in financial_summary.warnings %}
+          <div>{{ msg }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
         <dl class="row mb-0">
           <dt class="col-sm-5">Modalidad facturación</dt><dd class="col-sm-7">{{ project.billing_mode or '-' }}</dd>
-          <dt class="col-sm-5">Moneda</dt><dd class="col-sm-7">{{ project.currency_code or '-' }}</dd>
-          <dt class="col-sm-5">Presupuesto vendido</dt><dd class="col-sm-7">{{ project.sold_budget or '-' }}</dd>
-          <dt class="col-sm-5">Costo estimado</dt><dd class="col-sm-7">{{ project.estimated_cost or '-' }}</dd>
-          <dt class="col-sm-5">Margen estimado</dt><dd class="col-sm-7">{{ project.estimated_margin or '-' }}</dd>
-          <dt class="col-sm-5">Horas estimadas</dt><dd class="col-sm-7">{{ project.estimated_hours or '-' }}</dd>
+          <dt class="col-sm-5">Moneda</dt><dd class="col-sm-7">{{ financial_summary.currency if financial_summary.currency != '-' else (project.currency_code or '-') }}</dd>
+          <dt class="col-sm-5">Ingreso estimado (calc.)</dt><dd class="col-sm-7">{{ '%.2f'|format(financial_summary.estimated_revenue) if financial_summary.coverage_valid > 0 else '-' }}</dd>
+          <dt class="col-sm-5">Costo estimado (calc.)</dt><dd class="col-sm-7">{{ '%.2f'|format(financial_summary.estimated_cost) if financial_summary.coverage_valid > 0 else '-' }}</dd>
+          <dt class="col-sm-5">Margen estimado (calc.)</dt><dd class="col-sm-7">{{ '%.2f'|format(financial_summary.estimated_margin) if financial_summary.coverage_valid > 0 else '-' }}</dd>
+          <dt class="col-sm-5">Horas estimadas (calc.)</dt><dd class="col-sm-7">{{ '%.2f'|format(financial_summary.estimated_hours) if financial_summary.coverage_valid > 0 else (project.estimated_hours or '-') }}</dd>
+          <dt class="col-sm-5">Cobertura cálculo</dt><dd class="col-sm-7">{{ financial_summary.coverage_valid }}/{{ financial_summary.coverage_total }} asignaciones activas</dd>
+          <dt class="col-sm-5">Presupuesto vendido (manual)</dt><dd class="col-sm-7">{{ project.sold_budget or '-' }}</dd>
+          <dt class="col-sm-5">Costo estimado (manual)</dt><dd class="col-sm-7">{{ project.estimated_cost or '-' }}</dd>
+          <dt class="col-sm-5">Margen estimado (manual)</dt><dd class="col-sm-7">{{ project.estimated_margin or '-' }}</dd>
           <dt class="col-sm-5">Tarifa promedio</dt><dd class="col-sm-7">{{ project.average_rate or '-' }}</dd>
           <dt class="col-sm-5">Centro de costos</dt><dd class="col-sm-7">{{ project.cost_center or '-' }}</dd>
           <dt class="col-sm-5">Código ERP / PSA</dt><dd class="col-sm-7">{{ project.erp_psa_code or '-' }}</dd>

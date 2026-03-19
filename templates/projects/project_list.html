@@ -92,7 +92,9 @@
               <div class="fw-semibold">{{ project.name }}</div>
               <small class="text-secondary">{{ project.project_code or '-' }} | {{ project.project_type }}</small>
             </td>
-            <td>{{ project.client.name }}</td>
+            <td>
+              <a href="{{ url_for('clients.client_detail', client_id=project.client.id) }}">{{ project.client.name }}</a>
+            </td>
             <td>
               {% if project.client_contract %}
                 <small>{{ project.client_contract.contract_code or '-' }}<br>{{ project.client_contract.contract_name or project.client_contract.contract_type }}</small>

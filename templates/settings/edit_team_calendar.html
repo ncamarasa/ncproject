@@ -1,0 +1,56 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Editar calendario | NCProject{% endblock %}
+{% block page_title %}Editar calendario{% endblock %}
+{% block page_actions %}
+<a href="{{ back_url if back_url is defined else url_for('settings.team_catalog', catalog_key='calendars') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
+{% endblock %}
+{% block dashboard_content %}
+<div class="card border-0 metric-card form-mode-card form-mode-edit mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Editar calendario</strong>
+    <span class="badge form-mode-badge">Modo edición</span>
+  </div>
+  <div class="card-body">
+    <form method="post" class="form-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="mr-2">Nombre</label>
+      <input name="name" class="form-control mr-2" required value="{{ item.name }}">
+      <button class="btn btn-primary btn-sm btn-action-standard mr-2" type="submit">Guardar cambios</button>
+      <a href="{{ back_url if back_url is defined else url_for('settings.team_catalog', catalog_key='calendars') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar</a>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>Días no laborables</strong></div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('settings.add_team_calendar_holiday_from_edit', item_id=item.id) }}" class="row g-2 align-items-end mb-3">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="col-12 col-md-3"><label class="form-label">Fecha *</label><input type="date" name="holiday_date" class="form-control" required></div>
+      <div class="col-12 col-md-7"><label class="form-label">Descripción *</label><input name="label" class="form-control" required></div>
+      <div class="col-12 col-md-2"><button class="btn btn-primary btn-sm btn-action-standard" type="submit">Agregar</button></div>
+    </form>
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead><tr><th>Fecha</th><th>Descripción</th><th class="text-end">Acción</th></tr></thead>
+        <tbody>
+          {% for holiday in holidays %}
+          <tr>
+            <td>{{ holiday.holiday_date }}</td>
+            <td>{{ holiday.label }}</td>
+            <td class="text-end">
+              <form method="post" class="d-inline" action="{{ url_for('settings.delete_team_calendar_holiday', item_id=holiday.id, calendar_item_id=item.id) }}" onsubmit="return confirm('¿Eliminar día no laborable?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="text-center text-secondary py-4">Sin días no laborables.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -30,9 +30,11 @@ from project_manager.services.task_business_rules import (
     validate_parent_assignment,
 )
 from project_manager.services.team_business_rules import (
+    find_applicable_cost_id,
     validate_assignment,
     validate_task_assignment_project_consistency,
 )
+from project_manager.utils.dates import parse_date_input
 
 TASK_ALLOWED_ATTACHMENT_EXTENSIONS = {
     "pdf",
@@ -84,13 +86,7 @@ def _to_decimal(value: str | None):
         return None
 
 
-def _parse_date(value: str | None):
-    if not value:
-        return None
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        return None
+_parse_date = parse_date_input
 
 
 def _load_project_or_404(project_id: int) -> Project:
@@ -110,6 +106,18 @@ def _task_list_stmt(project_id: int):
         (Task.parent_task_id.is_(None), Task.id),
         else_=Task.parent_task_id,
     )
+    parent_first = case((Task.parent_task_id.is_(None), 0), else_=1)
+    return (
+        select(Task)
+        .where(Task.project_id == project_id)
+        .options(selectinload(Task.parent_task))
+        .order_by(
+            Task.sort_order.asc(),
+            root_task_id.asc(),
+            parent_first.asc(),
+            Task.id.asc(),
+        )
+    )
 
 
 def _task_status_options() -> list[str]:
@@ -125,18 +133,6 @@ def _task_status_options() -> list[str]:
         )
         .order_by(SystemCatalogOptionConfig.is_system.asc(), SystemCatalogOptionConfig.name.asc())
     ).scalars().all()
-    parent_first = case((Task.parent_task_id.is_(None), 0), else_=1)
-    return (
-        select(Task)
-        .where(Task.project_id == project_id)
-        .options(selectinload(Task.parent_task))
-        .order_by(
-            Task.sort_order.asc(),
-            root_task_id.asc(),
-            parent_first.asc(),
-            Task.id.asc(),
-        )
-    )
 
 
 def _task_children_metadata(tasks: list[Task]):
@@ -583,7 +579,17 @@ def add_task_collaborator(project_id: int, task_id: int):
     if exists:
         flash("El colaborador ya está asignado.", "warning")
     else:
-        db.session.add(TaskResource(task_id=task.id, resource_id=resource_id, is_primary=False, is_active=True))
+        reference_date = task.start_date or date.today()
+        applied_cost_id = find_applicable_cost_id(resource_id, reference_date)
+        db.session.add(
+            TaskResource(
+                task_id=task.id,
+                resource_id=resource_id,
+                resource_cost_id=applied_cost_id,
+                is_primary=False,
+                is_active=True,
+            )
+        )
         db.session.commit()
         flash("Colaborador agregado.", "success")
     return redirect(url_for("tasks.task_detail", project_id=project_id, task_id=task_id))

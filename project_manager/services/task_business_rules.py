@@ -10,6 +10,7 @@ from project_manager.extensions import db
 from project_manager.models import AuditTrailLog, Task
 
 CLOSED_STATUSES = {"completada", "cerrada", "closed", "done", "finalizada"}
+BLOCKED_STATUS_HINTS = ("bloq", "blocked", "on hold", "hold")
 
 
 def _normalize_status(value: str | None) -> str:
@@ -18,6 +19,11 @@ def _normalize_status(value: str | None) -> str:
 
 def is_closed_status(value: str | None) -> bool:
     return _normalize_status(value) in CLOSED_STATUSES
+
+
+def is_blocked_status(value: str | None) -> bool:
+    normalized = _normalize_status(value)
+    return any(hint in normalized for hint in BLOCKED_STATUS_HINTS)
 
 
 def _actor_user_id() -> int | None:

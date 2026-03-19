@@ -10,6 +10,8 @@ from project_manager.extensions import db
 from project_manager.models import AuditTrailLog, Client, Project, Task
 from project_manager.services.task_business_rules import (
     calculate_parent_rollup,
+    is_blocked_status,
+    is_closed_status,
     recalculate_parent_task,
     validate_parent_assignment,
 )
@@ -209,6 +211,13 @@ class TaskBusinessRulesTestCase(unittest.TestCase):
             self.assertIn("avance del padre", joined)
             self.assertIn("fechas del padre", joined)
             self.assertIn("no se puede cerrar", joined)
+
+    def test_status_helpers(self):
+        self.assertTrue(is_closed_status("Completada"))
+        self.assertTrue(is_closed_status("DONE"))
+        self.assertTrue(is_blocked_status("Bloqueada"))
+        self.assertTrue(is_blocked_status("On Hold"))
+        self.assertFalse(is_blocked_status("En progreso"))
 
 
 if __name__ == "__main__":

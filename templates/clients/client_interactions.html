@@ -1,8 +1,9 @@
 {% extends 'dashboard/layout.html' %}
-{% block title %}ABM Interacciones | NCProject{% endblock %}
-{% block page_title %}ABM Interacciones - {{ client.name }}{% endblock %}
+{% block title %}Gestión de interacciones | NCProject{% endblock %}
+{% block page_title %}Gestión de interacciones{% endblock %}
+{% block page_subtitle %}Cliente: {{ client.name }}{% endblock %}
 {% block page_actions %}
-<a href="{{ url_for('clients.client_detail', client_id=client.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver a Vista 360</a>
+<a href="{{ url_for('clients.client_detail', client_id=client.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al detalle</a>
 {% endblock %}
 {% block dashboard_content %}
 {% set interaction_form_mode = 'edit' if edit_interaction else 'create' %}
@@ -20,7 +21,7 @@
       <div class="col-12 col-md-2"><label class="form-label">Riesgo</label><select name="risk_level" class="custom-select"><option value="">Seleccionar</option>{% set current = form_values.get('risk_level', edit_interaction.risk_level if edit_interaction else '') %}{% for item in risk_levels %}<option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>{% endfor %}</select></div>
       <div class="col-12 col-md-3"><label class="form-label">Responsable</label><input name="owner" class="form-control" value="{{ form_values.get('owner', edit_interaction.owner if edit_interaction else '') }}"></div>
       <div class="col-12 col-md-9"><label class="form-label">Descripción</label><input name="description" class="form-control" value="{{ form_values.get('description', edit_interaction.description if edit_interaction else '') }}"></div>
-      <div class="col-12 d-flex gap-2 mt-2"><button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar cambios' if edit_interaction else 'Registrar interacción' }}</button>{% if edit_interaction %}<a class="btn btn-outline-secondary btn-sm btn-action-standard" href="{{ url_for('clients.manage_interactions', client_id=client.id, page=current_page) }}">Cancelar edición</a>{% endif %}</div>
+      <div class="col-12 d-flex gap-2 mt-2"><button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar cambios' if edit_interaction else 'Agregar interacción' }}</button>{% if edit_interaction %}<a class="btn btn-outline-secondary btn-sm btn-action-standard" href="{{ url_for('clients.manage_interactions', client_id=client.id, page=current_page) }}">Cancelar edición</a>{% endif %}</div>
     </form>
   </div>
 </div>

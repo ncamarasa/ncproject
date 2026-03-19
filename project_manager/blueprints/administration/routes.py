@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal, InvalidOperation
 
 from flask import abort, flash, g, redirect, render_template, request, url_for
 from sqlalchemy import func, or_, select
@@ -13,13 +14,20 @@ from project_manager.models import (
     Client,
     Permission,
     Project,
+    RoleSalePrice,
     Role,
     RolePermission,
     User,
     UserClientAssignment,
     UserProjectAssignment,
+    TeamRole,
 )
 from project_manager.services.default_catalogs import seed_default_catalogs_for_user
+from project_manager.services.team_business_rules import (
+    close_previous_role_sale_price_if_needed,
+    validate_role_sale_price_payload,
+)
+from project_manager.utils.dates import parse_date_input
 
 
 @bp.before_request
@@ -47,6 +55,18 @@ def _to_int(value: str | None, default: int = 0) -> int:
 
 def _to_bool(value: str | None) -> bool:
     return value in {"1", "true", "on", "yes", "si"}
+
+
+def _to_decimal(value: str | None):
+    if value in (None, ""):
+        return None
+    try:
+        return Decimal(value)
+    except (InvalidOperation, ValueError):
+        return None
+
+
+_parse_date = parse_date_input
 
 
 def _paginate(stmt, page: int, per_page: int = 12):
@@ -457,6 +477,81 @@ def toggle_role(role_id: int):
     db.session.commit()
     flash("Estado del rol actualizado.", "info")
     return redirect(url_for("administration.list_roles"))
+
+
+@bp.route("/team-role-prices", methods=["GET", "POST"])
+@require_permission("users.manage")
+def team_role_prices():
+    roles = db.session.execute(select(TeamRole).where(TeamRole.is_active.is_(True)).order_by(TeamRole.name.asc())).scalars().all()
+    prices = db.session.execute(
+        select(RoleSalePrice)
+        .join(TeamRole, TeamRole.id == RoleSalePrice.role_id)
+        .where(TeamRole.is_active.is_(True))
+        .options(selectinload(RoleSalePrice.role))
+        .order_by(RoleSalePrice.valid_from.desc(), RoleSalePrice.id.desc())
+    ).scalars().all()
+
+    edit_id = _to_int(request.args.get("edit_id"))
+    edit_price = db.session.get(RoleSalePrice, edit_id) if edit_id else None
+
+    if request.method == "POST":
+        if g.user.read_only:
+            flash("Tu usuario es de solo lectura.", "danger")
+            return redirect(url_for("administration.team_role_prices"))
+
+        role_id = _to_int(request.form.get("role_id"))
+        price_type = _safe_strip(request.form.get("price_type")).lower()
+        amount = _to_decimal(request.form.get("price_amount"))
+        payload = {
+            "valid_from": _parse_date(request.form.get("valid_from")),
+            "valid_to": _parse_date(request.form.get("valid_to")),
+            "hourly_price": amount if price_type == "hourly" else None,
+            "monthly_price": amount if price_type == "monthly" else None,
+            "currency": _safe_strip(request.form.get("currency")).upper(),
+            "observations": _safe_strip(request.form.get("observations")),
+            "is_active": True,
+        }
+
+        target_id = _to_int(request.form.get("price_id"))
+        current = db.session.get(RoleSalePrice, target_id) if target_id else None
+        if target_id and not current:
+            abort(404)
+
+        errors = validate_role_sale_price_payload(role_id, payload, current_id=current.id if current else None)
+        if errors:
+            for err in errors:
+                flash(err, "danger")
+            return render_template(
+                "administration/team_role_prices.html",
+                roles=roles,
+                prices=prices,
+                edit_price=current,
+                form_values=request.form,
+            )
+
+        close_previous_role_sale_price_if_needed(role_id, payload["valid_from"], current_id=current.id if current else None)
+        if current:
+            current.role_id = role_id
+            current.valid_from = payload["valid_from"]
+            current.valid_to = payload["valid_to"]
+            current.hourly_price = payload["hourly_price"]
+            current.monthly_price = payload["monthly_price"]
+            current.currency = payload["currency"]
+            current.observations = payload["observations"]
+            flash("Precio de venta actualizado.", "success")
+        else:
+            db.session.add(RoleSalePrice(role_id=role_id, **payload))
+            flash("Precio de venta creado.", "success")
+        db.session.commit()
+        return redirect(url_for("administration.team_role_prices"))
+
+    return render_template(
+        "administration/team_role_prices.html",
+        roles=roles,
+        prices=prices,
+        edit_price=edit_price,
+        form_values={},
+    )
 
 
 @bp.route("/audit/access")

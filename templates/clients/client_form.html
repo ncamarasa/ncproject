@@ -4,6 +4,9 @@
 {% block page_title %}{{ 'Editar cliente' if is_edit else 'Nuevo cliente' }}{% endblock %}
 {% block page_subtitle %}Entidad base para proyectos, soporte, contratos e interacciones{% endblock %}
 {% block page_actions %}
+{% if is_edit %}
+<a href="{{ url_for('clients.client_detail', client_id=client.id) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver detalle</a>
+{% endif %}
 <a href="{{ url_for('clients.list_clients') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al listado</a>
 {% endblock %}
 
@@ -429,7 +432,7 @@
       </div>
       <div class="card-footer bg-white d-flex gap-2">
           <button class="btn btn-primary btn-action-standard" type="submit">{{ 'Guardar cambios' if is_edit else 'Crear cliente' }}</button>
-          <a href="{{ url_for('clients.list_clients') }}" class="btn btn-outline-secondary btn-action-standard">Cancelar</a>
+          <a href="{{ url_for('clients.list_clients') }}" class="btn btn-outline-secondary btn-action-standard">{{ 'Cancelar edición' if is_edit else 'Volver al listado' }}</a>
       </div>
     </div>
   </div>

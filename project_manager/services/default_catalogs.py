@@ -7,6 +7,9 @@ from project_manager.models import (
     ClientCatalogOptionConfig,
     CompanyTypeConfig,
     PaymentTypeConfig,
+    Resource,
+    ResourceAvailability,
+    ResourceAvailabilityException,
     SystemCatalogOptionConfig,
 )
 
@@ -53,9 +56,28 @@ DEFAULT_PROJECT_CATALOGS: dict[str, list[str]] = {
 DEFAULT_TEAM_CATALOGS: dict[str, list[str]] = {
     "resource_types": ["internal", "external"],
     "availability_types": ["full_time", "part_time", "custom"],
+    "availability_exception_types": ["time_off", "vacation", "leave", "holiday", "blocked"],
+    "calendars": ["Argentina", "Estados Unidos", "Chile", "Uruguay"],
     "positions": ["Project Manager", "Consultor", "Analista Funcional", "Desarrollador", "QA"],
     "areas": ["Delivery", "Comercial", "Operaciones", "Tecnologia", "Soporte"],
     "vendors": ["Interno", "Partner A", "Partner B", "Freelance", "Consultora Externa"],
+}
+
+RESOURCE_TYPE_ALIASES: dict[str, tuple[str, ...]] = {
+    "internal": ("internal", "interno"),
+    "external": ("external", "externo"),
+}
+AVAILABILITY_TYPE_ALIASES: dict[str, tuple[str, ...]] = {
+    "full_time": ("full_time", "tiempo_completo", "completo"),
+    "part_time": ("part_time", "medio_tiempo", "parcial"),
+    "custom": ("custom", "personalizado"),
+}
+AVAILABILITY_EXCEPTION_TYPE_ALIASES: dict[str, tuple[str, ...]] = {
+    "time_off": ("time_off", "ausencia", "tiempo_fuera"),
+    "vacation": ("vacation", "vacaciones"),
+    "leave": ("leave", "licencia"),
+    "holiday": ("holiday", "feriado"),
+    "blocked": ("blocked", "bloqueado", "bloequeado"),
 }
 
 
@@ -234,12 +256,148 @@ def seed_default_catalogs_for_user(owner_user_id: int) -> None:
             )
     for catalog_key, values in DEFAULT_TEAM_CATALOGS.items():
         for name in values:
-            is_system = catalog_key in {"resource_types", "availability_types"}
+            is_system = catalog_key in {"resource_types", "availability_types", "availability_exception_types"}
+            is_editable = not is_system
             _ensure_team_catalog(
                 owner_user_id,
                 catalog_key,
                 name,
                 is_system=is_system,
-                is_editable=True,
+                is_editable=is_editable,
                 is_deletable=not is_system,
             )
+    _normalize_resource_types(owner_user_id)
+    _normalize_availability_types(owner_user_id)
+    _normalize_availability_exception_types(owner_user_id)
+
+
+def _normalize_resource_types(owner_user_id: int) -> None:
+    for canonical, aliases in RESOURCE_TYPE_ALIASES.items():
+        normalized_aliases = {alias.strip().lower() for alias in aliases}
+        rows = db.session.execute(
+            select(SystemCatalogOptionConfig).where(
+                SystemCatalogOptionConfig.owner_user_id == owner_user_id,
+                SystemCatalogOptionConfig.module_key == "team",
+                SystemCatalogOptionConfig.catalog_key == "resource_types",
+                db.func.lower(SystemCatalogOptionConfig.name).in_(normalized_aliases),
+            )
+        ).scalars().all()
+
+        target = next((row for row in rows if row.name.strip().lower() == canonical), rows[0] if rows else None)
+        if not target:
+            target = SystemCatalogOptionConfig(
+                owner_user_id=owner_user_id,
+                module_key="team",
+                catalog_key="resource_types",
+                name=canonical,
+                is_active=True,
+                is_system=True,
+                is_editable=False,
+                is_deletable=False,
+            )
+            db.session.add(target)
+        else:
+            target.name = canonical
+            target.is_active = True
+            target.is_system = True
+            target.is_editable = False
+            target.is_deletable = False
+
+        for row in rows:
+            if row.id == target.id:
+                continue
+            row.is_active = False
+
+        db.session.execute(
+            Resource.__table__.update()
+            .where(db.func.lower(Resource.resource_type).in_(normalized_aliases))
+            .values(resource_type=canonical)
+        )
+
+
+def _normalize_availability_types(owner_user_id: int) -> None:
+    for canonical, aliases in AVAILABILITY_TYPE_ALIASES.items():
+        normalized_aliases = {alias.strip().lower() for alias in aliases}
+        rows = db.session.execute(
+            select(SystemCatalogOptionConfig).where(
+                SystemCatalogOptionConfig.owner_user_id == owner_user_id,
+                SystemCatalogOptionConfig.module_key == "team",
+                SystemCatalogOptionConfig.catalog_key == "availability_types",
+                db.func.lower(SystemCatalogOptionConfig.name).in_(normalized_aliases),
+            )
+        ).scalars().all()
+
+        target = next((row for row in rows if row.name.strip().lower() == canonical), rows[0] if rows else None)
+        if not target:
+            target = SystemCatalogOptionConfig(
+                owner_user_id=owner_user_id,
+                module_key="team",
+                catalog_key="availability_types",
+                name=canonical,
+                is_active=True,
+                is_system=True,
+                is_editable=False,
+                is_deletable=False,
+            )
+            db.session.add(target)
+        else:
+            target.name = canonical
+            target.is_active = True
+            target.is_system = True
+            target.is_editable = False
+            target.is_deletable = False
+
+        for row in rows:
+            if row.id == target.id:
+                continue
+            row.is_active = False
+
+        db.session.execute(
+            ResourceAvailability.__table__.update()
+            .where(db.func.lower(ResourceAvailability.availability_type).in_(normalized_aliases))
+            .values(availability_type=canonical)
+        )
+
+
+def _normalize_availability_exception_types(owner_user_id: int) -> None:
+    for canonical, aliases in AVAILABILITY_EXCEPTION_TYPE_ALIASES.items():
+        normalized_aliases = {alias.strip().lower() for alias in aliases}
+        rows = db.session.execute(
+            select(SystemCatalogOptionConfig).where(
+                SystemCatalogOptionConfig.owner_user_id == owner_user_id,
+                SystemCatalogOptionConfig.module_key == "team",
+                SystemCatalogOptionConfig.catalog_key == "availability_exception_types",
+                db.func.lower(SystemCatalogOptionConfig.name).in_(normalized_aliases),
+            )
+        ).scalars().all()
+
+        target = next((row for row in rows if row.name.strip().lower() == canonical), rows[0] if rows else None)
+        if not target:
+            target = SystemCatalogOptionConfig(
+                owner_user_id=owner_user_id,
+                module_key="team",
+                catalog_key="availability_exception_types",
+                name=canonical,
+                is_active=True,
+                is_system=True,
+                is_editable=False,
+                is_deletable=False,
+            )
+            db.session.add(target)
+        else:
+            target.name = canonical
+            target.is_active = True
+            target.is_system = True
+            target.is_editable = False
+            target.is_deletable = False
+
+        for row in rows:
+            if row.id == target.id:
+                continue
+            row.is_active = False
+
+        db.session.execute(
+            ResourceAvailabilityException.__table__.update()
+            .where(db.func.lower(ResourceAvailabilityException.exception_type).in_(normalized_aliases))
+            .values(exception_type=canonical)
+        )

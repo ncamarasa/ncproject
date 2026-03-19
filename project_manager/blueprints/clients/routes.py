@@ -33,6 +33,7 @@ from project_manager.models import (
 )
 from project_manager.services.code_generation import generate_client_code
 from project_manager.services.team_business_rules import ensure_system_team_roles
+from project_manager.utils.dates import parse_date_input
 
 CLIENT_STATUS_DELETED = "Eliminado"
 ALLOWED_ATTACHMENT_EXTENSIONS = {"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "png", "jpg", "jpeg", "txt"}
@@ -92,13 +93,7 @@ def _to_decimal(value: str | None):
         return None
 
 
-def _parse_date(value: str | None):
-    if not value:
-        return None
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        return None
+_parse_date = parse_date_input
 
 
 def _to_bool(value: str | None) -> bool:

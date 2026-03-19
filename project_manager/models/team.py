@@ -14,6 +14,8 @@ class Resource(TimestampMixin, db.Model):
     position = db.Column(db.String(120), nullable=True)
     area = db.Column(db.String(120), nullable=True)
     resource_type = db.Column(db.String(20), nullable=False, default="internal")
+    calendar_name = db.Column(db.String(120), nullable=True)
+    timezone = db.Column(db.String(60), nullable=True)
     vendor_name = db.Column(db.String(180), nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
@@ -25,6 +27,12 @@ class Resource(TimestampMixin, db.Model):
     )
     availabilities = db.relationship(
         "ResourceAvailability",
+        back_populates="resource",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    availability_exceptions = db.relationship(
+        "ResourceAvailabilityException",
         back_populates="resource",
         cascade="all, delete-orphan",
         lazy="selectin",
@@ -66,6 +74,12 @@ class TeamRole(TimestampMixin, db.Model):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    sale_prices = db.relationship(
+        "RoleSalePrice",
+        back_populates="role",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 class ResourceRole(TimestampMixin, db.Model):
@@ -91,12 +105,28 @@ class ResourceAvailability(TimestampMixin, db.Model):
     availability_type = db.Column(db.String(20), nullable=False, default="full_time")
     weekly_hours = db.Column(db.Numeric(8, 2), nullable=False)
     daily_hours = db.Column(db.Numeric(8, 2), nullable=True)
+    working_days = db.Column(db.String(40), nullable=False, default="mon,tue,wed,thu,fri")
     valid_from = db.Column(db.Date, nullable=False, index=True)
     valid_to = db.Column(db.Date, nullable=True, index=True)
     observations = db.Column(db.Text, nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
     resource = db.relationship("Resource", back_populates="availabilities")
+
+
+class ResourceAvailabilityException(TimestampMixin, db.Model):
+    __tablename__ = "resource_availability_exception"
+
+    id = db.Column(db.Integer, primary_key=True)
+    resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=False, index=True)
+    exception_type = db.Column(db.String(30), nullable=False, default="time_off")
+    start_date = db.Column(db.Date, nullable=False, index=True)
+    end_date = db.Column(db.Date, nullable=True, index=True)
+    hours_lost = db.Column(db.Numeric(8, 2), nullable=True)
+    observations = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    resource = db.relationship("Resource", back_populates="availability_exceptions")
 
 
 class ResourceCost(TimestampMixin, db.Model):
@@ -106,13 +136,29 @@ class ResourceCost(TimestampMixin, db.Model):
     resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=False, index=True)
     valid_from = db.Column(db.Date, nullable=False, index=True)
     valid_to = db.Column(db.Date, nullable=True, index=True)
-    hourly_cost = db.Column(db.Numeric(12, 2), nullable=False)
+    hourly_cost = db.Column(db.Numeric(12, 2), nullable=True)
     monthly_cost = db.Column(db.Numeric(14, 2), nullable=True)
     currency = db.Column(db.String(10), nullable=False)
     observations = db.Column(db.Text, nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
     resource = db.relationship("Resource", back_populates="costs")
+
+
+class RoleSalePrice(TimestampMixin, db.Model):
+    __tablename__ = "role_sale_price"
+
+    id = db.Column(db.Integer, primary_key=True)
+    role_id = db.Column(db.Integer, db.ForeignKey("team_roles.id"), nullable=False, index=True)
+    valid_from = db.Column(db.Date, nullable=False, index=True)
+    valid_to = db.Column(db.Date, nullable=True, index=True)
+    hourly_price = db.Column(db.Numeric(12, 2), nullable=True)
+    monthly_price = db.Column(db.Numeric(14, 2), nullable=True)
+    currency = db.Column(db.String(10), nullable=False)
+    observations = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    role = db.relationship("TeamRole", back_populates="sale_prices")
 
 
 class ProjectResource(TimestampMixin, db.Model):
@@ -122,9 +168,11 @@ class ProjectResource(TimestampMixin, db.Model):
     project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=False, index=True)
     resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=False, index=True)
     role_id = db.Column(db.Integer, db.ForeignKey("team_roles.id"), nullable=True, index=True)
+    resource_cost_id = db.Column(db.Integer, db.ForeignKey("resource_cost.id"), nullable=True, index=True)
     is_primary = db.Column(db.Boolean, nullable=False, default=False)
     allocation_percent = db.Column(db.Numeric(6, 2), nullable=True)
     planned_hours = db.Column(db.Numeric(10, 2), nullable=True)
+    planned_daily_hours = db.Column(db.Numeric(8, 2), nullable=True)
     start_date = db.Column(db.Date, nullable=True)
     end_date = db.Column(db.Date, nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
@@ -132,6 +180,7 @@ class ProjectResource(TimestampMixin, db.Model):
     project = db.relationship("Project", back_populates="resource_assignments")
     resource = db.relationship("Resource", back_populates="project_assignments")
     role = db.relationship("TeamRole")
+    resource_cost = db.relationship("ResourceCost")
 
 
 class TaskResource(TimestampMixin, db.Model):
@@ -141,9 +190,11 @@ class TaskResource(TimestampMixin, db.Model):
     task_id = db.Column(db.Integer, db.ForeignKey("tasks.id"), nullable=False, index=True)
     resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=False, index=True)
     role_id = db.Column(db.Integer, db.ForeignKey("team_roles.id"), nullable=True, index=True)
+    resource_cost_id = db.Column(db.Integer, db.ForeignKey("resource_cost.id"), nullable=True, index=True)
     is_primary = db.Column(db.Boolean, nullable=False, default=False)
     allocation_percent = db.Column(db.Numeric(6, 2), nullable=True)
     planned_hours = db.Column(db.Numeric(10, 2), nullable=True)
+    planned_daily_hours = db.Column(db.Numeric(8, 2), nullable=True)
     start_date = db.Column(db.Date, nullable=True)
     end_date = db.Column(db.Date, nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
@@ -151,3 +202,4 @@ class TaskResource(TimestampMixin, db.Model):
     task = db.relationship("Task", back_populates="resource_assignments")
     resource = db.relationship("Resource", back_populates="task_assignments")
     role = db.relationship("TeamRole")
+    resource_cost = db.relationship("ResourceCost")
