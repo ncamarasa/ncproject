@@ -63,16 +63,6 @@
         </select>
       </div>
       <div class="col-12 col-md-4">
-        <label class="form-label">Zona horaria</label>
-        {% set selected_timezone = form_values.get('timezone', resource.timezone if resource else '') %}
-        <select name="timezone" class="custom-select">
-          <option value="">Seleccionar</option>
-          {% for item in timezone_options %}
-          <option value="{{ item }}" {% if selected_timezone == item %}selected{% endif %}>{{ item }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-12 col-md-4">
         <label class="form-label">Proveedor</label>
         {% set selected_vendor = form_values.get('vendor_name', resource.vendor_name if resource else '') %}
         <select name="vendor_name" class="custom-select">
@@ -90,6 +80,17 @@
           <option value="0" {% if active_value == '0' %}selected{% endif %}>Inactivo</option>
         </select>
       </div>
+      {% if not is_edit %}
+      <div class="col-12 col-md-6">
+        {% set create_user_value = form_values.get('create_user', '1') %}
+        <div class="form-check mt-4">
+          <input class="form-check-input" type="checkbox" id="createUserCheck" name="create_user" value="1" {% if create_user_value == '1' %}checked{% endif %}>
+          <label class="form-check-label" for="createUserCheck">
+            Crear usuario del sistema para este recurso
+          </label>
+        </div>
+      </div>
+      {% endif %}
       <div class="col-12 d-flex gap-2">
         <button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar cambios' if is_edit else 'Crear recurso' }}</button>
         {% if is_edit %}<a href="{{ url_for('team.list_resources') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar edición</a>{% endif %}

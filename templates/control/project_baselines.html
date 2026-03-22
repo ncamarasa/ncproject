@@ -1,0 +1,106 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Baseline | NCProject{% endblock %}
+{% block page_title %}Baseline - {{ project.name }}{% endblock %}
+{% block page_subtitle %}Control de desvío de plazo, esfuerzo y costo{% endblock %}
+{% block page_actions %}
+<a href="{{ url_for('control.dashboard') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver a Control PMO</a>
+<form method="post" class="d-inline">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="action" value="snapshot">
+  <button type="submit" class="btn btn-outline-primary btn-sm btn-action-standard">Recalcular salud</button>
+</form>
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="card border-0 metric-card mb-3">
+  <div class="card-header"><strong>Crear baseline</strong></div>
+  <div class="card-body">
+    <form method="post" class="row g-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="create_baseline">
+      <div class="col-12 col-md-4">
+        <label class="form-label">Etiqueta</label>
+        <input name="label" class="form-control" placeholder="Ej: Cierre planificación Q2">
+      </div>
+      <div class="col-12 col-md-6">
+        <label class="form-label">Notas</label>
+        <input name="notes" class="form-control" placeholder="Motivo / alcance de la baseline">
+      </div>
+      <div class="col-12 col-md-2 d-flex align-items-end">
+        <button type="submit" class="btn btn-primary btn-sm btn-action-standard w-100">Crear</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 metric-card mb-3">
+  <div class="card-header"><strong>Histórico de baseline</strong></div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Versión</th>
+            <th>Etiqueta</th>
+            <th>Fecha</th>
+            <th>Creado por</th>
+            <th>Notas</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in baselines %}
+          <tr>
+            <td>v{{ item.version }}</td>
+            <td>{{ item.label or '-' }}</td>
+            <td>{{ item.created_at }}</td>
+            <td>{{ item.created_by_user.display_name if item.created_by_user else '-' }}</td>
+            <td>{{ item.notes or '-' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-secondary py-3">Sin baseline registrada.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>Snapshots de salud</strong></div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Baseline</th>
+            <th>Desvío plazo (días)</th>
+            <th>Desvío esfuerzo (hs)</th>
+            <th>Desvío costo (%)</th>
+            <th>Semáforo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in health_rows %}
+          <tr>
+            <td>{{ row.snapshot_date }}</td>
+            <td>{% if row.baseline %}v{{ row.baseline.version }}{% else %}-{% endif %}</td>
+            <td>{{ row.schedule_variance_days if row.schedule_variance_days is not none else '-' }}</td>
+            <td>{{ row.effort_variance_hours if row.effort_variance_hours is not none else '-' }}</td>
+            <td>{{ row.cost_variance_pct if row.cost_variance_pct is not none else '-' }}</td>
+            <td>
+              {% if row.health_status == 'green' %}<span class="badge badge-success">Verde</span>{% endif %}
+              {% if row.health_status == 'amber' %}<span class="badge badge-warning">Ámbar</span>{% endif %}
+              {% if row.health_status == 'red' %}<span class="badge badge-danger">Rojo</span>{% endif %}
+              {% if row.health_status == 'gray' %}<span class="badge badge-secondary">Sin baseline</span>{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center text-secondary py-3">Sin snapshots.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

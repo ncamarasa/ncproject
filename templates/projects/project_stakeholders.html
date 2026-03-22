@@ -21,8 +21,17 @@
         <input required name="name" class="form-control" value="{{ form_values.get('name', edit_stakeholder.name if edit_stakeholder else '') }}">
       </div>
       <div class="col-12 col-lg-4">
-        <label class="form-label">Rol</label>
-        <input name="role" class="form-control" value="{{ form_values.get('role', edit_stakeholder.role if edit_stakeholder else '') }}">
+        <label class="form-label d-flex justify-content-between align-items-center">
+          <span>Rol</span>
+          <a href="{{ url_for('settings.project_catalog', catalog_key='stakeholder_roles') }}" class="btn btn-link btn-sm p-0">Configurar roles</a>
+        </label>
+        {% set current_role = form_values.get('role', edit_stakeholder.role if edit_stakeholder else '') %}
+        <select name="role" class="custom-select" required>
+          <option value="">Seleccionar</option>
+          {% for item in stakeholder_roles %}
+            <option value="{{ item }}" {% if current_role == item %}selected{% endif %}>{{ item }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-12 col-lg-4">
         <label class="form-label">Email</label>

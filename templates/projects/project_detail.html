@@ -15,35 +15,44 @@
 {% endblock %}
 
 {% block dashboard_content %}
-<div class="row g-3 mb-2">
+<div class="project-hero mb-3">
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    <span class="badge badge-pill badge-light border">Cliente: {{ project.client.name if project.client else '-' }}</span>
+    <span class="badge badge-pill badge-info">Estado: {{ project.status or '-' }}</span>
+    <span class="badge badge-pill badge-secondary">Prioridad: {{ project.priority or '-' }}</span>
+    <span class="badge badge-pill badge-light border">PM: {{ project.project_manager or '-' }}</span>
+  </div>
+</div>
+
+<div class="row g-3 mb-2 project-kpi-grid">
   <div class="col-6 col-lg-3">
     <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="text-reset d-block">
-      <div class="small-box bg-info"><div class="inner"><h4>{{ progress_avg }}%</h4><p>Avance general</p></div></div>
+      <div class="project-kpi-card kpi-info"><div class="inner"><h4>{{ progress_avg }}%</h4><p>Avance general</p></div></div>
     </a>
   </div>
   <div class="col-6 col-lg-3">
     <a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="text-reset d-block">
-      <div class="small-box bg-warning"><div class="inner"><h4>{{ task_milestones }}</h4><p>Hitos totales</p></div></div>
+      <div class="project-kpi-card kpi-warning"><div class="inner"><h4>{{ task_milestones }}</h4><p>Hitos totales</p></div></div>
     </a>
   </div>
   <div class="col-6 col-lg-3">
     <a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="text-reset d-block">
-      <div class="small-box bg-primary"><div class="inner"><h4>{{ milestone_open }}</h4><p>Hitos pendientes</p></div></div>
+      <div class="project-kpi-card kpi-primary"><div class="inner"><h4>{{ milestone_open }}</h4><p>Hitos pendientes</p></div></div>
     </a>
   </div>
   <div class="col-6 col-lg-3">
     <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="text-reset d-block">
-      <div class="small-box bg-danger"><div class="inner"><h4>{{ task_overdue }}</h4><p>Tareas atrasadas</p></div></div>
+      <div class="project-kpi-card kpi-danger"><div class="inner"><h4>{{ task_overdue }}</h4><p>Tareas atrasadas</p></div></div>
     </a>
   </div>
 </div>
 
 <div class="row g-3 view360-project">
-  <div class="col-12 col-xl-6">
-    <div class="card border-0 metric-card h-100">
+  <div class="col-12">
+    <div class="card border-0 metric-card">
       <div class="card-header view360-tone-1"><strong>1. Datos generales</strong></div>
       <div class="card-body">
-        <dl class="row mb-0">
+        <dl class="row mb-0 project-compact-dl">
           <dt class="col-sm-5">Código</dt><dd class="col-sm-7">{{ project.project_code or '-' }}</dd>
           <dt class="col-sm-5">Cliente</dt>
           <dd class="col-sm-7"><a href="{{ url_for('clients.client_detail', client_id=project.client_id) }}">{{ project.client.name }}</a></dd>
@@ -67,7 +76,7 @@
     <div class="card border-0 metric-card h-100">
       <div class="card-header view360-tone-2"><strong>2. Clasificación</strong></div>
       <div class="card-body">
-        <dl class="row mb-0">
+        <dl class="row mb-0 project-compact-dl">
           <dt class="col-sm-5">Unidad de negocio</dt><dd class="col-sm-7">{{ project.business_unit or '-' }}</dd>
           <dt class="col-sm-5">Producto / Solución</dt><dd class="col-sm-7">{{ project.product_solution or '-' }}</dd>
           <dt class="col-sm-5">Módulo / Servicio</dt><dd class="col-sm-7">{{ project.service_module or '-' }}</dd>
@@ -85,7 +94,7 @@
     <div class="card border-0 metric-card h-100">
       <div class="card-header view360-tone-3"><strong>3. Responsables</strong></div>
       <div class="card-body">
-        <dl class="row mb-0">
+        <dl class="row mb-0 project-compact-dl">
           <dt class="col-sm-5">Responsable</dt><dd class="col-sm-7">{{ project.owner or '-' }}</dd>
           <dt class="col-sm-5">Project Manager</dt>
           <dd class="col-sm-7">
@@ -119,8 +128,8 @@
             {{ project.technical_manager or '-' }}
             {% endif %}
           </dd>
-          <dt class="col-sm-5">Sponsor del cliente</dt><dd class="col-sm-7">{{ project.client_sponsor or '-' }}</dd>
-          <dt class="col-sm-5">Key user</dt><dd class="col-sm-7">{{ project.key_user or '-' }}</dd>
+          <dt class="col-sm-5">Sponsor del cliente</dt><dd class="col-sm-7">{{ client_sponsor_display }}</dd>
+          <dt class="col-sm-5">Key user</dt><dd class="col-sm-7">{{ key_user_display }}</dd>
         </dl>
       </div>
     </div>
@@ -130,7 +139,7 @@
     <div class="card border-0 metric-card h-100">
       <div class="card-header view360-tone-4"><strong>4. Planificación y operación</strong></div>
       <div class="card-body">
-        <dl class="row mb-0">
+        <dl class="row mb-0 project-compact-dl">
           <dt class="col-sm-5">Fecha alta</dt><dd class="col-sm-7">{{ project.onboarding_date or '-' }}</dd>
           <dt class="col-sm-5">Inicio estimado</dt><dd class="col-sm-7">{{ project.estimated_start_date or '-' }}</dd>
           <dt class="col-sm-5">Inicio real</dt><dd class="col-sm-7">{{ project.actual_start_date or '-' }}</dd>
@@ -201,10 +210,10 @@
       </div>
       <div class="card-body">
         <div class="row g-2 mb-3">
-          <div class="col-12 col-md-6 col-xl-3"><strong>Tareas totales:</strong> {{ task_total }}</div>
-          <div class="col-12 col-md-6 col-xl-3"><strong>Completadas:</strong> {{ task_completed }}</div>
-          <div class="col-12 col-md-6 col-xl-3"><strong>Activas:</strong> {{ task_active }}</div>
-          <div class="col-12 col-md-6 col-xl-3"><strong>Bloqueadas:</strong> {{ task_blocked }}</div>
+          <div class="col-6 col-md-3"><div class="project-mini-kpi"><small>Tareas totales</small><strong>{{ task_total }}</strong></div></div>
+          <div class="col-6 col-md-3"><div class="project-mini-kpi"><small>Completadas</small><strong>{{ task_completed }}</strong></div></div>
+          <div class="col-6 col-md-3"><div class="project-mini-kpi"><small>Activas</small><strong>{{ task_active }}</strong></div></div>
+          <div class="col-6 col-md-3"><div class="project-mini-kpi"><small>Bloqueadas</small><strong>{{ task_blocked }}</strong></div></div>
         </div>
         <div class="mb-4">
           <div class="d-flex justify-content-between small text-secondary mb-1">
@@ -247,8 +256,8 @@
     </div>
   </div>
 
-  <div class="col-12 col-xl-6">
-    <div class="card border-0 metric-card h-100">
+  <div class="col-12">
+    <div class="card border-0 metric-card">
       <div class="card-header view360-tone-7"><strong>7. Presupuesto y horas</strong></div>
       <div class="card-body">
         {% if financial_summary.warnings %}
@@ -258,43 +267,155 @@
           {% endfor %}
         </div>
         {% endif %}
-        <dl class="row mb-0">
-          <dt class="col-sm-5">Modalidad facturación</dt><dd class="col-sm-7">{{ project.billing_mode or '-' }}</dd>
-          <dt class="col-sm-5">Moneda</dt><dd class="col-sm-7">{{ financial_summary.currency if financial_summary.currency != '-' else (project.currency_code or '-') }}</dd>
-          <dt class="col-sm-5">Ingreso estimado (calc.)</dt><dd class="col-sm-7">{{ '%.2f'|format(financial_summary.estimated_revenue) if financial_summary.coverage_valid > 0 else '-' }}</dd>
-          <dt class="col-sm-5">Costo estimado (calc.)</dt><dd class="col-sm-7">{{ '%.2f'|format(financial_summary.estimated_cost) if financial_summary.coverage_valid > 0 else '-' }}</dd>
-          <dt class="col-sm-5">Margen estimado (calc.)</dt><dd class="col-sm-7">{{ '%.2f'|format(financial_summary.estimated_margin) if financial_summary.coverage_valid > 0 else '-' }}</dd>
-          <dt class="col-sm-5">Horas estimadas (calc.)</dt><dd class="col-sm-7">{{ '%.2f'|format(financial_summary.estimated_hours) if financial_summary.coverage_valid > 0 else (project.estimated_hours or '-') }}</dd>
-          <dt class="col-sm-5">Cobertura cálculo</dt><dd class="col-sm-7">{{ financial_summary.coverage_valid }}/{{ financial_summary.coverage_total }} asignaciones activas</dd>
-          <dt class="col-sm-5">Presupuesto vendido (manual)</dt><dd class="col-sm-7">{{ project.sold_budget or '-' }}</dd>
-          <dt class="col-sm-5">Costo estimado (manual)</dt><dd class="col-sm-7">{{ project.estimated_cost or '-' }}</dd>
-          <dt class="col-sm-5">Margen estimado (manual)</dt><dd class="col-sm-7">{{ project.estimated_margin or '-' }}</dd>
-          <dt class="col-sm-5">Tarifa promedio</dt><dd class="col-sm-7">{{ project.average_rate or '-' }}</dd>
-          <dt class="col-sm-5">Centro de costos</dt><dd class="col-sm-7">{{ project.cost_center or '-' }}</dd>
-          <dt class="col-sm-5">Código ERP / PSA</dt><dd class="col-sm-7">{{ project.erp_psa_code or '-' }}</dd>
-        </dl>
+        {% set currency_code = financial_summary.currency if financial_summary.currency != '-' else (project.currency_code or '') %}
+        <div class="row g-3 mb-3">
+          <div class="col-12 col-md-6 col-xl-3"><div class="project-mini-kpi"><small>Ingreso estimado</small><strong>{{ financial_summary.estimated_revenue|money(currency_code) if financial_summary.coverage_valid > 0 else '-' }}</strong></div></div>
+          <div class="col-12 col-md-6 col-xl-3"><div class="project-mini-kpi"><small>Costo estimado</small><strong>{{ financial_summary.estimated_cost|money(currency_code) if financial_summary.coverage_valid > 0 else '-' }}</strong></div></div>
+          <div class="col-12 col-md-6 col-xl-3"><div class="project-mini-kpi"><small>Costo real aprobado</small><strong>{{ financial_summary.actual_cost|money(currency_code) if financial_summary.actual_logs_valued > 0 else '-' }}</strong></div></div>
+          <div class="col-12 col-md-6 col-xl-3"><div class="project-mini-kpi"><small>Presupuesto vendido</small><strong>{{ project.sold_budget|money(currency_code) if project.sold_budget is not none else '-' }}</strong></div></div>
+        </div>
+
+        <div class="row g-3">
+          <div class="col-12 col-xl-4">
+            <div class="project-fin-block">
+              <h6 class="project-fin-title">Base</h6>
+              <dl class="row mb-0 project-compact-dl">
+                <dt class="col-6">Modalidad</dt><dd class="col-6">{{ project.billing_mode or '-' }}</dd>
+                <dt class="col-6">Moneda</dt><dd class="col-6">{{ financial_summary.currency if financial_summary.currency != '-' else (project.currency_code or '-') }}</dd>
+                <dt class="col-6">Tarifa promedio</dt><dd class="col-6">{{ project.average_rate|money(currency_code) if project.average_rate is not none else '-' }}</dd>
+                <dt class="col-6">Centro de costos</dt><dd class="col-6">{{ project.cost_center or '-' }}</dd>
+                <dt class="col-6">Código ERP / PSA</dt><dd class="col-6">{{ project.erp_psa_code or '-' }}</dd>
+              </dl>
+            </div>
+          </div>
+
+          <div class="col-12 col-xl-4">
+            <div class="project-fin-block">
+              <h6 class="project-fin-title">Estimado (planificación)</h6>
+              <dl class="row mb-0 project-compact-dl">
+                <dt class="col-6">Ingreso estimado
+                  <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Suma de horas planificadas x tarifa de venta por asignación activa (precios por rol), convertido a moneda del proyecto."></i>
+                </dt><dd class="col-6">{{ financial_summary.estimated_revenue|money(currency_code) if financial_summary.coverage_valid > 0 else '-' }}</dd>
+                <dt class="col-6">Costo estimado
+                  <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Suma de horas planificadas x costo hora del recurso por asignación activa, convertido a moneda del proyecto."></i>
+                </dt><dd class="col-6">{{ financial_summary.estimated_cost|money(currency_code) if financial_summary.coverage_valid > 0 else '-' }}</dd>
+                <dt class="col-6">Margen estimado valorizado
+                  <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Ingreso estimado valorizado menos costo estimado calculado. No usa presupuesto vendido."></i>
+                </dt><dd class="col-6">{{ financial_summary.estimated_margin|money(currency_code) if financial_summary.coverage_valid > 0 else '-' }}</dd>
+                <dt class="col-6">Horas estimadas
+                  <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Total de horas planificadas de las asignaciones activas valorizables."></i>
+                </dt><dd class="col-6">{{ financial_summary.estimated_hours|number(2) if financial_summary.coverage_valid > 0 else (project.estimated_hours|number(2) if project.estimated_hours is not none else '-') }}</dd>
+                <dt class="col-6">Cobertura cálculo
+                  <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Asignaciones activas con datos suficientes para valorizar (horas, rol, costo, precio y cotización) sobre el total de asignaciones activas."></i>
+                </dt><dd class="col-6">{{ financial_summary.coverage_valid }}/{{ financial_summary.coverage_total }}</dd>
+              </dl>
+            </div>
+          </div>
+
+          <div class="col-12 col-xl-4">
+            <div class="project-fin-block">
+              <h6 class="project-fin-title">Real aprobado (consumo)</h6>
+              <dl class="row mb-0 project-compact-dl">
+                <dt class="col-6">Ingreso real aprobado
+                  <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Suma de horas de worklogs aprobados x tarifa de venta vigente en la fecha del consumo, convertido a moneda del proyecto."></i>
+                </dt><dd class="col-6">{{ financial_summary.actual_revenue|money(currency_code) if financial_summary.actual_logs_valued > 0 else '-' }}</dd>
+                <dt class="col-6">Costo real aprobado
+                  <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Suma de horas de worklogs aprobados x costo hora vigente del recurso en la fecha del consumo, convertido a moneda del proyecto."></i>
+                </dt><dd class="col-6">{{ financial_summary.actual_cost|money(currency_code) if financial_summary.actual_logs_valued > 0 else '-' }}</dd>
+                <dt class="col-6">Margen real aprobado
+                  <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Ingreso real aprobado calculado menos costo real aprobado calculado."></i>
+                </dt><dd class="col-6">{{ financial_summary.actual_margin|money(currency_code) if financial_summary.actual_logs_valued > 0 else '-' }}</dd>
+                <dt class="col-6">Horas reales aprobadas
+                  <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Total de horas registradas en worklogs asociados a timesheets aprobados."></i>
+                </dt><dd class="col-6">{{ financial_summary.actual_hours|number(2) if financial_summary.actual_logs_total > 0 else '-' }}</dd>
+                <dt class="col-6">Cobertura real
+                  <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Worklogs aprobados que pudieron valorizarse (con asignación, rol, costo, precio y cotización vigentes) sobre el total de worklogs aprobados."></i>
+                </dt><dd class="col-6">{{ financial_summary.actual_logs_valued }}/{{ financial_summary.actual_logs_total }}</dd>
+                {% if financial_summary.actual_logs_total > 0 %}
+                <dt class="col-6">Último cálculo</dt><dd class="col-6"><small class="text-muted">{{ financial_summary.actual_calculated_at }}</small></dd>
+                {% endif %}
+              </dl>
+            </div>
+          </div>
+
+          <div class="col-12">
+            <div class="project-fin-block project-fin-budget">
+              <h6 class="project-fin-title">Margen contra presupuesto</h6>
+              <dl class="row mb-0 project-compact-dl">
+                <dt class="col-sm-4">Margen estimado vs presupuesto
+                  <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Presupuesto vendido menos costo estimado calculado por planificación."></i>
+                </dt>
+                <dd class="col-sm-8">
+                  {{ financial_summary.estimated_margin_vs_sold_budget|money(currency_code) if financial_summary.estimated_margin_vs_sold_budget is not none else '-' }}
+                  {% if financial_summary.estimated_margin_vs_sold_budget is not none %}
+                    {% set sig = financial_summary.estimated_budget_signal %}
+                    <span class="badge {% if sig.key == 'green' %}badge-success{% elif sig.key == 'yellow' %}badge-warning{% elif sig.key == 'red' %}badge-danger{% else %}badge-secondary{% endif %} ml-2">
+                      {{ sig.label }}{% if sig.pct is not none %} ({{ sig.pct|number(1) }}%){% endif %}
+                    </span>
+                  {% endif %}
+                </dd>
+                <dt class="col-sm-4">Margen real vs presupuesto
+                  <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Presupuesto vendido menos costo real aprobado (timesheets aprobados)."></i>
+                </dt>
+                <dd class="col-sm-8">
+                  {{ financial_summary.actual_margin_vs_sold_budget|money(currency_code) if financial_summary.actual_margin_vs_sold_budget is not none else '-' }}
+                  {% if financial_summary.actual_margin_vs_sold_budget is not none %}
+                    {% set sig = financial_summary.actual_budget_signal %}
+                    <span class="badge {% if sig.key == 'green' %}badge-success{% elif sig.key == 'yellow' %}badge-warning{% elif sig.key == 'red' %}badge-danger{% else %}badge-secondary{% endif %} ml-2">
+                      {{ sig.label }}{% if sig.pct is not none %} ({{ sig.pct|number(1) }}%){% endif %}
+                    </span>
+                  {% endif %}
+                </dd>
+              </dl>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
-  <div class="col-12 col-xl-6">
-    <div class="card border-0 metric-card h-100">
-      <div class="card-header view360-tone-8"><strong>8. Cierre y documentos</strong></div>
+  <div class="col-12">
+    <div class="card border-0 metric-card">
+      <div class="card-header view360-tone-8 d-flex justify-content-between align-items-center">
+        <strong>8. Cierre y documentos</strong>
+        <a href="{{ url_for('projects.edit_project', project_id=project.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Actualizar datos</a>
+      </div>
       <div class="card-body">
-        <dl class="row mb-0">
-          <dt class="col-sm-5">Registro</dt><dd class="col-sm-7">{% if project.is_active %}<span class="badge badge-success">Activo</span>{% else %}<span class="badge badge-secondary">Inactivo</span>{% endif %}</dd>
-          <dt class="col-sm-5">Observaciones</dt><dd class="col-sm-7">{{ project.observations or '-' }}</dd>
-          <dt class="col-sm-5">Contrato adjunto</dt>
-          <dd class="col-sm-7">
-            {% if project.contract_file_name %}
-              <a href="{{ url_for('projects.download_contract', project_id=project.id) }}">{{ project.contract_original_name or 'Descargar contrato' }}</a>
-            {% else %}
-              -
-            {% endif %}
-          </dd>
-        </dl>
+        <div class="row g-3">
+          <div class="col-12 col-lg-4">
+            <dl class="row mb-0 project-compact-dl">
+              <dt class="col-6">Registro</dt><dd class="col-6">{% if project.is_active %}<span class="badge badge-success">Activo</span>{% else %}<span class="badge badge-secondary">Inactivo</span>{% endif %}</dd>
+              <dt class="col-6">Contrato adjunto</dt>
+              <dd class="col-6">
+                {% if project.contract_file_name %}
+                  <a href="{{ url_for('projects.download_contract', project_id=project.id) }}">{{ project.contract_original_name or 'Descargar contrato' }}</a>
+                {% else %}
+                  -
+                {% endif %}
+              </dd>
+            </dl>
+          </div>
+          <div class="col-12 col-lg-8">
+            <label class="form-label mb-2">Observaciones del proyecto</label>
+            <div class="project-closure-notes">
+              {{ project.observations or 'Sin observaciones registradas.' }}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ super() }}
+<script>
+  (function () {
+    if (typeof window.jQuery !== "function") return;
+    window.jQuery(function () {
+      window.jQuery('[data-toggle="tooltip"]').tooltip();
+    });
+  })();
+</script>
 {% endblock %}

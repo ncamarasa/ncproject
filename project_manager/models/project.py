@@ -61,6 +61,7 @@ class Project(TimestampMixin, db.Model):
     external_board_url = db.Column(db.String(255), nullable=True)
     committee_frequency = db.Column(db.String(80), nullable=True)
     communication_channel = db.Column(db.String(80), nullable=True)
+    schedule_use_calendar_days = db.Column(db.Boolean, default=False, nullable=False)
     billing_mode = db.Column(db.String(80), nullable=True)
     currency_code = db.Column(db.String(10), nullable=True)
     sold_budget = db.Column(db.Numeric(14, 2), nullable=True)
@@ -112,12 +113,14 @@ class Task(TimestampMixin, db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey("projects.id"), nullable=False, index=True)
+    project_task_id = db.Column(db.Integer, nullable=False, index=True)
     parent_task_id = db.Column(db.Integer, db.ForeignKey("tasks.id"), nullable=True, index=True)
     title = db.Column(db.String(180), nullable=False)
     description = db.Column(db.Text, nullable=True)
     task_type = db.Column(db.String(40), nullable=True)
     status = db.Column(db.String(40), nullable=True)
     priority = db.Column(db.String(20), nullable=True)
+    schedule_mode = db.Column(db.String(20), nullable=False, default="automatic")
     responsible = db.Column(db.String(120), nullable=True)
     responsible_resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=True, index=True)
     creator = db.Column(db.String(120), nullable=True)
@@ -166,6 +169,12 @@ class Task(TimestampMixin, db.Model):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    worklogs = db.relationship(
+        "TaskWorklog",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
     predecessor_links = db.relationship(
         "TaskDependency",
         foreign_keys="TaskDependency.successor_task_id",
@@ -179,6 +188,10 @@ class Task(TimestampMixin, db.Model):
         back_populates="predecessor_task",
         cascade="all, delete-orphan",
         lazy="selectin",
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint("project_id", "project_task_id", name="uq_tasks_project_task_id"),
     )
 
 
@@ -245,3 +258,23 @@ class TaskAttachment(TimestampMixin, db.Model):
     uploaded_by = db.Column(db.String(120), nullable=True)
 
     task = db.relationship("Task", back_populates="attachments")
+
+
+class TaskWorklog(TimestampMixin, db.Model):
+    __tablename__ = "task_worklogs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey("tasks.id"), nullable=False, index=True)
+    resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    timesheet_header_id = db.Column(db.Integer, db.ForeignKey("timesheet_headers.id"), nullable=True, index=True)
+    work_date = db.Column(db.Date, nullable=False, index=True)
+    hours = db.Column(db.Numeric(8, 2), nullable=False)
+    progress_percent_after = db.Column(db.Integer, nullable=True)
+    note = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    task = db.relationship("Task", back_populates="worklogs")
+    resource = db.relationship("Resource", lazy="joined")
+    user = db.relationship("User", lazy="joined")
+    timesheet_header = db.relationship("TimesheetHeader", lazy="joined")

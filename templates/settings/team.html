@@ -18,6 +18,20 @@
     <div class="row" id="teamCatalogCards">
       <div
         class="col-12 col-md-6 catalog-card"
+        data-label="cotizaciones monedas tipo cambio"
+        data-desc="configuracion compartida de cotizaciones para conversion entre monedas"
+      >
+        <div class="card border mb-3">
+          <div class="card-body">
+            <h3 class="h6">ABM Cotizaciones de monedas</h3>
+            <p class="small text-secondary mb-3">Configuración compartida para convertir costos y precios entre monedas.</p>
+            <a href="{{ url_for('settings.project_currency_rates') }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar cotizaciones</a>
+          </div>
+        </div>
+      </div>
+
+      <div
+        class="col-12 col-md-6 catalog-card"
         data-label="roles operativos"
         data-desc="gestiona el catalogo de roles operativos del modulo de equipo"
       >

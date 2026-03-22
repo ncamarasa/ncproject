@@ -1,5 +1,5 @@
 from datetime import date, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from flask import abort, flash, g, jsonify, redirect, render_template, request, url_for
 from sqlalchemy import func, or_, select
@@ -41,7 +41,14 @@ from project_manager.services.team_business_rules import (
     validate_resource_payload,
     validate_task_assignment_project_consistency,
 )
+from project_manager.services.user_provisioning import (
+    provision_analyst_user_for_resource,
+    sync_user_active_status_for_resource,
+    sync_user_project_scope_for_resource,
+    user_for_resource,
+)
 from project_manager.utils.dates import parse_date_input
+from project_manager.utils.numbers import parse_decimal_input
 from urllib.parse import urlsplit
 
 
@@ -50,12 +57,46 @@ def _authorize_team_module():
     if g.get("user") is None:
         flash("Debes iniciar sesión para continuar.", "warning")
         return redirect(url_for("auth.login"))
+    endpoint = request.endpoint or ""
     is_write = request.method not in {"GET", "HEAD", "OPTIONS"}
-    needed_permission = "team.edit" if is_write else "team.view"
     if is_write and g.user.read_only:
         flash("Tu usuario es de solo lectura.", "danger")
         return redirect(url_for("main.home"))
-    if not has_permission(g.user, needed_permission):
+
+    write_permissions_by_endpoint = {
+        "team.create_resource": ["team.resources.manage", "team.edit"],
+        "team.edit_resource": ["team.resources.manage", "team.edit"],
+        "team.toggle_resource": ["team.resources.manage", "team.edit"],
+        "team.delete_resource": ["team.resources.manage", "team.edit"],
+        "team.add_resource_role": ["team.resources.manage", "team.edit"],
+        "team.remove_resource_role": ["team.resources.manage", "team.edit"],
+        "team.add_availability": ["team.resources.manage", "team.edit"],
+        "team.add_availability_exception": ["team.resources.manage", "team.edit"],
+        "team.toggle_availability": ["team.resources.manage", "team.edit"],
+        "team.edit_availability": ["team.resources.manage", "team.edit"],
+        "team.toggle_availability_exception": ["team.resources.manage", "team.edit"],
+        "team.edit_availability_exception": ["team.resources.manage", "team.edit"],
+        "team.add_cost": ["team.costs.manage", "team.edit"],
+        "team.edit_cost": ["team.costs.manage", "team.edit"],
+        "team.toggle_cost": ["team.costs.manage", "team.edit"],
+        "team.delete_cost": ["team.costs.manage", "team.edit"],
+        "team.assign_project": ["team.assignments.manage", "team.edit"],
+        "team.assign_task": ["team.assignments.manage", "team.edit"],
+        "team.toggle_project_assignment": ["team.assignments.manage", "team.edit"],
+        "team.toggle_task_assignment": ["team.assignments.manage", "team.edit"],
+        "team.assign_client": ["team.assignments.manage", "team.edit"],
+        "team.toggle_client_assignment": ["team.assignments.manage", "team.edit"],
+    }
+    read_permissions_by_endpoint = {
+        "team.team_calendar": ["team.calendar.view", "team.view"],
+        "team.role_capacity_calendar": ["team.calendar.view", "team.view"],
+    }
+    required = (
+        write_permissions_by_endpoint.get(endpoint, ["team.edit"])
+        if is_write
+        else read_permissions_by_endpoint.get(endpoint, ["team.view"])
+    )
+    if not any(has_permission(g.user, permission_key) for permission_key in required):
         flash("No tienes permisos para acceder al módulo de equipo.", "danger")
         return redirect(url_for("main.home"))
     ensure_system_team_roles()
@@ -73,12 +114,7 @@ def _to_int(value: str | None):
 
 
 def _to_decimal(value: str | None):
-    if value in (None, ""):
-        return None
-    try:
-        return Decimal(value)
-    except (InvalidOperation, ValueError):
-        return None
+    return parse_decimal_input(value)
 
 
 _parse_date = parse_date_input
@@ -232,7 +268,7 @@ def _resource_usage_messages(resource_id: int) -> list[str]:
     if sales_exec_count:
         messages.append(f"Está asignado como Ejecutivo comercial en {sales_exec_count} cliente(s).")
     if account_manager_count:
-        messages.append(f"Está asignado como Account manager en {account_manager_count} cliente(s).")
+        messages.append(f"Está asignado como Gerente de cuenta en {account_manager_count} cliente(s).")
     if delivery_manager_count:
         messages.append(f"Está asignado como Responsable delivery en {delivery_manager_count} cliente(s).")
 
@@ -370,11 +406,11 @@ def team_calendar():
 def create_resource():
     resource_types = _team_catalog_values("resource_types", ["internal", "external"])
     calendar_options = _team_catalog_values("calendars", [])
-    timezone_options = _shared_client_catalog_values("timezone", [])
     position_options = _team_catalog_values("positions", [])
     area_options = _team_catalog_values("areas", [])
     vendor_options = _team_catalog_values("vendors", [])
     if request.method == "POST":
+        should_create_user = request.form.get("create_user", "1") == "1"
         payload = {
             "first_name": _safe_strip(request.form.get("first_name")),
             "last_name": _safe_strip(request.form.get("last_name")),
@@ -384,16 +420,12 @@ def create_resource():
             "area": "",
             "resource_type": _canonical_resource_type(request.form.get("resource_type")),
             "calendar_name": "",
-            "timezone": "",
             "vendor_name": "",
             "is_active": _to_bool(request.form.get("is_active", "1")),
         }
         errors = validate_resource_payload(payload, allowed_resource_types=resource_types)
         payload["calendar_name"] = _validate_catalog_value(
             request.form.get("calendar_name"), calendar_options, "Calendario", errors
-        )
-        payload["timezone"] = _validate_catalog_value(
-            request.form.get("timezone"), timezone_options, "Zona horaria", errors
         )
         payload["position"] = _validate_catalog_value(request.form.get("position"), position_options, "Cargo", errors)
         payload["area"] = _validate_catalog_value(request.form.get("area"), area_options, "Area", errors)
@@ -407,7 +439,6 @@ def create_resource():
                 form_values=request.form,
                 resource_types=resource_types,
                 calendar_options=calendar_options,
-                timezone_options=timezone_options,
                 position_options=position_options,
                 area_options=area_options,
                 vendor_options=vendor_options,
@@ -416,8 +447,28 @@ def create_resource():
         resource = Resource(**payload)
         sync_resource_full_name(resource)
         db.session.add(resource)
+        db.session.flush()
+        created_user, temp_password, created = (None, None, False)
+        if should_create_user:
+            created_user, temp_password, created = provision_analyst_user_for_resource(resource)
+        sync_user_project_scope_for_resource(resource.id)
         db.session.commit()
         flash("Recurso creado.", "success")
+        if not should_create_user:
+            flash("No se creó usuario porque desmarcaste la opción 'Crear usuario'.", "info")
+        elif payload.get("email"):
+            if created and created_user and temp_password:
+                flash(
+                    f"Usuario creado para el recurso: {created_user.username} (clave temporal: {temp_password}).",
+                    "info",
+                )
+            elif created_user:
+                flash(
+                    f"Ya existía un usuario con email {payload.get('email')}. Se reutiliza para acceso del recurso.",
+                    "info",
+                )
+        elif should_create_user:
+            flash("No se creó usuario: el recurso no tiene email.", "warning")
         return redirect(url_for("team.list_resources"))
 
     return render_template(
@@ -426,7 +477,6 @@ def create_resource():
         form_values={},
         resource_types=resource_types,
         calendar_options=calendar_options,
-        timezone_options=timezone_options,
         position_options=position_options,
         area_options=area_options,
         vendor_options=vendor_options,
@@ -439,7 +489,6 @@ def edit_resource(resource_id: int):
     resource = _resource_or_404(resource_id)
     resource_types = _team_catalog_values("resource_types", ["internal", "external"])
     calendar_options = _team_catalog_values("calendars", [])
-    timezone_options = _shared_client_catalog_values("timezone", [])
     position_options = _team_catalog_values("positions", [])
     area_options = _team_catalog_values("areas", [])
     vendor_options = _team_catalog_values("vendors", [])
@@ -454,7 +503,6 @@ def edit_resource(resource_id: int):
             "area": "",
             "resource_type": _canonical_resource_type(request.form.get("resource_type")),
             "calendar_name": "",
-            "timezone": "",
             "vendor_name": "",
             "is_active": _to_bool(request.form.get("is_active", "1")),
         }
@@ -465,9 +513,6 @@ def edit_resource(resource_id: int):
         )
         payload["calendar_name"] = _validate_catalog_value(
             request.form.get("calendar_name"), calendar_options, "Calendario", errors
-        )
-        payload["timezone"] = _validate_catalog_value(
-            request.form.get("timezone"), timezone_options, "Zona horaria", errors
         )
         payload["position"] = _validate_catalog_value(request.form.get("position"), position_options, "Cargo", errors)
         payload["area"] = _validate_catalog_value(request.form.get("area"), area_options, "Area", errors)
@@ -481,7 +526,6 @@ def edit_resource(resource_id: int):
                 form_values=request.form,
                 resource_types=resource_types,
                 calendar_options=calendar_options,
-                timezone_options=timezone_options,
                 position_options=position_options,
                 area_options=area_options,
                 vendor_options=vendor_options,
@@ -490,8 +534,24 @@ def edit_resource(resource_id: int):
         for key, value in payload.items():
             setattr(resource, key, value)
         sync_resource_full_name(resource)
+        updated_user, temp_password, created = provision_analyst_user_for_resource(resource)
+        sync_user_project_scope_for_resource(resource.id)
+        linked_user = sync_user_active_status_for_resource(resource.id)
         db.session.commit()
         flash("Recurso actualizado.", "success")
+        if payload.get("email"):
+            if created and updated_user and temp_password:
+                flash(
+                    f"Usuario creado para el recurso: {updated_user.username} (clave temporal: {temp_password}).",
+                    "info",
+                )
+            elif created is False and updated_user:
+                flash(
+                    f"Usuario asociado por email detectado: {updated_user.username}.",
+                    "info",
+                )
+        if not resource.is_active and linked_user:
+            flash(f"Usuario desactivado por recurso inactivo: {linked_user.username}.", "warning")
         return redirect(url_for("team.list_resources"))
 
     return render_template(
@@ -500,7 +560,6 @@ def edit_resource(resource_id: int):
         form_values={},
         resource_types=resource_types,
         calendar_options=calendar_options,
-        timezone_options=timezone_options,
         position_options=position_options,
         area_options=area_options,
         vendor_options=vendor_options,
@@ -512,8 +571,11 @@ def edit_resource(resource_id: int):
 def toggle_resource(resource_id: int):
     resource = _resource_or_404(resource_id)
     resource.is_active = not resource.is_active
+    linked_user = sync_user_active_status_for_resource(resource.id)
     db.session.commit()
     flash("Estado del recurso actualizado.", "info")
+    if not resource.is_active and linked_user:
+        flash(f"Usuario desactivado por recurso inactivo: {linked_user.username}.", "warning")
     return redirect(request.referrer or url_for("team.list_resources"))
 
 
@@ -529,6 +591,7 @@ def delete_resource(resource_id: int):
 @login_required
 def resource_detail(resource_id: int):
     resource = _resource_or_404(resource_id)
+    linked_user = user_for_resource(resource.id)
     assignment_rows: list[dict[str, object]] = []
     seen_keys: set[tuple[str, int, str]] = set()
 
@@ -562,7 +625,7 @@ def resource_detail(resource_id: int):
 
     client_role_labels = (
         ("Ejecutivo comercial", 5),
-        ("Account manager", 6),
+        ("Gerente de cuenta", 6),
         ("Responsable delivery", 7),
     )
     for row in client_rows:
@@ -686,6 +749,7 @@ def resource_detail(resource_id: int):
     return render_template(
         "team/resource_detail.html",
         resource=resource,
+        linked_user=linked_user,
         assignment_rows=assignment_rows,
         today=date.today(),
         current_availability=next(
@@ -1355,6 +1419,7 @@ def assign_project(resource_id: int):
             **payload,
         )
     )
+    sync_user_project_scope_for_resource(resource.id)
     db.session.commit()
     flash("Asignación a proyecto creada.", "success")
     return redirect(url_for("team.resource_detail", resource_id=resource.id))
@@ -1422,6 +1487,7 @@ def toggle_project_assignment(assignment_id: int):
     if not assignment:
         abort(404)
     assignment.is_active = not assignment.is_active
+    sync_user_project_scope_for_resource(assignment.resource_id)
     db.session.commit()
     flash("Asignación actualizada.", "info")
     return redirect(url_for("team.resource_detail", resource_id=assignment.resource_id))

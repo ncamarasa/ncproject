@@ -8,6 +8,7 @@ from sqlalchemy import select
 from project_manager.auth_utils import has_permission, load_logged_in_user
 from project_manager.extensions import db, migrate
 from project_manager.security import register_audit_listeners
+from project_manager.utils.numbers import format_decimal_input, format_decimal_local
 
 
 def create_app() -> Flask:
@@ -37,23 +38,67 @@ def create_app() -> Flask:
 
     from project_manager.blueprints.auth import bp as auth_bp
     from project_manager.blueprints.clients import bp as clients_bp
+    from project_manager.blueprints.control import bp as control_bp
     from project_manager.blueprints.main import bp as main_bp
     from project_manager.blueprints.projects import bp as projects_bp
     from project_manager.blueprints.settings import bp as settings_bp
     from project_manager.blueprints.team import bp as team_bp
     from project_manager.blueprints.tasks import bp as tasks_bp
+    from project_manager.blueprints.work import bp as work_bp
     from project_manager.blueprints.administration import bp as administration_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(clients_bp)
+    app.register_blueprint(control_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(projects_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(team_bp)
     app.register_blueprint(tasks_bp)
+    app.register_blueprint(work_bp)
     app.register_blueprint(administration_bp)
 
     app.before_request(load_logged_in_user)
+
+    @app.template_filter("money")
+    def money_filter(value, currency_code: str | None = None):
+        if value in (None, ""):
+            return "-"
+
+        code = (currency_code or "").strip().upper()
+        symbols = {
+            "ARS": "$",
+            "USD": "US$",
+            "EUR": "EUR",
+            "GBP": "GBP",
+            "BRL": "R$",
+            "CLP": "CLP$",
+            "UYU": "UYU$",
+        }
+        symbol = symbols.get(code, code if code else "")
+
+        rendered = format_decimal_local(value, 2)
+        if rendered == "-":
+            return "-"
+        if symbol:
+            return f"{symbol} {rendered}" if not rendered.startswith("-") else f"-{symbol} {rendered[1:]}"
+        return rendered
+
+    @app.template_filter("number")
+    def number_filter(value, places: int = 2):
+        try:
+            places_int = int(places)
+        except (TypeError, ValueError):
+            places_int = 2
+        return format_decimal_local(value, places_int)
+
+    @app.template_filter("decimal_input")
+    def decimal_input_filter(value, places: int = 2):
+        try:
+            places_int = int(places)
+        except (TypeError, ValueError):
+            places_int = 2
+        return format_decimal_input(value, places_int)
     @app.before_request
     def enforce_csrf():
         if request.method in {"GET", "HEAD", "OPTIONS"}:
@@ -89,6 +134,7 @@ def create_app() -> Flask:
     def create_admin(admin_user: str, admin_password: str) -> None:
         """Crea un usuario admin inicial si no existe."""
         from project_manager.models import Permission, Role, RolePermission, User
+        from project_manager.services.permission_catalog import ensure_permission_catalog
 
         existing = User.query.filter_by(username=admin_user).first()
         if existing:
@@ -107,29 +153,9 @@ def create_app() -> Flask:
             db.session.add(role)
             db.session.flush()
 
-        permission_defs = [
-            ("clients.view", "Ver clientes", "clients"),
-            ("clients.edit", "Editar clientes", "clients"),
-            ("contracts.view", "Ver contratos", "clients"),
-            ("contracts.edit", "Editar contratos", "clients"),
-            ("projects.view", "Ver proyectos", "projects"),
-            ("projects.edit", "Editar proyectos", "projects"),
-            ("tasks.view", "Ver tareas", "tasks"),
-            ("tasks.edit", "Editar tareas", "tasks"),
-            ("settings.view", "Ver configuración", "settings"),
-            ("settings.edit", "Editar configuración", "settings"),
-            ("team.view", "Ver equipo", "team"),
-            ("team.edit", "Editar equipo", "team"),
-            ("users.manage", "Administrar usuarios", "users"),
-            ("auth.reset_password", "Resetear contraseñas", "users"),
-            ("audit.view", "Ver auditoría", "audit"),
-        ]
-        for key, label, module in permission_defs:
-            perm = db.session.execute(select(Permission).where(Permission.key == key)).scalar_one_or_none()
-            if not perm:
-                perm = Permission(key=key, label=label, module=module, is_active=True)
-                db.session.add(perm)
-                db.session.flush()
+        ensure_permission_catalog()
+        permissions = db.session.execute(select(Permission).where(Permission.is_active.is_(True))).scalars().all()
+        for perm in permissions:
             link = db.session.execute(
                 select(RolePermission).where(
                     RolePermission.role_id == role.id,

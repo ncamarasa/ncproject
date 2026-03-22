@@ -1,11 +1,10 @@
 from datetime import date
-from decimal import Decimal, InvalidOperation
 
 from flask import abort, flash, g, redirect, render_template, request, url_for
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
-from project_manager.auth_utils import require_permission
+from project_manager.auth_utils import has_permission, require_permission
 from project_manager.blueprints.administration import bp
 from project_manager.extensions import db
 from project_manager.models import (
@@ -23,11 +22,13 @@ from project_manager.models import (
     TeamRole,
 )
 from project_manager.services.default_catalogs import seed_default_catalogs_for_user
+from project_manager.services.permission_catalog import ensure_permission_catalog
 from project_manager.services.team_business_rules import (
     close_previous_role_sale_price_if_needed,
     validate_role_sale_price_payload,
 )
 from project_manager.utils.dates import parse_date_input
+from project_manager.utils.numbers import parse_decimal_input
 
 
 @bp.before_request
@@ -35,6 +36,8 @@ def _authorize_administration_module():
     if g.get("user") is None:
         flash("Debes iniciar sesión para continuar.", "warning")
         return redirect(url_for("auth.login"))
+    ensure_permission_catalog()
+    db.session.commit()
 
 
 def _safe_strip(value: str | None) -> str:
@@ -58,12 +61,7 @@ def _to_bool(value: str | None) -> bool:
 
 
 def _to_decimal(value: str | None):
-    if value in (None, ""):
-        return None
-    try:
-        return Decimal(value)
-    except (InvalidOperation, ValueError):
-        return None
+    return parse_decimal_input(value)
 
 
 _parse_date = parse_date_input
@@ -92,13 +90,17 @@ def _user_in_use(user_id: int) -> bool:
 
 
 def _permission_tree():
+    ensure_permission_catalog()
     permissions = db.session.execute(select(Permission).where(Permission.is_active.is_(True)).order_by(Permission.module.asc(), Permission.label.asc())).scalars().all()
     module_labels = {
+        "main": "Inicio",
         "users": "Administración",
         "audit": "Auditoría",
         "clients": "Clientes",
         "projects": "Proyectos",
         "tasks": "Tareas",
+        "work": "Mi Trabajo",
+        "control": "Control PMO",
         "team": "Equipo",
         "settings": "Configuración",
     }
@@ -109,9 +111,26 @@ def _permission_tree():
     return tree
 
 
+def _require_any_permission(keys: list[str], *, write: bool = False):
+    if g.get("user") is None:
+        flash("Debes iniciar sesión para continuar.", "warning")
+        return redirect(url_for("auth.login"))
+    if write and g.user.read_only:
+        flash("Tu usuario es de solo lectura.", "danger")
+        return redirect(url_for("main.home"))
+    if g.user.username == "admin":
+        return None
+    if any(has_permission(g.user, key) for key in keys):
+        return None
+    flash("No tienes permisos para realizar esta acción.", "danger")
+    return redirect(url_for("main.home"))
+
+
 @bp.route("/")
-@require_permission("users.manage")
 def list_users():
+    denied = _require_any_permission(["users.view", "users.manage"])
+    if denied:
+        return denied
     page = _to_int(request.args.get("page"), default=1) or 1
     q = _safe_strip(request.args.get("q"))
     role_id = _to_int(request.args.get("role_id"))
@@ -350,8 +369,13 @@ def reset_password(user_id: int):
 
 
 @bp.route("/roles", methods=["GET", "POST"])
-@require_permission("users.manage")
 def list_roles():
+    if request.method == "POST":
+        denied = _require_any_permission(["roles.manage", "users.manage"], write=True)
+    else:
+        denied = _require_any_permission(["roles.manage", "users.manage"])
+    if denied:
+        return denied
     if request.method == "POST" and g.user.read_only:
         flash("Tu usuario es de solo lectura.", "danger")
         return redirect(url_for("administration.list_roles"))
@@ -398,8 +422,10 @@ def list_roles():
 
 
 @bp.route("/roles/<int:role_id>/edit", methods=["GET", "POST"])
-@require_permission("users.manage", write=True)
 def edit_role(role_id: int):
+    denied = _require_any_permission(["roles.manage", "users.manage"], write=request.method == "POST")
+    if denied:
+        return denied
     role = db.session.execute(
         select(Role)
         .where(Role.id == role_id)
@@ -461,8 +487,10 @@ def edit_role(role_id: int):
 
 
 @bp.route("/roles/<int:role_id>/toggle", methods=["POST"])
-@require_permission("users.manage", write=True)
 def toggle_role(role_id: int):
+    denied = _require_any_permission(["roles.manage", "users.manage"], write=True)
+    if denied:
+        return denied
     role = db.session.get(Role, role_id)
     if not role:
         abort(404)

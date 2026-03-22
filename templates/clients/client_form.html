@@ -135,14 +135,10 @@
       <div class="card-body row g-3">
         <div class="col-12 col-lg-3">
           <label class="form-label">Origen</label>
-          <input name="lead_source" class="form-control" value="{{ form_values.get('lead_source', client.lead_source if client else '') }}">
-        </div>
-        <div class="col-12 col-lg-3">
-          <label class="form-label">Segmento</label>
-          {% set current = form_values.get('segment', client.segment if client else '') %}
-          <select name="segment" class="custom-select">
+          {% set current = form_values.get('lead_source', client.lead_source if client else '') %}
+          <select name="lead_source" class="custom-select">
             <option value="">Seleccionar</option>
-            {% for item in segments %}
+            {% for item in lead_sources %}
               <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
             {% endfor %}
           </select>
@@ -180,7 +176,7 @@
           <input type="hidden" name="sales_executive" value="{{ form_values.get('sales_executive', client.sales_executive if client else '') }}">
         </div>
         <div class="col-12 col-lg-3">
-          <label class="form-label">Account manager</label>
+          <label class="form-label">Gerente de cuenta</label>
           {% set current = form_values.get('account_manager_resource_id', client.account_manager_resource_id if client else '')|string %}
           <select name="account_manager_resource_id" class="custom-select">
             <option value="">Seleccionar</option>
@@ -191,8 +187,8 @@
           <input type="hidden" name="account_manager" value="{{ form_values.get('account_manager', client.account_manager if client else '') }}">
         </div>
         <div class="col-12 col-lg-3">
-          <label class="form-label">Potencial facturación</label>
-          <input name="billing_potential" class="form-control" value="{{ form_values.get('billing_potential', client.billing_potential if client and client.billing_potential is not none else '') }}">
+          <label class="form-label">Potencial facturación ({{ form_values.get('currency_code', client.currency_code if client else '') or 'Moneda cliente' }})</label>
+          <input name="billing_potential" inputmode="decimal" class="form-control" value="{{ form_values.get('billing_potential', client.billing_potential|decimal_input(2) if client and client.billing_potential is not none else '') }}">
         </div>
         <div class="col-12 col-lg-3">
           <label class="form-label">Health score (0-100)</label>
@@ -209,13 +205,8 @@
             {% endfor %}
           </select>
         </div>
-        <div class="col-12 col-lg-3">
-          <label class="form-label">Última interacción</label>
-          <input type="date" name="last_interaction_at" class="form-control" value="{{ form_values.get('last_interaction_at', client.last_interaction_at.isoformat() if client and client.last_interaction_at else '') }}">
-        </div>
-        <div class="col-12 col-lg-3">
-          <label class="form-label">Próxima acción</label>
-          <input type="date" name="next_action_at" class="form-control" value="{{ form_values.get('next_action_at', client.next_action_at.isoformat() if client and client.next_action_at else '') }}">
+        <div class="col-12">
+          <small class="text-secondary">Última interacción y próxima gestión se calculan automáticamente desde Interacciones.</small>
         </div>
       </div>
     </div>
@@ -258,8 +249,8 @@
           <input name="rate_card" class="form-control" value="{{ form_values.get('rate_card', client.rate_card if client else '') }}">
         </div>
         <div class="col-12 col-lg-6">
-          <label class="form-label">Límite de crédito</label>
-          <input name="credit_limit" class="form-control" value="{{ form_values.get('credit_limit', client.credit_limit if client and client.credit_limit is not none else '') }}">
+          <label class="form-label">Límite de crédito ({{ form_values.get('currency_code', client.currency_code if client else '') or 'Moneda cliente' }})</label>
+          <input name="credit_limit" inputmode="decimal" class="form-control" value="{{ form_values.get('credit_limit', client.credit_limit|decimal_input(2) if client and client.credit_limit is not none else '') }}">
         </div>
         <div class="col-12 col-lg-6 d-flex align-items-center">
           {% set checked = form_values.get('purchase_order_required', '1' if client and client.purchase_order_required else '0') %}
@@ -301,16 +292,6 @@
           <input name="support_hours" class="form-control" value="{{ form_values.get('support_hours', client.support_hours if client else '') }}">
         </div>
         <div class="col-12 col-lg-6">
-          <label class="form-label">Zona horaria</label>
-          {% set current = form_values.get('timezone', client.timezone if client else '') %}
-          <select name="timezone" class="custom-select">
-            <option value="">Seleccionar</option>
-            {% for item in timezones %}
-              <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-12 col-lg-6">
           <label class="form-label">Idioma</label>
           {% set current = form_values.get('language', client.language if client else '') %}
           <select name="language" class="custom-select">
@@ -341,31 +322,8 @@
             {% endfor %}
           </select>
         </div>
-        <div class="col-12 col-lg-4">
-          <label class="form-label">Tipo de servicio</label>
-          <input name="service_type" class="form-control" value="{{ form_values.get('service_type', client.service_type if client else '') }}">
-        </div>
-        <div class="col-12 col-lg-4">
-          <label class="form-label">Modalidad facturación</label>
-          {% set current = form_values.get('billing_mode', client.billing_mode if client else '') %}
-          <select name="billing_mode" class="custom-select">
-            <option value="">Seleccionar</option>
-            {% for item in billing_modes %}
-              <option value="{{ item }}" {% if current == item %}selected{% endif %}>{{ item }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-12 col-lg-6">
-          <label class="form-label">Tarifa por defecto</label>
-          <input name="default_rate" class="form-control" value="{{ form_values.get('default_rate', client.default_rate if client and client.default_rate is not none else '') }}">
-        </div>
-        <div class="col-12 col-lg-6">
-          <label class="form-label">Horas contratadas</label>
-          <input name="contracted_hours" class="form-control" value="{{ form_values.get('contracted_hours', client.contracted_hours if client and client.contracted_hours is not none else '') }}">
-        </div>
         <div class="col-12">
-          <label class="form-label">Aprobaciones</label>
-          <textarea name="approval_flow" rows="2" class="form-control">{{ form_values.get('approval_flow', client.approval_flow if client else '') }}</textarea>
+          <small class="text-secondary">Modalidad de facturación, tipo de servicio, tarifa por defecto y horas contratadas se gestionan por contrato.</small>
         </div>
       </div>
     </div>

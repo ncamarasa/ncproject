@@ -41,8 +41,8 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="col-6"><label class="form-label">Hs/semana</label><input type="number" min="1" step="0.25" name="weekly_hours" class="form-control" required value="{{ availability_values.get('weekly_hours', edit_availability.weekly_hours if edit_availability else 40) }}"></div>
-            <div class="col-6"><label class="form-label">Hs/día</label><input type="number" min="0" step="0.25" name="daily_hours" class="form-control" value="{{ availability_values.get('daily_hours', edit_availability.daily_hours if edit_availability else '') }}"></div>
+            <div class="col-6"><label class="form-label">Hs/semana</label><input type="text" inputmode="decimal" name="weekly_hours" class="form-control" required value="{{ availability_values.get('weekly_hours', edit_availability.weekly_hours|decimal_input(2) if edit_availability else '40,00') }}"></div>
+            <div class="col-6"><label class="form-label">Hs/día</label><input type="text" inputmode="decimal" name="daily_hours" class="form-control" value="{{ availability_values.get('daily_hours', edit_availability.daily_hours|decimal_input(2) if edit_availability and edit_availability.daily_hours is not none else '') }}"></div>
             <div class="col-12">
               <label class="form-label d-block">Días laborables</label>
               <div class="d-flex flex-wrap gap-2">
@@ -72,7 +72,7 @@
               {% for item in resource.availabilities|sort(attribute='valid_from', reverse=True) %}
               <tr>
                 <td>{{ availability_type_labels.get(item.availability_type, item.availability_type|replace('_', ' ')|title) }}</td>
-                <td>{{ item.weekly_hours }}</td>
+                <td>{{ item.weekly_hours|number(2) }}</td>
                 <td>
                   {% if item.working_days %}
                     {% for code in item.working_days.split(',') if code %}
@@ -92,7 +92,9 @@
                   {% endif %}
                 </td>
                 <td class="text-end">
-                  <a href="{{ url_for('team.edit_availability', availability_id=item.id, next=url_for('team.manage_resource_availability', resource_id=resource.id)) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
+                  <a href="{{ url_for('team.edit_availability', availability_id=item.id, next=url_for('team.manage_resource_availability', resource_id=resource.id)) }}" class="btn btn-sm btn-outline-secondary btn-action-icon" title="Editar" aria-label="Editar">
+                    <i class="fas fa-pen"></i>
+                  </a>
                   <form method="post" class="d-inline" action="{{ url_for('team.toggle_availability', availability_id=item.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="next" value="{{ url_for('team.manage_resource_availability', resource_id=resource.id) }}">
@@ -142,7 +144,7 @@
             </div>
             <div class="col-6"><label class="form-label">Desde *</label><input type="date" name="start_date" class="form-control" required value="{{ exception_values.get('start_date', edit_exception.start_date if edit_exception else '') }}"></div>
             <div class="col-6"><label class="form-label">Hasta</label><input type="date" name="end_date" class="form-control" value="{{ exception_values.get('end_date', edit_exception.end_date if edit_exception else '') }}"></div>
-            <div class="col-12"><label class="form-label">Hs afectadas</label><input type="number" min="0" step="0.25" name="hours_lost" class="form-control" value="{{ exception_values.get('hours_lost', edit_exception.hours_lost if edit_exception else '') }}"></div>
+            <div class="col-12"><label class="form-label">Hs afectadas</label><input type="text" inputmode="decimal" name="hours_lost" class="form-control" value="{{ exception_values.get('hours_lost', edit_exception.hours_lost|decimal_input(2) if edit_exception and edit_exception.hours_lost is not none else '') }}"></div>
             <div class="col-12"><label class="form-label">Observaciones</label><input name="observations" class="form-control" value="{{ exception_values.get('observations', edit_exception.observations if edit_exception else '') }}"></div>
             <div class="col-12 d-flex gap-2">
               <button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar cambios' if edit_exception else 'Agregar excepción' }}</button>
@@ -163,7 +165,7 @@
               <tr>
                 <td>{{ exception_type_labels.get(item.exception_type, item.exception_type|replace('_', ' ')|title) }}</td>
                 <td>{{ item.start_date }}{% if item.end_date %} - {{ item.end_date }}{% else %} - actual{% endif %}</td>
-                <td>{{ item.hours_lost or '-' }}</td>
+                <td>{{ item.hours_lost|number(2) if item.hours_lost is not none else '-' }}</td>
                 <td class="text-break">{{ item.observations or '-' }}</td>
                 <td>
                   {% if item.is_active %}
@@ -173,7 +175,9 @@
                   {% endif %}
                 </td>
                 <td class="text-end">
-                  <a href="{{ url_for('team.edit_availability_exception', exception_id=item.id, next=url_for('team.manage_resource_availability', resource_id=resource.id)) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
+                  <a href="{{ url_for('team.edit_availability_exception', exception_id=item.id, next=url_for('team.manage_resource_availability', resource_id=resource.id)) }}" class="btn btn-sm btn-outline-secondary btn-action-icon" title="Editar" aria-label="Editar">
+                    <i class="fas fa-pen"></i>
+                  </a>
                   <form method="post" class="d-inline" action="{{ url_for('team.toggle_availability_exception', exception_id=item.id) }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="next" value="{{ url_for('team.manage_resource_availability', resource_id=resource.id) }}">

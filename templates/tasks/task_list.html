@@ -1,12 +1,16 @@
 {% extends 'dashboard/layout.html' %}
 {% block title %}Tareas | NCProject{% endblock %}
-{% block page_title %}Tareas - {{ project.name }}{% endblock %}
+{% block page_title %}
+Tareas - {{ project.name }}
+{% if project.project_code %}<span class="entity-code-muted">({{ project.project_code }})</span>{% endif %}
+{% endblock %}
 {% block page_subtitle %}Planificación y ejecución{% endblock %}
 
 {% block dashboard_content %}
 {% set lock_calculated_fields = edit_task and edit_task_has_subtasks %}
 {% set lock_close_status = edit_task and edit_task_has_subtasks and edit_task_open_subtasks %}
 {% set task_form_mode = 'edit' if edit_task else 'create' %}
+{% set list_next = current_list_url if current_list_url is defined and current_list_url else request.full_path.rstrip('?') %}
 <div class="card border-0 metric-card mb-3 form-mode-card form-mode-{{ task_form_mode }}">
   <div class="card-header d-flex justify-content-between align-items-center">
     <strong>{{ 'Editar tarea' if edit_task else 'Nueva tarea' }}</strong>
@@ -23,12 +27,37 @@
       No podés cerrar esta tarea hasta que todas sus subtareas estén cerradas.
     </div>
     {% endif %}
-    <form method="post" action="{{ url_for('tasks.edit_task', project_id=project.id, task_id=edit_task.id, page=current_page) if edit_task else url_for('tasks.manage_tasks', project_id=project.id, page=current_page) }}" class="row g-2">
+    <form method="post" action="{{ url_for('tasks.edit_task', project_id=project.id, task_id=edit_task.id, page=current_page, hide_completed=1 if hide_completed else 0) if edit_task else url_for('tasks.manage_tasks', project_id=project.id, page=current_page, hide_completed=1 if hide_completed else 0) }}" class="row g-2">
+      <input type="hidden" name="hide_completed" value="{{ 1 if hide_completed else 0 }}">
+      <div class="col-12 col-lg-2">
+        <label class="form-label">ID tarea proyecto *</label>
+        <input required type="number" min="1" name="project_task_id" class="form-control" value="{{ form_values.get('project_task_id', edit_task.project_task_id if edit_task else next_project_task_id) }}">
+      </div>
       <div class="col-12 col-lg-4"><label class="form-label">Título *</label><input required name="title" class="form-control" value="{{ form_values.get('title', edit_task.title if edit_task else '') }}"></div>
-      <div class="col-12 col-lg-2"><label class="form-label">Tipo</label><input name="task_type" class="form-control" value="{{ form_values.get('task_type', edit_task.task_type if edit_task else '') }}"></div>
+      <div class="col-12 col-lg-2">
+        <label class="form-label">Tipo</label>
+        {% set current_task_type = form_values.get('task_type', edit_task.task_type if edit_task else 'Tarea') %}
+        <select id="taskTypeSelect" name="task_type" class="custom-select">
+          <option value="">Seleccionar</option>
+          {% for type_option in task_types %}
+          <option value="{{ type_option }}" {% if current_task_type == type_option %}selected{% endif %}>{{ type_option }}</option>
+          {% endfor %}
+          {% if current_task_type and current_task_type not in task_types %}
+          <option value="{{ current_task_type }}" selected>{{ current_task_type }}</option>
+          {% endif %}
+        </select>
+      </div>
+      <div class="col-12 col-lg-2">
+        <label class="form-label">Planificación</label>
+        {% set current_schedule_mode = form_values.get('schedule_mode', edit_task.schedule_mode if edit_task else 'automatic') %}
+        <select name="schedule_mode" class="custom-select">
+          <option value="automatic" {% if current_schedule_mode == 'automatic' %}selected{% endif %}>Automática</option>
+          <option value="manual" {% if current_schedule_mode == 'manual' %}selected{% endif %}>Manual</option>
+        </select>
+      </div>
       <div class="col-12 col-lg-2">
         <label class="form-label">Estado</label>
-        {% set current_status = form_values.get('status', edit_task.status if edit_task else '') %}
+        {% set current_status = form_values.get('status', edit_task.status if edit_task else default_pending_status) %}
         <select id="taskStatusSelect" name="status" class="custom-select">
           <option value="">Seleccionar</option>
           {% for status_option in task_statuses %}
@@ -40,7 +69,19 @@
           {% endif %}
         </select>
       </div>
-      <div class="col-12 col-lg-2"><label class="form-label">Prioridad</label><input name="priority" class="form-control" value="{{ form_values.get('priority', edit_task.priority if edit_task else '') }}"></div>
+      <div class="col-12 col-lg-2">
+        <label class="form-label">Prioridad</label>
+        {% set current_priority = form_values.get('priority', edit_task.priority if edit_task else '') %}
+        <select name="priority" class="custom-select">
+          <option value="">Seleccionar</option>
+          {% for priority_option in task_priorities %}
+          <option value="{{ priority_option }}" {% if current_priority == priority_option %}selected{% endif %}>{{ priority_option }}</option>
+          {% endfor %}
+          {% if current_priority and current_priority not in task_priorities %}
+          <option value="{{ current_priority }}" selected>{{ current_priority }}</option>
+          {% endif %}
+        </select>
+      </div>
       <div class="col-12 col-lg-2">
         <label class="form-label">Responsable</label>
         {% set selected_resource = form_values.get('responsible_resource_id', edit_task.responsible_resource_id if edit_task else '')|string %}
@@ -52,18 +93,122 @@
         </select>
         <input type="hidden" name="responsible" value="{{ form_values.get('responsible', edit_task.responsible if edit_task else '') }}">
       </div>
-      <div class="col-12 col-lg-3"><label class="form-label">Tarea padre</label><select name="parent_task_id" class="custom-select"><option value="">Sin padre</option>{% set selected_parent = form_values.get('parent_task_id', edit_task.parent_task_id if edit_task else '')|string %}{% for candidate in parent_candidates %}<option value="{{ candidate.id }}" {% if selected_parent == candidate.id|string %}selected{% endif %}>#{{ candidate.id }} - {{ candidate.title }}</option>{% endfor %}</select></div>
-      <div class="col-12 col-lg-3"><label class="form-label">Inicio</label><input id="taskStartDate" type="date" name="start_date" class="form-control" value="{{ form_values.get('start_date', edit_task.start_date.isoformat() if edit_task and edit_task.start_date else '') }}" {% if lock_calculated_fields %}readonly{% endif %}></div>
-      <div class="col-12 col-lg-3"><label class="form-label">Fin</label><input id="taskDueDate" type="date" name="due_date" class="form-control" value="{{ form_values.get('due_date', edit_task.due_date.isoformat() if edit_task and edit_task.due_date else '') }}" {% if lock_calculated_fields %}readonly{% endif %}></div>
-      <div class="col-12 col-lg-2"><label class="form-label">Duración (días)</label><input id="taskDurationDays" type="number" min="1" name="estimated_duration_days" class="form-control" value="{{ form_values.get('estimated_duration_days', edit_task.estimated_duration_days if edit_task and edit_task.estimated_duration_days is not none else '') }}"></div>
-      <div class="col-12 col-lg-2"><label class="form-label">Esfuerzo (hs)</label><input type="number" step="0.25" min="0" name="estimated_hours" class="form-control" value="{{ form_values.get('estimated_hours', edit_task.estimated_hours if edit_task and edit_task.estimated_hours is not none else '') }}"></div>
-      <div class="col-12 col-lg-2"><label class="form-label">Avance %</label><input type="number" min="0" max="100" name="progress_percent" class="form-control" value="{{ form_values.get('progress_percent', edit_task.progress_percent if edit_task else 0) }}" {% if lock_calculated_fields %}readonly{% endif %}></div>
-      <div class="col-12"><label class="form-label">Descripción</label><input name="description" class="form-control" value="{{ form_values.get('description', edit_task.description if edit_task else '') }}"></div>
+      <div class="w-100"></div>
+      <div class="col-12 col-lg-7">
+        <div class="row g-2">
+          <div class="col-12 col-lg-4">
+            <label class="form-label">Tarea padre</label>
+            <select name="parent_task_id" class="custom-select">
+              <option value="">Sin padre</option>
+              {% set selected_parent = form_values.get('parent_task_id', edit_task.parent_task_id if edit_task else '')|string %}
+              {% for candidate in parent_candidates %}
+              <option value="{{ candidate.id }}" {% if selected_parent == candidate.id|string %}selected{% endif %}>#{{ candidate.project_task_id or candidate.id }} - {{ candidate.title }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-lg-4">
+            <label class="form-label">Inicio</label>
+            <input id="taskStartDate" type="date" name="start_date" class="form-control" value="{{ form_values.get('start_date', edit_task.start_date.isoformat() if edit_task and edit_task.start_date else '') }}" {% if lock_calculated_fields %}readonly{% endif %}>
+          </div>
+          <div class="col-12 col-lg-4">
+            <label class="form-label">Fin</label>
+            <input id="taskDueDate" type="date" name="due_date" class="form-control" value="{{ form_values.get('due_date', edit_task.due_date.isoformat() if edit_task and edit_task.due_date else '') }}" {% if lock_calculated_fields %}readonly{% endif %}>
+          </div>
+          <div class="col-12 col-lg-4">
+            <label class="form-label">Duración (días)</label>
+            <input id="taskDurationDays" type="number" min="0" name="estimated_duration_days" class="form-control" value="{{ form_values.get('estimated_duration_days', edit_task.estimated_duration_days if edit_task and edit_task.estimated_duration_days is not none else '') }}">
+          </div>
+          <div class="col-12 col-lg-4">
+            <label class="form-label">Esfuerzo (hs)</label>
+            <input type="text" inputmode="decimal" name="estimated_hours" class="form-control" value="{{ form_values.get('estimated_hours', edit_task.estimated_hours|decimal_input(2) if edit_task and edit_task.estimated_hours is not none else '') }}">
+          </div>
+          <div class="col-12 col-lg-4">
+            <label class="form-label">Avance %</label>
+            <input type="number" min="0" max="100" name="progress_percent" class="form-control" value="{{ form_values.get('progress_percent', edit_task.progress_percent if edit_task else 0) }}" {% if lock_calculated_fields %}readonly{% endif %}>
+          </div>
+          <div class="col-12">
+            {% set extend_checked = form_values.get('extend_resource_availability', '0') == '1' %}
+            <div class="form-check mt-1">
+              <input class="form-check-input" type="checkbox" id="extendAvailability" name="extend_resource_availability" value="1" {% if extend_checked %}checked{% endif %}>
+              <label class="form-check-label" for="extendAvailability">
+                Extender disponibilidad del recurso si faltan días
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-lg-5">
+        <label class="form-label d-flex justify-content-between align-items-center">
+          <span>Tareas predecesoras</span>
+          <button id="openPredecessorModalBtn" type="button" class="btn btn-outline-secondary btn-sm py-0 px-2" data-toggle="modal" data-target="#predecessorModal">
+            Seleccionar
+          </button>
+        </label>
+        <div class="border rounded p-2 bg-light">
+          <div id="predecessorSummary" class="small text-secondary">Sin predecesoras seleccionadas.</div>
+          <small id="predecessorSearchMeta" class="text-secondary d-block mt-2">0 seleccionadas</small>
+          <small class="text-secondary d-block">No se permiten dependencias circulares ni de la misma tarea.</small>
+        </div>
+        <select id="predecessorSelect" name="predecessor_task_ids" multiple class="d-none">
+          {% for candidate in dependency_candidates %}
+          <option
+            value="{{ candidate.id }}"
+            data-search="{{ ('#' ~ (candidate.project_task_id or candidate.id)|string ~ ' ' ~ (candidate.title or ''))|lower }}"
+            {% if candidate.id in selected_predecessor_ids %}selected{% endif %}
+          >
+            #{{ candidate.project_task_id or candidate.id }} - {{ candidate.title }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12">
+        <label class="form-label">Descripción</label>
+        <textarea name="description" class="form-control" rows="2">{{ form_values.get('description', edit_task.description if edit_task else '') }}</textarea>
+      </div>
       <div class="col-12 d-flex gap-2 mt-2">
         <button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar cambios' if edit_task else 'Agregar tarea' }}</button>
-        {% if edit_task %}<a href="{{ url_for('tasks.manage_tasks', project_id=project.id, page=current_page) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar edición</a>{% endif %}
+        {% if edit_task %}<a href="{{ url_for('tasks.manage_tasks', project_id=project.id, page=current_page, hide_completed=1 if hide_completed else 0) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar edición</a>{% endif %}
       </div>
     </form>
+  </div>
+</div>
+
+<div class="modal fade" id="predecessorModal" tabindex="-1" role="dialog" aria-labelledby="predecessorModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title" id="predecessorModalLabel">Seleccionar tareas predecesoras</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <input
+          id="predecessorSearchInput"
+          type="search"
+          class="form-control form-control-sm mb-2"
+          placeholder="Buscar por ID o título..."
+          autocomplete="off"
+        >
+        <div id="predecessorModalList" class="list-group">
+          {% for candidate in dependency_candidates %}
+          <label class="list-group-item list-group-item-action py-2 mb-0 js-predecessor-item" data-search="{{ ('#' ~ (candidate.project_task_id or candidate.id)|string ~ ' ' ~ (candidate.title or ''))|lower }}">
+            <input
+              type="checkbox"
+              class="mr-2 js-predecessor-check"
+              value="{{ candidate.id }}"
+              {% if candidate.id in selected_predecessor_ids %}checked{% endif %}
+            >
+            <span>#{{ candidate.project_task_id or candidate.id }} - {{ candidate.title }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="clearPredecessorsBtn">Limpiar selección</button>
+        <button type="button" class="btn btn-primary btn-sm" data-dismiss="modal">Aplicar</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -71,21 +216,27 @@
   <div class="card-header d-flex justify-content-between align-items-center">
     <strong>Listado de tareas</strong>
     <div class="d-flex gap-2 ml-auto justify-content-end">
+      {% if hide_completed %}
+      <a href="{{ url_for('tasks.manage_tasks', project_id=project.id, page=current_page, hide_completed=0) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Mostrar completadas</a>
+      {% else %}
+      <a href="{{ url_for('tasks.manage_tasks', project_id=project.id, page=current_page, hide_completed=1) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Ocultar completadas</a>
+      {% endif %}
       <a href="{{ url_for('projects.project_detail', project_id=project.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al proyecto</a>
-      <a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver Gantt</a>
+      <a href="{{ url_for('tasks.gantt', project_id=project.id, next=list_next) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver Gantt</a>
     </div>
   </div>
   <div class="card-body p-3">
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0">
-        <thead><tr><th>ID</th><th>Título</th><th>Estado</th><th>Responsable</th><th>Fechas</th><th>Duración</th><th>Esfuerzo</th><th>Avance</th><th class="text-end">Acciones</th></tr></thead>
+        <thead><tr><th>ID proyecto</th><th>Título</th><th>Estado</th><th>Responsable</th><th>Fechas</th><th>Duración</th><th>Esfuerzo</th><th>Avance</th><th class="text-end">Acciones</th></tr></thead>
         <tbody>
           {% for task in tasks %}
           {% set has_children = task.id in parent_task_ids %}
-          <tr class="{% if task.parent_task_id %}task-row-subtask js-subtask-row{% endif %}" {% if task.parent_task_id %}data-parent-id="{{ task.parent_task_id }}"{% endif %}>
-            <td>#{{ task.id }}</td>
+          {% set is_task_closed = (task.status or '')|lower in closed_statuses %}
+          <tr class="{% if task.parent_task_id %}task-row-subtask js-subtask-row{% endif %} {% if is_task_closed %}task-row-completed{% endif %}" {% if task.parent_task_id %}data-parent-id="{{ task.parent_task_id }}"{% endif %}>
+            <td>#{{ task.project_task_id or task.id }}</td>
             <td>
-              <div class="{% if task.parent_task_id %}task-title-subtree{% endif %}">
+              <div class="{% if task.parent_task_id %}task-title-subtree{% endif %} {% if is_task_closed %}task-completed-text{% endif %}">
                 {% if task.parent_task_id %}
                 <span class="task-tree-marker" aria-hidden="true"><i class="fas fa-level-down-alt fa-rotate-90"></i></span>
                 {% endif %}
@@ -101,8 +252,8 @@
                   </div>
                   <div class="small text-secondary">
                     {% if task.parent_task_id %}
-                    <a class="text-secondary" href="{{ url_for('tasks.task_detail', project_id=project.id, task_id=task.parent_task_id) }}">
-                      Subtarea de #{{ task.parent_task_id }}{% if task.parent_task %} - {{ task.parent_task.title }}{% endif %}
+                    <a class="text-secondary" href="{{ url_for('tasks.task_detail', project_id=project.id, task_id=task.parent_task_id, next=list_next) }}">
+                      Subtarea de #{{ (task.parent_task.project_task_id if task.parent_task else task.parent_task_id) }}{% if task.parent_task %} - {{ task.parent_task.title }}{% endif %}
                     </a>
                     {% endif %}
                     {% if task.is_milestone %}<span class="badge badge-warning ml-1">Hito</span>{% endif %}
@@ -110,22 +261,28 @@
                 </div>
               </div>
             </td>
-            <td>{{ task.status or '-' }}</td>
+            <td>
+              <span class="badge badge-{{ status_badge_class(task.status) }}">{{ task.status or '-' }}</span>
+            </td>
             <td>{{ task.responsible or '-' }}</td>
             <td><small>{{ task.start_date or '-' }}<br>{{ task.due_date or '-' }}</small></td>
             <td>
-              {% if task.start_date and task.due_date %}
+              {% if task.is_milestone %}
+                0 días
+              {% elif task.estimated_duration_days is not none %}
+                {{ task.estimated_duration_days }} días
+              {% elif task.start_date and task.due_date %}
                 {{ (task.due_date - task.start_date).days + 1 }} días
               {% else %}
                 {{ task.estimated_duration_days or '-' }}
               {% endif %}
             </td>
-            <td>{{ task.estimated_hours if task.estimated_hours is not none else '-' }}</td>
+            <td>{{ task.estimated_hours|number(2) if task.estimated_hours is not none else '-' }}</td>
             <td>{{ task.progress_percent or 0 }}%</td>
             <td class="text-end">
-              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('tasks.task_detail', project_id=project.id, task_id=task.id) }}"><i class="fas fa-eye"></i></a>
-              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tasks.edit_task', project_id=project.id, task_id=task.id, page=current_page) }}"><i class="fas fa-pen"></i></a>
-              <form method="post" class="d-inline" action="{{ url_for('tasks.delete_task', project_id=project.id, task_id=task.id, page=current_page) }}" onsubmit="return confirm('¿Eliminar tarea?');">
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('tasks.task_detail', project_id=project.id, task_id=task.id, next=list_next) }}"><i class="fas fa-eye"></i></a>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tasks.edit_task', project_id=project.id, task_id=task.id, page=current_page, hide_completed=1 if hide_completed else 0, next=list_next) }}"><i class="fas fa-pen"></i></a>
+              <form method="post" class="d-inline" action="{{ url_for('tasks.delete_task', project_id=project.id, task_id=task.id, page=current_page, hide_completed=1 if hide_completed else 0) }}" onsubmit="return confirm('¿Eliminar tarea?');">
                 <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
               </form>
             </td>
@@ -147,8 +304,16 @@
     const dueInput = document.getElementById("taskDueDate");
     const durationInput = document.getElementById("taskDurationDays");
     const statusSelect = document.getElementById("taskStatusSelect");
+    const taskTypeSelect = document.getElementById("taskTypeSelect");
     const taskForm = document.querySelector(".card .card-body form.row.g-2");
-    if (!startInput || !dueInput || !durationInput) return;
+    const predecessorSearchInput = document.getElementById("predecessorSearchInput");
+    const predecessorSelect = document.getElementById("predecessorSelect");
+    const predecessorSearchMeta = document.getElementById("predecessorSearchMeta");
+    const predecessorSummary = document.getElementById("predecessorSummary");
+    const openPredecessorModalBtn = document.getElementById("openPredecessorModalBtn");
+    const predecessorModalItems = Array.from(document.querySelectorAll(".js-predecessor-item"));
+    const predecessorChecks = Array.from(document.querySelectorAll(".js-predecessor-check"));
+    const clearPredecessorsBtn = document.getElementById("clearPredecessorsBtn");
 
     const parseDate = (value) => {
       if (!value) return null;
@@ -180,19 +345,50 @@
       dueInput.value = formatDate(due);
     };
 
-    startInput.addEventListener("change", () => {
-      if (durationInput.value && !dueInput.value) {
-        updateDueFromDuration();
+    if (startInput && dueInput && durationInput) {
+      startInput.addEventListener("change", () => {
+        if (durationInput.value) {
+          updateDueFromDuration();
+        } else {
+          updateDurationFromDates();
+        }
+      });
+      dueInput.addEventListener("change", updateDurationFromDates);
+      dueInput.addEventListener("input", updateDurationFromDates);
+      durationInput.addEventListener("change", () => {
+        if (startInput.value) updateDueFromDuration();
+      });
+      durationInput.addEventListener("input", () => {
+        if (startInput.value) updateDueFromDuration();
+      });
+    }
+
+    const applyMilestoneRules = () => {
+      if (!taskTypeSelect || !dueInput || !durationInput) return;
+      const isMilestone = (taskTypeSelect.value || "").trim().toLowerCase() === "hito";
+      if (isMilestone) {
+        dueInput.value = "";
+        dueInput.readOnly = true;
+        durationInput.value = "0";
+        durationInput.readOnly = true;
       } else {
-        updateDurationFromDates();
+        dueInput.readOnly = false;
+        durationInput.readOnly = false;
       }
-    });
-    dueInput.addEventListener("change", updateDurationFromDates);
-    durationInput.addEventListener("change", () => {
-      if (startInput.value && !dueInput.value) {
-        updateDueFromDuration();
-      }
-    });
+    };
+    if (taskTypeSelect) {
+      taskTypeSelect.addEventListener("change", applyMilestoneRules);
+      applyMilestoneRules();
+    }
+
+    if (taskForm && startInput && durationInput && dueInput) {
+      taskForm.addEventListener("submit", () => {
+        const isMilestone = taskTypeSelect && (taskTypeSelect.value || "").trim().toLowerCase() === "hito";
+        if (!isMilestone && startInput.value && durationInput.value) {
+          updateDueFromDuration();
+        }
+      });
+    }
 
     const subtasksByParent = {};
     document.querySelectorAll(".js-subtask-row[data-parent-id]").forEach((row) => {
@@ -227,6 +423,68 @@
         }
       });
     }
+
+    if (predecessorSearchInput && predecessorSelect) {
+      const renderPredecessorSummary = () => {
+        const selectedLabels = Array.from(predecessorSelect.options)
+          .filter((option) => option.selected)
+          .map((option) => option.textContent.trim());
+        if (!predecessorSummary) return;
+        if (!selectedLabels.length) {
+          predecessorSummary.textContent = "Sin predecesoras seleccionadas.";
+          return;
+        }
+        predecessorSummary.innerHTML = selectedLabels
+          .map((label) => `<span class="badge badge-light mr-1 mb-1">${label}</span>`)
+          .join("");
+      };
+
+      const syncPredecessorsToHiddenSelect = () => {
+        const selectedIds = new Set(
+          predecessorChecks.filter((input) => input.checked).map((input) => String(input.value))
+        );
+        Array.from(predecessorSelect.options).forEach((option) => {
+          option.selected = selectedIds.has(String(option.value));
+        });
+        if (predecessorSearchMeta) {
+          predecessorSearchMeta.textContent = `${selectedIds.size} seleccionadas`;
+        }
+        if (openPredecessorModalBtn) {
+          openPredecessorModalBtn.textContent = selectedIds.size ? `Seleccionar (${selectedIds.size})` : "Seleccionar";
+        }
+        renderPredecessorSummary();
+      };
+
+      const applyPredecessorFilter = () => {
+        const query = (predecessorSearchInput.value || "").trim().toLowerCase();
+        predecessorModalItems.forEach((item) => {
+          const searchable = (item.dataset.search || item.textContent || "").toLowerCase();
+          const checkbox = item.querySelector(".js-predecessor-check");
+          const visible = !query || searchable.includes(query) || (checkbox && checkbox.checked);
+          item.style.display = visible ? "" : "none";
+        });
+      };
+
+      predecessorSearchInput.addEventListener("input", applyPredecessorFilter);
+      predecessorChecks.forEach((input) => {
+        input.addEventListener("change", () => {
+          syncPredecessorsToHiddenSelect();
+          applyPredecessorFilter();
+        });
+      });
+      if (clearPredecessorsBtn) {
+        clearPredecessorsBtn.addEventListener("click", () => {
+          predecessorChecks.forEach((input) => {
+            input.checked = false;
+          });
+          syncPredecessorsToHiddenSelect();
+          applyPredecessorFilter();
+        });
+      }
+      syncPredecessorsToHiddenSelect();
+      applyPredecessorFilter();
+    }
+
   })();
 </script>
 {% endblock %}

@@ -22,11 +22,11 @@
         </select>
       </div>
       <div class="col-6 col-md-2">
-        <label class="form-label">Segmento</label>
-        <select name="segment" class="custom-select">
+        <label class="form-label">Tamaño</label>
+        <select name="company_size" class="custom-select">
           <option value="">Todos</option>
-          {% for item in segments %}
-            <option value="{{ item }}" {% if filters.segment == item %}selected{% endif %}>{{ item }}</option>
+          {% for item in company_sizes %}
+            <option value="{{ item }}" {% if filters.company_size == item %}selected{% endif %}>{{ item }}</option>
           {% endfor %}
         </select>
       </div>
@@ -68,7 +68,7 @@
           <tr>
             <th>Cliente</th>
             <th>CUIT/Tax ID</th>
-            <th>Segmento</th>
+            <th>Tamaño</th>
             <th>Comercial</th>
             <th>Riesgo</th>
             <th>Registro</th>
@@ -83,11 +83,11 @@
                 <small class="text-secondary">{{ client.client_code or '-' }} | {{ client.legal_name or client.trade_name or '-' }}</small>
               </td>
               <td>{{ client.tax_id or '-' }}</td>
-              <td>{{ client.segment or '-' }}</td>
+              <td>{{ client.company_size or '-' }}</td>
               <td>
                 <small>
                   {{ client.commercial_status or '-' }}<br>
-                  AM: {{ client.account_manager or '-' }}
+                  Gte. cuenta: {{ client.account_manager or '-' }}
                 </small>
               </td>
               <td>

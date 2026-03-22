@@ -24,7 +24,7 @@
         </div>
         {% endif %}
         {% set selected_cost_type = cost_values.get('cost_type', 'hourly' if edit_cost and edit_cost.hourly_cost is not none else ('monthly' if edit_cost else 'hourly')) %}
-        {% set selected_cost_amount = cost_values.get('cost_amount', edit_cost.hourly_cost if edit_cost and edit_cost.hourly_cost is not none else (edit_cost.monthly_cost if edit_cost else '')) %}
+        {% set selected_cost_amount = cost_values.get('cost_amount', edit_cost.hourly_cost|decimal_input(2) if edit_cost and edit_cost.hourly_cost is not none else (edit_cost.monthly_cost|decimal_input(2) if edit_cost else '')) %}
         <form method="post" action="{{ url_for('team.edit_cost', cost_id=edit_cost.id) if edit_cost else url_for('team.add_cost', resource_id=resource.id) }}" class="row g-2 align-items-end">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="next" value="{{ url_for('team.manage_resource_costs', resource_id=resource.id) }}">
@@ -37,7 +37,7 @@
               <option value="monthly" {% if selected_cost_type == 'monthly' %}selected{% endif %}>Por mes</option>
             </select>
           </div>
-          <div class="col-6 col-md-2"><label class="form-label">Costo *</label><input type="number" min="0" step="0.01" name="cost_amount" class="form-control" required value="{{ selected_cost_amount }}"></div>
+          <div class="col-6 col-md-2"><label class="form-label">Costo *</label><input type="text" inputmode="decimal" name="cost_amount" class="form-control" required value="{{ selected_cost_amount }}"></div>
           <div class="col-6 col-md-2">
             <label class="form-label">Moneda *</label>
             {% set selected_currency = cost_values.get('currency', edit_cost.currency if edit_cost else 'USD') %}
@@ -65,20 +65,24 @@
           <tr>
             <td>{{ item.valid_from }}{% if item.valid_to %} - {{ item.valid_to }}{% else %} - actual{% endif %}</td>
             <td>{{ 'Por hora' if item.hourly_cost is not none else 'Por mes' }}</td>
-            <td>{{ item.hourly_cost if item.hourly_cost is not none else item.monthly_cost }}</td>
+            <td>{{ item.hourly_cost|number(2) if item.hourly_cost is not none else item.monthly_cost|number(2) }}</td>
             <td>{{ item.currency }}</td>
             <td>{{ item.observations or '-' }}</td>
             <td>{{ 'Activo' if item.is_active else 'Inactivo' }}</td>
             <td class="text-end">
               {% set usage_count = usage_by_cost_id.get(item.id, 0) %}
-              <a href="{{ url_for('team.manage_resource_costs', resource_id=resource.id, edit_cost_id=item.id) }}" class="btn btn-sm btn-outline-secondary">Editar</a>
+              <a href="{{ url_for('team.manage_resource_costs', resource_id=resource.id, edit_cost_id=item.id) }}" class="btn btn-sm btn-outline-secondary btn-action-icon" title="Editar" aria-label="Editar">
+                <i class="fas fa-pen"></i>
+              </a>
               {% if usage_count > 0 %}
               <span class="badge bg-secondary ml-1">En uso ({{ usage_count }})</span>
               {% else %}
               <form method="post" class="d-inline" action="{{ url_for('team.delete_cost', cost_id=item.id) }}" onsubmit="return confirm('¿Eliminar esta tarifa? Esta acción no se puede deshacer.');">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="next" value="{{ url_for('team.manage_resource_costs', resource_id=resource.id) }}">
-                <button class="btn btn-sm btn-outline-danger ml-1" type="submit">Eliminar</button>
+                <button class="btn btn-sm btn-outline-danger btn-action-icon ml-1" type="submit" title="Eliminar" aria-label="Eliminar">
+                  <i class="fas fa-trash"></i>
+                </button>
               </form>
               {% endif %}
             </td>

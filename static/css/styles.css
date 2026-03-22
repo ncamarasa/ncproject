@@ -208,8 +208,176 @@ table.dataTable.table-hover tbody tr:hover > td {
   background-color: #fff;
 }
 
+.project-form-shell .metric-card {
+  border: 1px solid #e8ecef !important;
+}
+
+.project-form-banner {
+  border: 1px solid #e8ecef;
+  border-left: 4px solid #6f8895;
+  border-radius: 0.35rem;
+  background: linear-gradient(90deg, #f8fafb 0%, #ffffff 100%);
+  padding: 0.7rem 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.project-form-helper {
+  border-left: 3px solid #ced7de;
+  padding-left: 0.55rem;
+}
+
+.project-form-footer {
+  border-top: 1px solid #eef1f4;
+}
+
+.project-hero {
+  border: 1px solid #e7edf2;
+  background: linear-gradient(90deg, #f7fafc 0%, #ffffff 100%);
+  border-radius: 0.4rem;
+  padding: 0.7rem 0.8rem;
+}
+
+.project-kpi-card {
+  border-radius: 0.45rem;
+  border: 1px solid #e5ebf0;
+  background: #fff;
+  min-height: 92px;
+  display: flex;
+  align-items: center;
+  padding: 0.7rem 0.8rem;
+}
+
+.project-kpi-card h4 {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.project-kpi-card p {
+  margin: 0.2rem 0 0;
+  color: #5f6b75;
+  font-size: 0.86rem;
+}
+
+.project-kpi-card.kpi-info {
+  border-left: 4px solid #2b90d9;
+}
+
+.project-kpi-card.kpi-warning {
+  border-left: 4px solid #c98a15;
+}
+
+.project-kpi-card.kpi-primary {
+  border-left: 4px solid #4b6fd6;
+}
+
+.project-kpi-card.kpi-danger {
+  border-left: 4px solid #c75252;
+}
+
+.project-mini-kpi {
+  border: 1px solid #e9eef2;
+  border-radius: 0.35rem;
+  padding: 0.45rem 0.6rem;
+  background: #fcfdff;
+}
+
+.project-mini-kpi small {
+  display: block;
+  color: #6b7680;
+  margin-bottom: 0.15rem;
+}
+
+.project-mini-kpi strong {
+  font-size: 1.05rem;
+}
+
+.project-compact-dl dt,
+.project-compact-dl dd {
+  margin-bottom: 0.45rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px dashed #edf1f4;
+}
+
+.project-compact-dl dt:last-of-type,
+.project-compact-dl dd:last-of-type {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.project-closure-notes {
+  min-height: 110px;
+  border: 1px solid #e8edf1;
+  border-radius: 0.35rem;
+  background: #fbfcfd;
+  padding: 0.7rem 0.75rem;
+  white-space: pre-wrap;
+}
+
+.project-fin-block {
+  border: 1px solid #e7edf2;
+  border-radius: 0.4rem;
+  background: #fbfcfe;
+  padding: 0.7rem 0.8rem;
+  height: 100%;
+}
+
+.project-fin-title {
+  font-size: 0.93rem;
+  font-weight: 700;
+  margin: 0 0 0.6rem;
+  color: #314655;
+}
+
+.project-fin-budget {
+  background: #f9fbfd;
+}
+
 .task-row-subtask {
   background-color: #fbfcfe;
+}
+
+.task-row-completed td {
+  color: #6c757d;
+}
+
+.task-completed-text {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* Frappe Gantt: destacar hitos con barra normal y borde diferenciado */
+.bar-wrapper.bar-milestone .bar {
+  fill: #fff7ed;
+  stroke: #f97316;
+  stroke-width: 1.2;
+  rx: 4;
+  ry: 4;
+  transform: none;
+}
+
+.bar-wrapper.bar-milestone .bar-progress {
+  fill: #fdba74;
+}
+
+.bar-wrapper.bar-milestone .bar-label {
+  fill: #9a3412;
+  font-weight: 700;
+}
+
+/* Frappe Gantt: sombreado de fines de semana */
+.gantt-container {
+  --g-weekend-highlight-color: rgba(15, 23, 42, 0.08);
+}
+
+/* Frappe Gantt: ocultar tooltip/popup */
+.gantt-container .popup-wrapper {
+  display: none !important;
 }
 
 .task-title-subtree {
@@ -240,6 +408,11 @@ table.dataTable.table-hover tbody tr:hover > td {
 
 .task-subtask-toggle.is-expanded i {
   transform: rotate(90deg);
+}
+
+#predecessorSummary .badge {
+  font-weight: 500;
+  border: 1px solid #d9dde3;
 }
 
 input[type="file"].form-control {

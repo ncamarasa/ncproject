@@ -36,13 +36,17 @@
               {% else %}
               <span class="badge badge-light">Configurable</span>
               {% endif %}
+              {% set usage = role_usage.get(role.id, 0) if role_usage is defined else 0 %}
+              {% if usage > 0 %}
+              <span class="badge badge-info">En uso: {{ usage }}</span>
+              {% endif %}
             </td>
             <td>{{ 'Activo' if role.is_active else 'Inactivo' }}</td>
             <td class="text-end">
               {% if role.is_editable %}
               <a href="{{ url_for('settings.edit_team_role', role_id=role.id) }}" class="btn btn-sm btn-outline-secondary btn-action-icon mr-1" title="Editar"><i class="fas fa-pen"></i></a>
               {% endif %}
-              {% if role.is_deletable %}
+              {% if role.is_deletable and usage == 0 %}
               <form method="post" class="d-inline" action="{{ url_for('settings.toggle_team_role', role_id=role.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-sm btn-outline-warning btn-action-icon" type="submit" title="{{ 'Desactivar' if role.is_active else 'Activar' }}"><i class="fas fa-power-off"></i></button>

@@ -29,7 +29,7 @@ VALID_WEEKDAY_CODES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 CANONICAL_SYSTEM_TEAM_ROLES: dict[str, tuple[str, ...]] = {
     "Project Manager": ("project manager",),
     "Ejecutivo comercial": ("ejecutivo comercial", "ejecutivo de cuenta"),
-    "Account manager": ("account manager", "gerente de cuenta"),
+    "Gerente de cuenta": ("gerente de cuenta", "responsable cliente", "account manager"),
     "Responsable delivery": (
         "responsable delivery",
         "delivery manager",

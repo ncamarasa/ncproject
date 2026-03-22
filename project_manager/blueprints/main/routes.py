@@ -22,6 +22,17 @@ def index():
 @bp.route("/home")
 @login_required
 def home():
+    if not has_permission(g.user, "main.view"):
+        if has_permission(g.user, "work.view"):
+            return redirect(url_for("work.my_tasks"))
+        if has_permission(g.user, "projects.view"):
+            return redirect(url_for("projects.list_projects"))
+        if has_permission(g.user, "clients.view"):
+            return redirect(url_for("clients.list_clients"))
+        if has_permission(g.user, "control.view"):
+            return redirect(url_for("control.dashboard"))
+        return redirect(url_for("auth.login"))
+
     active_projects = 0
     active_clients = 0
     active_stakeholders = 0

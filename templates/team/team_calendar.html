@@ -200,6 +200,10 @@
     const firstDayOfMonth = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
     const lastDayOfMonth = (d) => new Date(d.getFullYear(), d.getMonth() + 1, 0);
     const formatMonthLabel = (d) => d.toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+    const numberFmt1 = new Intl.NumberFormat("es-AR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    const numberFmt2 = new Intl.NumberFormat("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt1 = (value) => numberFmt1.format(Number(value || 0));
+    const fmt2 = (value) => numberFmt2.format(Number(value || 0));
     const MAX_BARS_PER_DAY = 4;
     const availabilityCache = new Map();
     const roleCapacityCache = new Map();
@@ -308,10 +312,10 @@
       return [
         resourceFullName,
         `Roles: ${roleLabel}`,
-        `Base: ${day.base_hours.toFixed(1)}h`,
-        `Excepciones: ${day.exception_hours.toFixed(1)}h`,
-        `Asignado: ${day.assigned_hours.toFixed(1)}h`,
-        `Disponible: ${day.net_available_hours.toFixed(1)}h`,
+        `Base: ${fmt1(day.base_hours)}h`,
+        `Excepciones: ${fmt1(day.exception_hours)}h`,
+        `Asignado: ${fmt1(day.assigned_hours)}h`,
+        `Disponible: ${fmt1(day.net_available_hours)}h`,
       ].join(" | ");
     };
 
@@ -320,7 +324,7 @@
       return `
         <div class="availability-bar ${status}" title="${escapeHtml(entryTitle(resourceFullName, roleNames, day))}">
           <span>${escapeHtml(initials(resourceFullName))}</span>
-          <strong>${day.net_available_hours.toFixed(1)}h</strong>
+          <strong>${fmt1(day.net_available_hours)}h</strong>
         </div>
       `;
     };
@@ -350,7 +354,7 @@
         },
         { base: 0, assigned: 0, exceptions: 0, available: 0 },
       );
-      dayDetailSummary.textContent = `Recursos: ${entries.length} | Base: ${totals.base.toFixed(2)} hs | Asignado: ${totals.assigned.toFixed(2)} hs | Excepciones: ${totals.exceptions.toFixed(2)} hs | Disponible: ${totals.available.toFixed(2)} hs`;
+      dayDetailSummary.textContent = `Recursos: ${entries.length} | Base: ${fmt2(totals.base)} hs | Asignado: ${fmt2(totals.assigned)} hs | Excepciones: ${fmt2(totals.exceptions)} hs | Disponible: ${fmt2(totals.available)} hs`;
       dayDetailBody.innerHTML = entries
         .sort((a, b) => (b.net_available_hours || 0) - (a.net_available_hours || 0))
         .map((item) => {
@@ -359,10 +363,10 @@
             <tr>
               <td>${escapeHtml(item.resource_full_name || "-")}</td>
               <td>${escapeHtml(roles)}</td>
-              <td>${(item.base_hours || 0).toFixed(1)} hs</td>
-              <td>${(item.assigned_hours || 0).toFixed(1)} hs</td>
-              <td>${(item.exception_hours || 0).toFixed(1)} hs</td>
-              <td>${(item.net_available_hours || 0).toFixed(1)} hs</td>
+              <td>${fmt1(item.base_hours)} hs</td>
+              <td>${fmt1(item.assigned_hours)} hs</td>
+              <td>${fmt1(item.exception_hours)} hs</td>
+              <td>${fmt1(item.net_available_hours)} hs</td>
             </tr>
           `;
         })
@@ -403,7 +407,7 @@
           dayEntriesByIso = new Map(
             (rolePayload.days || []).map((item) => [item.date, item.entries || []]),
           );
-          summary.textContent = `Recursos: ${rolePayload.resource_count || 0} | Base: ${totals.base.toFixed(2)} hs | Excepciones: ${totals.exceptions.toFixed(2)} hs | Asignado: ${totals.assigned.toFixed(2)} hs | Disponible: ${totals.available.toFixed(2)} hs`;
+          summary.textContent = `Recursos: ${rolePayload.resource_count || 0} | Base: ${fmt2(totals.base)} hs | Excepciones: ${fmt2(totals.exceptions)} hs | Asignado: ${fmt2(totals.assigned)} hs | Disponible: ${fmt2(totals.available)} hs`;
         } else {
           const payloads = await Promise.all(
             filteredResources.map(async (resource) => {
@@ -421,7 +425,7 @@
             },
             { base: 0, exceptions: 0, assigned: 0, available: 0 },
           );
-          summary.textContent = `Recursos: ${filteredResources.length} | Base: ${totals.base.toFixed(2)} hs | Excepciones: ${totals.exceptions.toFixed(2)} hs | Asignado: ${totals.assigned.toFixed(2)} hs | Disponible: ${totals.available.toFixed(2)} hs`;
+          summary.textContent = `Recursos: ${filteredResources.length} | Base: ${fmt2(totals.base)} hs | Excepciones: ${fmt2(totals.exceptions)} hs | Asignado: ${fmt2(totals.assigned)} hs | Disponible: ${fmt2(totals.available)} hs`;
           const dayMap = new Map();
           for (let day = 1; day <= end.getDate(); day += 1) {
             const current = new Date(start.getFullYear(), start.getMonth(), day);
@@ -476,7 +480,7 @@
             <td>
               <div class="availability-calendar-day ${dayClass}">
                 <div class="d-flex justify-content-between align-items-center mb-1"><strong>${day}</strong></div>
-                <div class="availability-calendar-hours">Base: ${dailyBase.toFixed(1)} hs<br>Disp.: ${dailyAvailable.toFixed(1)} hs</div>
+                <div class="availability-calendar-hours">Base: ${fmt1(dailyBase)} hs<br>Disp.: ${fmt1(dailyAvailable)} hs</div>
                 ${holidayHtml}
                 ${bars}
               </div>

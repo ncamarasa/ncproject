@@ -11,7 +11,16 @@
 {% endblock %}
 
 {% block dashboard_content %}
-<form method="post" enctype="multipart/form-data" class="row g-3">
+<form method="post" enctype="multipart/form-data" class="row g-3 project-form-shell">
+  <div class="col-12">
+    <div class="project-form-banner">
+      <div>
+        <strong>{{ 'Edición de proyecto' if is_edit else 'Alta de proyecto' }}</strong>
+        <div class="small text-secondary">Completá primero identificación, responsables y fechas para dejarlo operativo.</div>
+      </div>
+      <span class="badge {% if is_edit %}badge-warning{% else %}badge-success{% endif %}">{{ 'Modo edición' if is_edit else 'Modo alta' }}</span>
+    </div>
+  </div>
   <div class="col-12">
     <div class="card border-0 metric-card">
       <div class="card-header"><strong>1. Identificación</strong></div>
@@ -203,13 +212,8 @@
           </select>
           <input type="hidden" name="technical_manager" value="{{ form_values.get('technical_manager', project.technical_manager if project else '') }}">
         </div>
-        <div class="col-12 col-md-6">
-          <label class="form-label">Sponsor del cliente</label>
-          <input name="client_sponsor" class="form-control" value="{{ form_values.get('client_sponsor', project.client_sponsor if project else '') }}">
-        </div>
-        <div class="col-12 col-md-6">
-          <label class="form-label">Key user</label>
-          <input name="key_user" class="form-control" value="{{ form_values.get('key_user', project.key_user if project else '') }}">
+        <div class="col-12">
+          <small class="text-secondary">Sponsor del cliente y Key user se gestionan desde stakeholders del proyecto.</small>
         </div>
       </div>
     </div>
@@ -242,6 +246,14 @@
         <div class="col-12 col-md-6">
           <label class="form-label">Duración estimada (días)</label>
           <input type="number" name="estimated_duration_days" class="form-control" value="{{ form_values.get('estimated_duration_days', project.estimated_duration_days if project and project.estimated_duration_days is not none else '') }}">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Calendario de planificación</label>
+          {% set schedule_mode = form_values.get('schedule_use_calendar_days', '1' if project and project.schedule_use_calendar_days else '0') %}
+          <select name="schedule_use_calendar_days" class="custom-select">
+            <option value="0" {% if schedule_mode == '0' %}selected{% endif %}>Solo días hábiles</option>
+            <option value="1" {% if schedule_mode == '1' %}selected{% endif %}>Todos los días</option>
+          </select>
         </div>
         <div class="col-12 col-md-6">
           <label class="form-label">Kick-off</label>
@@ -295,23 +307,20 @@
         </div>
         <div class="col-12 col-md-3">
           <label class="form-label">Presupuesto vendido</label>
-          <input name="sold_budget" class="form-control" value="{{ form_values.get('sold_budget', project.sold_budget if project and project.sold_budget is not none else '') }}">
-        </div>
-        <div class="col-12 col-md-3">
-          <label class="form-label">Costo estimado</label>
-          <input name="estimated_cost" class="form-control" value="{{ form_values.get('estimated_cost', project.estimated_cost if project and project.estimated_cost is not none else '') }}">
-        </div>
-        <div class="col-12 col-md-3">
-          <label class="form-label">Margen estimado</label>
-          <input name="estimated_margin" class="form-control" value="{{ form_values.get('estimated_margin', project.estimated_margin if project and project.estimated_margin is not none else '') }}">
+          <input name="sold_budget" class="form-control" inputmode="decimal" placeholder="0,00" value="{{ form_values.get('sold_budget', project.sold_budget|decimal_input(2) if project and project.sold_budget is not none else '') }}">
         </div>
         <div class="col-12 col-md-3">
           <label class="form-label">Horas estimadas</label>
-          <input name="estimated_hours" class="form-control" value="{{ form_values.get('estimated_hours', project.estimated_hours if project and project.estimated_hours is not none else '') }}">
+          <input name="estimated_hours" class="form-control" inputmode="decimal" placeholder="0,00" value="{{ form_values.get('estimated_hours', project.estimated_hours|decimal_input(2) if project and project.estimated_hours is not none else '') }}">
         </div>
         <div class="col-12 col-md-3">
           <label class="form-label">Tarifa promedio</label>
-          <input name="average_rate" class="form-control" value="{{ form_values.get('average_rate', project.average_rate if project and project.average_rate is not none else '') }}">
+          <input name="average_rate" class="form-control" inputmode="decimal" placeholder="0,00" value="{{ form_values.get('average_rate', project.average_rate|decimal_input(2) if project and project.average_rate is not none else '') }}">
+        </div>
+        <div class="col-12">
+          <small class="text-secondary d-block project-form-helper">
+            Costo estimado y margen estimado se calculan automáticamente según planificación de recursos y valorización vigente.
+          </small>
         </div>
         <div class="col-12 col-md-3">
           <label class="form-label">Centro de costos</label>
@@ -411,7 +420,7 @@
         </div>
         {% endif %}
       </div>
-      <div class="card-footer bg-white d-flex gap-2">
+      <div class="card-footer bg-white d-flex gap-2 project-form-footer">
         <button type="submit" class="btn btn-primary btn-action-standard">{{ 'Guardar cambios' if is_edit else 'Crear proyecto' }}</button>
         <a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-secondary btn-action-standard">{{ 'Cancelar edición' if is_edit else 'Volver al listado' }}</a>
       </div>

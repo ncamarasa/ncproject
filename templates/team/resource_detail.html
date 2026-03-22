@@ -47,6 +47,7 @@
   <div class="card-body">
     <div class="row g-2">
       <div class="col-12 col-md-6 col-xl-3"><strong>Email:</strong> {{ resource.email or '-' }}</div>
+      <div class="col-12 col-md-6 col-xl-3"><strong>Usuario:</strong> {{ linked_user.username if linked_user else '-' }}</div>
       <div class="col-12 col-md-6 col-xl-3"><strong>Teléfono:</strong> {{ resource.phone or '-' }}</div>
       {% set normalized_type = (resource.resource_type or '')|lower %}
       <div class="col-12 col-md-6 col-xl-3"><strong>Tipo:</strong> {% if normalized_type in ['internal', 'interno'] %}Interno{% elif normalized_type in ['external', 'externo'] %}Externo{% else %}{{ resource.resource_type|replace('_', ' ')|title }}{% endif %}</div>
@@ -55,7 +56,6 @@
       <div class="col-12 col-md-6 col-xl-3"><strong>Área:</strong> {{ resource.area or '-' }}</div>
       <div class="col-12 col-md-6 col-xl-3"><strong>Proveedor:</strong> {{ resource.vendor_name or '-' }}</div>
       <div class="col-12 col-md-6 col-xl-3"><strong>Calendario:</strong> {{ resource.calendar_name or '-' }}</div>
-      <div class="col-12 col-md-6 col-xl-3"><strong>Zona horaria:</strong> {{ resource.timezone or '-' }}</div>
     </div>
   </div>
 </div>

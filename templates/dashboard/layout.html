@@ -32,26 +32,50 @@
     <div class="sidebar">
       <nav class="mt-2">
         <ul class="nav nav-pills nav-sidebar flex-column" data-widget="treeview" role="menu" data-accordion="false">
+          {% if user_can('main.view') %}
           <li class="nav-item">
             <a href="{{ url_for('main.home') }}" class="nav-link {% if request.endpoint == 'main.home' %}active{% endif %}">
               <i class="nav-icon fas fa-home"></i>
               <p>Home</p>
             </a>
           </li>
+          {% endif %}
 
+          {% if user_can('projects.view') %}
           <li class="nav-item">
             <a href="{{ url_for('projects.list_projects') }}" class="nav-link {% if request.endpoint in ['projects.list_projects', 'projects.create_project', 'projects.project_detail', 'projects.edit_project', 'projects.manage_stakeholders', 'projects.edit_stakeholder'] or (request.endpoint and request.endpoint.startswith('tasks.')) %}active{% endif %}">
               <i class="nav-icon fas fa-diagram-project"></i>
               <p>Proyectos</p>
             </a>
           </li>
+          {% endif %}
 
+          {% if user_can('work.view') or user_can('tasks.view') %}
+          <li class="nav-item">
+            <a href="{{ url_for('work.my_tasks') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('work.') %}active{% endif %}">
+              <i class="nav-icon fas fa-user-clock"></i>
+              <p>Mi Trabajo</p>
+            </a>
+          </li>
+          {% endif %}
+
+          {% if user_can('control.view') or user_can('control.baseline.manage') or user_can('control.timesheets.approve') %}
+          <li class="nav-item">
+            <a href="{{ url_for('control.dashboard') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('control.') %}active{% endif %}">
+              <i class="nav-icon fas fa-chart-line"></i>
+              <p>Control PMO</p>
+            </a>
+          </li>
+          {% endif %}
+
+          {% if user_can('clients.view') %}
           <li class="nav-item">
             <a href="{{ url_for('clients.list_clients') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('clients.') %}active{% endif %}">
               <i class="nav-icon fas fa-building"></i>
               <p>Clientes</p>
             </a>
           </li>
+          {% endif %}
 
           {% if user_can('team.view') %}
           <li class="nav-item">
@@ -62,7 +86,7 @@
           </li>
           {% endif %}
 
-          {% if user_can('users.manage') or user_can('audit.view') %}
+          {% if user_can('users.manage') or user_can('users.view') or user_can('roles.manage') or user_can('audit.view') %}
           {% set admin_section_active = request.endpoint and request.endpoint.startswith('administration.') %}
           <li class="nav-item {% if admin_section_active %}menu-open{% endif %}">
             <a href="#" class="nav-link {% if admin_section_active %}active{% endif %}">
@@ -73,7 +97,7 @@
               </p>
             </a>
             <ul class="nav nav-treeview">
-              {% if user_can('users.manage') %}
+              {% if user_can('users.manage') or user_can('users.view') or user_can('roles.manage') %}
               {% set users_section_active = request.endpoint in ['administration.list_users', 'administration.create_user', 'administration.edit_user', 'administration.reset_password', 'administration.toggle_user', 'administration.list_roles', 'administration.edit_role', 'administration.toggle_role', 'administration.team_role_prices'] %}
               <li class="nav-item {% if users_section_active %}menu-open{% endif %}">
                 <a href="#" class="nav-link {% if users_section_active %}active{% endif %}">
@@ -90,18 +114,22 @@
                       <p>Gestión de Usuarios</p>
                     </a>
                   </li>
+                  {% if user_can('roles.manage') or user_can('users.manage') %}
                   <li class="nav-item">
                     <a href="{{ url_for('administration.list_roles') }}" class="nav-link {% if request.endpoint in ['administration.list_roles', 'administration.edit_role', 'administration.toggle_role'] %}active{% endif %}">
                       <i class="far fa-dot-circle nav-icon"></i>
                       <p>Roles</p>
                     </a>
                   </li>
+                  {% endif %}
+                  {% if user_can('users.manage') %}
                   <li class="nav-item">
                     <a href="{{ url_for('administration.team_role_prices') }}" class="nav-link {% if request.endpoint == 'administration.team_role_prices' %}active{% endif %}">
                       <i class="far fa-dot-circle nav-icon"></i>
                       <p>Precios por rol</p>
                     </a>
                   </li>
+                  {% endif %}
                 </ul>
               </li>
               {% endif %}

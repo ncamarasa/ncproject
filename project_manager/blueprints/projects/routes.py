@@ -1,5 +1,5 @@
 import os
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -31,19 +31,26 @@ from project_manager.models import (
     Client,
     ClientContract,
     Project,
+    ProjectCurrencyRateConfig,
     ProjectResource,
     Resource,
     ResourceCost,
     RoleSalePrice,
     Stakeholder,
     SystemCatalogOptionConfig,
+    Task,
+    TaskWorklog,
     TeamRole,
+    TimesheetHeader,
 )
 from project_manager.models import UserProjectAssignment
 from project_manager.services.code_generation import generate_client_code, generate_project_code
+from project_manager.services.default_catalogs import seed_default_catalogs_for_user
 from project_manager.services.task_business_rules import is_blocked_status, is_closed_status
 from project_manager.services.team_business_rules import find_applicable_cost_id, find_applicable_role_sale_price_id
+from project_manager.services.user_provisioning import sync_user_project_scope_for_resource
 from project_manager.utils.dates import parse_date_input
+from project_manager.utils.numbers import parse_decimal_input
 
 ALLOWED_CONTRACT_EXTENSIONS = {"pdf", "doc", "docx"}
 
@@ -53,12 +60,21 @@ def _authorize_projects_module():
     if g.get("user") is None:
         flash("Debes iniciar sesión para continuar.", "warning")
         return redirect(url_for("auth.login"))
+    endpoint = request.endpoint or ""
     is_write = request.method not in {"GET", "HEAD", "OPTIONS"}
-    needed_permission = "projects.edit" if is_write else "projects.view"
     if is_write and g.user.read_only:
         flash("Tu usuario es de solo lectura.", "danger")
         return redirect(url_for("main.home"))
-    if not has_permission(g.user, needed_permission):
+    write_permissions_by_endpoint = {
+        "projects.create_project": ["projects.create", "projects.edit"],
+        "projects.edit_project": ["projects.edit"],
+        "projects.delete_project": ["projects.delete", "projects.edit"],
+        "projects.manage_stakeholders": ["projects.stakeholders.manage", "projects.edit"],
+        "projects.edit_stakeholder": ["projects.stakeholders.manage", "projects.edit"],
+        "projects.delete_stakeholder": ["projects.stakeholders.manage", "projects.edit"],
+    }
+    required = write_permissions_by_endpoint.get(endpoint, ["projects.edit"] if is_write else ["projects.view"])
+    if not any(has_permission(g.user, permission_key) for permission_key in required):
         flash("No tienes permisos para acceder al módulo de proyectos.", "danger")
         return redirect(url_for("main.home"))
 
@@ -72,16 +88,15 @@ def _to_int(value: str, default: int = 1) -> int:
 
 
 def _to_decimal(value: str | None):
-    if value in (None, ""):
-        return None
-    try:
-        return float(value)
-    except ValueError:
-        return None
+    return parse_decimal_input(value)
 
 
 def _safe_strip(value: str | None) -> str:
     return (value or "").strip()
+
+
+def _to_bool(value: str | None) -> bool:
+    return value == "1"
 
 
 _parse_date = parse_date_input
@@ -109,7 +124,60 @@ def _hourly_amount(cost_value, monthly_value) -> Decimal | None:
     return None
 
 
+def _convert_currency_amount(
+    amount: Decimal,
+    from_currency: str,
+    to_currency: str,
+    *,
+    owner_user_id: int | None,
+    reference_date: date,
+) -> tuple[Decimal | None, str | None]:
+    source = (from_currency or "").strip().upper()
+    target = (to_currency or "").strip().upper()
+    if not source or not target:
+        return None, "Moneda de origen/destino inválida para conversión."
+    if source == target:
+        return amount, None
+    if not owner_user_id:
+        return None, f"No hay usuario de configuración para convertir {source}->{target}."
+
+    direct = db.session.execute(
+        select(ProjectCurrencyRateConfig)
+        .where(
+            ProjectCurrencyRateConfig.owner_user_id == owner_user_id,
+            ProjectCurrencyRateConfig.is_active.is_(True),
+            ProjectCurrencyRateConfig.from_currency == source,
+            ProjectCurrencyRateConfig.to_currency == target,
+            ProjectCurrencyRateConfig.valid_from <= reference_date,
+            (ProjectCurrencyRateConfig.valid_to.is_(None) | (ProjectCurrencyRateConfig.valid_to >= reference_date)),
+        )
+        .order_by(ProjectCurrencyRateConfig.valid_from.desc(), ProjectCurrencyRateConfig.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if direct:
+        return amount * Decimal(direct.rate), None
+
+    reverse = db.session.execute(
+        select(ProjectCurrencyRateConfig)
+        .where(
+            ProjectCurrencyRateConfig.owner_user_id == owner_user_id,
+            ProjectCurrencyRateConfig.is_active.is_(True),
+            ProjectCurrencyRateConfig.from_currency == target,
+            ProjectCurrencyRateConfig.to_currency == source,
+            ProjectCurrencyRateConfig.valid_from <= reference_date,
+            (ProjectCurrencyRateConfig.valid_to.is_(None) | (ProjectCurrencyRateConfig.valid_to >= reference_date)),
+        )
+        .order_by(ProjectCurrencyRateConfig.valid_from.desc(), ProjectCurrencyRateConfig.id.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    if reverse and Decimal(reverse.rate) != 0:
+        return amount / Decimal(reverse.rate), None
+
+    return None, f"Falta cotización activa para convertir {source}->{target} al {reference_date}."
+
+
 def _project_financial_summary(project: Project) -> dict:
+    calculated_at = datetime.now()
     assignments = [item for item in project.resource_assignments if item.is_active]
     coverage_total = len(assignments)
     covered = 0
@@ -151,11 +219,8 @@ def _project_financial_summary(project: Project) -> dict:
 
         cost_currency = (resource_cost.currency or "").strip().upper()
         sale_currency = (role_sale_price.currency or "").strip().upper()
-        if not cost_currency or not sale_currency or cost_currency != sale_currency:
-            warnings.append("Hay asignaciones con monedas incompatibles entre costo y precio.")
-            continue
-        if project_currency and sale_currency != project_currency:
-            warnings.append("Hay asignaciones con moneda distinta a la moneda del proyecto.")
+        if not cost_currency or not sale_currency:
+            warnings.append("Hay asignaciones sin moneda definida en costo o precio.")
             continue
 
         cost_per_hour = _hourly_amount(resource_cost.hourly_cost, resource_cost.monthly_cost)
@@ -164,14 +229,167 @@ def _project_financial_summary(project: Project) -> dict:
             warnings.append("No se pudo determinar tarifa horaria para algunas asignaciones.")
             continue
 
+        target_currency = project_currency or sale_currency or cost_currency
+        if not target_currency:
+            warnings.append("No se pudo determinar moneda objetivo para el proyecto.")
+            continue
+
+        converted_sale, sale_error = _convert_currency_amount(
+            sale_per_hour,
+            sale_currency,
+            target_currency,
+            owner_user_id=g.user.id if g.get("user") else None,
+            reference_date=reference_date,
+        )
+        if sale_error:
+            warnings.append(sale_error)
+            continue
+        converted_cost, cost_error = _convert_currency_amount(
+            cost_per_hour,
+            cost_currency,
+            target_currency,
+            owner_user_id=g.user.id if g.get("user") else None,
+            reference_date=reference_date,
+        )
+        if cost_error:
+            warnings.append(cost_error)
+            continue
+
         covered += 1
         estimated_hours_total += hours
-        estimated_cost += hours * cost_per_hour
-        estimated_revenue += hours * sale_per_hour
-        currency_set.add(sale_currency)
+        estimated_cost += hours * converted_cost
+        estimated_revenue += hours * converted_sale
+        currency_set.add(target_currency)
 
     currency = project_currency or (next(iter(currency_set)) if len(currency_set) == 1 else "")
     margin = estimated_revenue - estimated_cost
+
+    # Consumo real: solo horas de worklogs con timesheet aprobado.
+    actual_hours_total = Decimal("0")
+    actual_revenue = Decimal("0")
+    actual_cost = Decimal("0")
+    worklogs_valued = 0
+    worklogs_total = 0
+
+    assignments_by_resource: dict[int, list[ProjectResource]] = {}
+    for assignment in assignments:
+        assignments_by_resource.setdefault(assignment.resource_id, []).append(assignment)
+
+    def _assignment_for_worklog(resource_id: int, work_date: date) -> ProjectResource | None:
+        candidates = assignments_by_resource.get(resource_id, [])
+        valid: list[ProjectResource] = []
+        for item in candidates:
+            start_ok = item.start_date is None or item.start_date <= work_date
+            end_ok = item.end_date is None or item.end_date >= work_date
+            if start_ok and end_ok:
+                valid.append(item)
+        if not valid:
+            return None
+        return sorted(
+            valid,
+            key=lambda row: (row.start_date is None, row.start_date or date.min, row.id),
+            reverse=True,
+        )[0]
+
+    approved_logs = db.session.execute(
+        select(TaskWorklog)
+        .join(Task, Task.id == TaskWorklog.task_id)
+        .join(TimesheetHeader, TimesheetHeader.id == TaskWorklog.timesheet_header_id)
+        .where(
+            Task.project_id == project.id,
+            TaskWorklog.is_active.is_(True),
+            TimesheetHeader.status == "approved",
+        )
+        .order_by(TaskWorklog.work_date.asc(), TaskWorklog.id.asc())
+    ).scalars().all()
+
+    for log in approved_logs:
+        worklogs_total += 1
+        hours = Decimal(log.hours or 0)
+        if hours <= 0:
+            continue
+
+        assignment = _assignment_for_worklog(log.resource_id, log.work_date)
+        if not assignment or not assignment.role_id:
+            warnings.append("Hay consumos aprobados sin asignación/rol vigente en el proyecto para su valorización.")
+            continue
+
+        resource_cost_key = (assignment.resource_id, log.work_date)
+        if resource_cost_key not in resource_cost_cache:
+            cost_id = assignment.resource_cost_id or find_applicable_cost_id(assignment.resource_id, log.work_date)
+            resource_cost_cache[resource_cost_key] = db.session.get(ResourceCost, cost_id) if cost_id else None
+        resource_cost = resource_cost_cache[resource_cost_key]
+
+        role_price_key = (assignment.role_id, log.work_date)
+        if role_price_key not in role_price_cache:
+            sale_price_id = find_applicable_role_sale_price_id(assignment.role_id, log.work_date)
+            role_price_cache[role_price_key] = db.session.get(RoleSalePrice, sale_price_id) if sale_price_id else None
+        role_sale_price = role_price_cache[role_price_key]
+
+        if not resource_cost or not role_sale_price:
+            warnings.append("Hay consumos aprobados sin costo/precio vigente para su valorización.")
+            continue
+
+        cost_currency = (resource_cost.currency or "").strip().upper()
+        sale_currency = (role_sale_price.currency or "").strip().upper()
+        if not cost_currency or not sale_currency:
+            warnings.append("Hay consumos aprobados sin moneda definida en costo o precio.")
+            continue
+
+        cost_per_hour = _hourly_amount(resource_cost.hourly_cost, resource_cost.monthly_cost)
+        sale_per_hour = _hourly_amount(role_sale_price.hourly_price, role_sale_price.monthly_price)
+        if cost_per_hour is None or sale_per_hour is None:
+            warnings.append("No se pudo determinar tarifa horaria para algunos consumos aprobados.")
+            continue
+
+        target_currency = project_currency or sale_currency or cost_currency
+        converted_sale, sale_error = _convert_currency_amount(
+            sale_per_hour,
+            sale_currency,
+            target_currency,
+            owner_user_id=g.user.id if g.get("user") else None,
+            reference_date=log.work_date,
+        )
+        if sale_error:
+            warnings.append(sale_error)
+            continue
+        converted_cost, cost_error = _convert_currency_amount(
+            cost_per_hour,
+            cost_currency,
+            target_currency,
+            owner_user_id=g.user.id if g.get("user") else None,
+            reference_date=log.work_date,
+        )
+        if cost_error:
+            warnings.append(cost_error)
+            continue
+
+        worklogs_valued += 1
+        actual_hours_total += hours
+        actual_cost += hours * converted_cost
+        actual_revenue += hours * converted_sale
+
+    actual_margin = actual_revenue - actual_cost
+    sold_budget = Decimal(project.sold_budget) if project.sold_budget is not None else None
+    estimated_margin_vs_sold_budget = (sold_budget - estimated_cost) if sold_budget is not None else None
+    actual_margin_vs_sold_budget = (sold_budget - actual_cost) if sold_budget is not None else None
+
+    def _budget_margin_signal(margin_amount: Decimal | None, budget_amount: Decimal | None) -> dict:
+        if margin_amount is None or budget_amount is None:
+            return {"key": "na", "label": "Sin dato", "pct": None}
+        if budget_amount <= 0:
+            if margin_amount < 0:
+                return {"key": "red", "label": "Crítico", "pct": None}
+            return {"key": "green", "label": "Saludable", "pct": None}
+        pct = (margin_amount / budget_amount) * Decimal("100")
+        if pct < 0:
+            return {"key": "red", "label": "Crítico", "pct": float(pct)}
+        if pct < Decimal("10"):
+            return {"key": "yellow", "label": "Atención", "pct": float(pct)}
+        return {"key": "green", "label": "Saludable", "pct": float(pct)}
+
+    estimated_budget_signal = _budget_margin_signal(estimated_margin_vs_sold_budget, sold_budget)
+    actual_budget_signal = _budget_margin_signal(actual_margin_vs_sold_budget, sold_budget)
     return {
         "coverage_total": coverage_total,
         "coverage_valid": covered,
@@ -179,6 +397,21 @@ def _project_financial_summary(project: Project) -> dict:
         "estimated_revenue": float(estimated_revenue),
         "estimated_cost": float(estimated_cost),
         "estimated_margin": float(margin),
+        "estimated_margin_vs_sold_budget": (
+            float(estimated_margin_vs_sold_budget) if estimated_margin_vs_sold_budget is not None else None
+        ),
+        "estimated_budget_signal": estimated_budget_signal,
+        "actual_hours": float(actual_hours_total),
+        "actual_revenue": float(actual_revenue),
+        "actual_cost": float(actual_cost),
+        "actual_margin": float(actual_margin),
+        "actual_margin_vs_sold_budget": (
+            float(actual_margin_vs_sold_budget) if actual_margin_vs_sold_budget is not None else None
+        ),
+        "actual_budget_signal": actual_budget_signal,
+        "actual_logs_total": worklogs_total,
+        "actual_logs_valued": worklogs_valued,
+        "actual_calculated_at": calculated_at.strftime("%d/%m/%Y %H:%M"),
         "currency": currency or "-",
         "warnings": sorted(set(warnings)),
     }
@@ -244,7 +477,7 @@ def _sync_project_manager_assignments(project: Project, payload: dict) -> None:
         ),
         (
             payload.get("commercial_manager_resource_id"),
-            _active_team_role_id("Ejecutivo comercial", "Responsable comercial", "Account manager"),
+            _active_team_role_id("Ejecutivo comercial", "Responsable comercial", "Gerente de cuenta", "Responsable cliente", "Account manager"),
         ),
         (
             payload.get("functional_manager_resource_id"),
@@ -296,16 +529,25 @@ def _sync_project_manager_assignments(project: Project, payload: dict) -> None:
         )
 
 
+def _sync_user_scope_for_project_resources(project_id: int) -> None:
+    resource_ids = db.session.execute(
+        select(ProjectResource.resource_id).where(ProjectResource.project_id == project_id)
+    ).scalars().all()
+    for resource_id in set(resource_ids):
+        if resource_id:
+            sync_user_project_scope_for_resource(resource_id)
+
+
 def _build_project_payload(form):
     project_manager_resource_id = _to_int(form.get("project_manager_resource_id"), default=0) or None
     commercial_manager_resource_id = _to_int(form.get("commercial_manager_resource_id"), default=0) or None
     functional_manager_resource_id = _to_int(form.get("functional_manager_resource_id"), default=0) or None
     technical_manager_resource_id = _to_int(form.get("technical_manager_resource_id"), default=0) or None
 
-    project_manager = _safe_strip(form.get("project_manager"))
-    commercial_manager = _safe_strip(form.get("commercial_manager"))
-    functional_manager = _safe_strip(form.get("functional_manager"))
-    technical_manager = _safe_strip(form.get("technical_manager"))
+    project_manager = ""
+    commercial_manager = ""
+    functional_manager = ""
+    technical_manager = ""
 
     if project_manager_resource_id:
         resource = db.session.get(Resource, project_manager_resource_id)
@@ -346,8 +588,6 @@ def _build_project_payload(form):
         "functional_manager_resource_id": functional_manager_resource_id,
         "technical_manager": technical_manager,
         "technical_manager_resource_id": technical_manager_resource_id,
-        "client_sponsor": _safe_strip(form.get("client_sponsor")),
-        "key_user": _safe_strip(form.get("key_user")),
         "onboarding_date": _parse_date(form.get("onboarding_date")),
         "estimated_start_date": _parse_date(form.get("estimated_start_date")),
         "actual_start_date": _parse_date(form.get("actual_start_date")),
@@ -361,11 +601,10 @@ def _build_project_payload(form):
         "external_board_url": _safe_strip(form.get("external_board_url")),
         "committee_frequency": _safe_strip(form.get("committee_frequency")),
         "communication_channel": _safe_strip(form.get("communication_channel")),
+        "schedule_use_calendar_days": _to_bool(form.get("schedule_use_calendar_days")),
         "billing_mode": _safe_strip(form.get("billing_mode")),
         "currency_code": _safe_strip(form.get("currency_code")),
         "sold_budget": _to_decimal(form.get("sold_budget")),
-        "estimated_cost": _to_decimal(form.get("estimated_cost")),
-        "estimated_margin": _to_decimal(form.get("estimated_margin")),
         "estimated_hours": _to_decimal(form.get("estimated_hours")),
         "average_rate": _to_decimal(form.get("average_rate")),
         "cost_center": _safe_strip(form.get("cost_center")),
@@ -378,8 +617,37 @@ def _build_project_payload(form):
 def _stakeholder_payload_from_form(form, project_id: int, current_id: int | None = None):
     errors = []
     name = _safe_strip(form.get("name"))
+    role = _safe_strip(form.get("role"))
     if len(name) < 2:
         errors.append("El stakeholder debe tener nombre válido.")
+    if not role:
+        errors.append("Debes seleccionar un rol de stakeholder.")
+
+    valid_roles = db.session.execute(
+        select(SystemCatalogOptionConfig.name)
+        .where(
+            SystemCatalogOptionConfig.owner_user_id == g.user.id,
+            SystemCatalogOptionConfig.module_key == "projects",
+            SystemCatalogOptionConfig.catalog_key == "stakeholder_roles",
+            SystemCatalogOptionConfig.is_active.is_(True),
+        )
+        .order_by(SystemCatalogOptionConfig.is_system.asc(), SystemCatalogOptionConfig.name.asc())
+    ).scalars().all()
+    if not valid_roles:
+        seed_default_catalogs_for_user(g.user.id)
+        db.session.commit()
+        valid_roles = db.session.execute(
+            select(SystemCatalogOptionConfig.name)
+            .where(
+                SystemCatalogOptionConfig.owner_user_id == g.user.id,
+                SystemCatalogOptionConfig.module_key == "projects",
+                SystemCatalogOptionConfig.catalog_key == "stakeholder_roles",
+                SystemCatalogOptionConfig.is_active.is_(True),
+            )
+            .order_by(SystemCatalogOptionConfig.is_system.asc(), SystemCatalogOptionConfig.name.asc())
+        ).scalars().all()
+    if role and valid_roles and role not in valid_roles:
+        errors.append("El rol de stakeholder seleccionado no es válido.")
 
     duplicate_stmt = select(Stakeholder.id).where(
         Stakeholder.project_id == project_id,
@@ -393,7 +661,7 @@ def _stakeholder_payload_from_form(form, project_id: int, current_id: int | None
 
     payload = {
         "name": name,
-        "role": _safe_strip(form.get("role")),
+        "role": role,
         "email": _safe_strip(form.get("email")),
         "phone": _safe_strip(form.get("phone")),
         "notes": _safe_strip(form.get("notes")),
@@ -415,6 +683,19 @@ def _active_menu_context():
             )
             .order_by(SystemCatalogOptionConfig.is_system.asc(), SystemCatalogOptionConfig.name.asc())
         ).scalars().all()
+        if not values:
+            seed_default_catalogs_for_user(g.user.id)
+            db.session.commit()
+            values = db.session.execute(
+                select(SystemCatalogOptionConfig.name)
+                .where(
+                    SystemCatalogOptionConfig.owner_user_id == g.user.id,
+                    SystemCatalogOptionConfig.module_key == "projects",
+                    SystemCatalogOptionConfig.catalog_key == catalog_key,
+                    SystemCatalogOptionConfig.is_active.is_(True),
+                )
+                .order_by(SystemCatalogOptionConfig.is_system.asc(), SystemCatalogOptionConfig.name.asc())
+            ).scalars().all()
         return values
 
     return {
@@ -430,7 +711,7 @@ def _active_menu_context():
         "task_types": _catalog_values("task_types"),
         "task_statuses": _catalog_values("task_statuses"),
         "task_priorities": _catalog_values("task_priorities"),
-        "task_dependency_types": _catalog_values("task_dependency_types"),
+        "stakeholder_roles": _catalog_values("stakeholder_roles"),
         "risk_categories": _catalog_values("risk_categories"),
         "active_resources": db.session.execute(
             select(Resource).where(Resource.is_active.is_(True)).order_by(Resource.full_name.asc())
@@ -580,6 +861,9 @@ def create_project():
         status = payload["status"]
         priority = payload["priority"]
         owner = payload["owner"]
+        raw_sold_budget = _safe_strip(request.form.get("sold_budget"))
+        raw_estimated_hours = _safe_strip(request.form.get("estimated_hours"))
+        raw_average_rate = _safe_strip(request.form.get("average_rate"))
 
         selected_client_id = _to_int(request.form.get("client_id"), default=0)
         selected_contract_id = _to_int(request.form.get("client_contract_id"), default=0)
@@ -597,6 +881,12 @@ def create_project():
             errors.append("El nombre del proyecto debe tener al menos 3 caracteres.")
         if not owner:
             errors.append("Debes indicar un responsable.")
+        if raw_sold_budget and payload["sold_budget"] is None:
+            errors.append("Presupuesto vendido inválido. Usa formato numérico (ej: 150000 o 150.000,00).")
+        if raw_estimated_hours and payload["estimated_hours"] is None:
+            errors.append("Horas estimadas inválidas. Usa formato numérico.")
+        if raw_average_rate and payload["average_rate"] is None:
+            errors.append("Tarifa promedio inválida. Usa formato numérico.")
         if project_type not in _active_menu_context()["project_types"]:
             errors.append("El tipo seleccionado no es válido.")
         if status not in _active_menu_context()["project_statuses"]:
@@ -691,6 +981,7 @@ def create_project():
             if not assigned:
                 db.session.add(UserProjectAssignment(user_id=g.user.id, project_id=project.id))
         _sync_project_manager_assignments(project, payload)
+        _sync_user_scope_for_project_resources(project.id)
         db.session.commit()
 
         flash("Proyecto creado correctamente.", "success")
@@ -749,6 +1040,17 @@ def project_detail(project_id: int):
             task.id,
         ),
     )[:5]
+    stakeholder_rows = list(project.stakeholders)
+    sponsor_names: list[str] = []
+    key_user_names: list[str] = []
+    for stakeholder in stakeholder_rows:
+        role_normalized = _safe_strip(stakeholder.role).lower()
+        if role_normalized == "sponsor cliente":
+            sponsor_names.append(stakeholder.name)
+        if role_normalized == "key user":
+            key_user_names.append(stakeholder.name)
+    client_sponsor_display = ", ".join(dict.fromkeys(sponsor_names)) if sponsor_names else "-"
+    key_user_display = ", ".join(dict.fromkeys(key_user_names)) if key_user_names else "-"
     financial_summary = _project_financial_summary(project)
     return render_template(
         "projects/project_detail.html",
@@ -762,6 +1064,8 @@ def project_detail(project_id: int):
         progress_avg=progress_avg,
         milestone_open=milestone_open,
         milestone_upcoming=milestone_upcoming,
+        client_sponsor_display=client_sponsor_display,
+        key_user_display=key_user_display,
         financial_summary=financial_summary,
         **_active_menu_context(),
     )
@@ -793,6 +1097,9 @@ def edit_project(project_id: int):
         status = payload["status"]
         priority = payload["priority"]
         owner = payload["owner"]
+        raw_sold_budget = _safe_strip(request.form.get("sold_budget"))
+        raw_estimated_hours = _safe_strip(request.form.get("estimated_hours"))
+        raw_average_rate = _safe_strip(request.form.get("average_rate"))
         selected_client_id = _to_int(request.form.get("client_id"), default=0)
         selected_contract_id = _to_int(request.form.get("client_contract_id"), default=0)
         selected_parent_project_id = _to_int(request.form.get("parent_project_id"), default=0)
@@ -810,6 +1117,12 @@ def edit_project(project_id: int):
             errors.append("El nombre del proyecto debe tener al menos 3 caracteres.")
         if not owner:
             errors.append("Debes indicar un responsable.")
+        if raw_sold_budget and payload["sold_budget"] is None:
+            errors.append("Presupuesto vendido inválido. Usa formato numérico (ej: 150000 o 150.000,00).")
+        if raw_estimated_hours and payload["estimated_hours"] is None:
+            errors.append("Horas estimadas inválidas. Usa formato numérico.")
+        if raw_average_rate and payload["average_rate"] is None:
+            errors.append("Tarifa promedio inválida. Usa formato numérico.")
         if project_type not in _active_menu_context()["project_types"]:
             errors.append("El tipo seleccionado no es válido.")
         if status not in _active_menu_context()["project_statuses"]:
@@ -900,6 +1213,7 @@ def edit_project(project_id: int):
             )
 
         _sync_project_manager_assignments(project, payload)
+        _sync_user_scope_for_project_resources(project.id)
         db.session.commit()
         flash("Proyecto actualizado correctamente.", "success")
         return redirect(url_for("projects.project_detail", project_id=project.id))

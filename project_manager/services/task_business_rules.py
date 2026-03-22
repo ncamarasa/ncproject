@@ -9,7 +9,7 @@ from sqlalchemy import select
 from project_manager.extensions import db
 from project_manager.models import AuditTrailLog, Task
 
-CLOSED_STATUSES = {"completada", "cerrada", "closed", "done", "finalizada"}
+CLOSED_STATUSES = {"completada", "cerrada", "closed", "done", "finalizada", "terminada", "terminado"}
 BLOCKED_STATUS_HINTS = ("bloq", "blocked", "on hold", "hold")
 
 

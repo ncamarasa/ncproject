@@ -22,13 +22,12 @@ DEFAULT_CLIENT_CATALOGS: dict[str, list[str]] = {
     "currency_code": ["ARS", "USD", "EUR", "CLP", "UYU", "COP"],
     "billing_mode": ["Abono mensual", "Bolsa de horas", "Tiempo y materiales", "Precio fijo", "Por hitos"],
     "document_category": ["Contrato", "Legal", "Facturación", "Técnico", "Comercial", "Otro"],
-    "segment": ["Enterprise", "Mid-Market", "SMB", "Publico"],
     "tax_condition": ["Responsable Inscripto", "Monotributo", "Exento", "Consumidor Final"],
     "preferred_support_channel": ["Email", "WhatsApp", "Portal", "Telefono", "Slack", "Teams"],
     "methodology": ["Agil", "Hibrida", "Cascada", "Kanban", "Scrum"],
-    "timezone": ["UTC-05:00", "UTC-04:00", "UTC-03:00", "UTC+00:00", "UTC+01:00"],
     "language": ["Espanol", "Ingles", "Portugues"],
     "client_status": ["Prospecto", "Activo", "En pausa", "Inactivo", "Eliminado"],
+    "lead_source": ["Recomendación", "Inbound", "Outbound", "Evento", "Partner", "Otro"],
     "commercial_priority": ["Baja", "Media", "Alta", "Critica"],
     "commercial_status": ["Descubierto", "Calificado", "Propuesta", "Negociacion", "Ganado", "Perdido"],
     "risk_level": ["Bajo", "Medio", "Alto", "Critico"],
@@ -47,11 +46,11 @@ DEFAULT_PROJECT_CATALOGS: dict[str, list[str]] = {
     "project_close_reasons": ["Completado", "Cancelado por cliente", "Cancelado interno", "Reemplazado"],
     "project_close_results": ["Exitoso", "Parcial", "No logrado"],
     "project_origins": ["Comercial", "Cliente", "Interno", "Regulatorio", "Soporte"],
-    "task_types": ["Análisis", "Desarrollo", "Testing", "Documentación", "Deploy", "Hito"],
+    "task_types": ["Tarea", "Hito"],
     "task_statuses": ["Pendiente", "En progreso", "Bloqueada", "Completada"],
     "task_priorities": ["Baja", "Media", "Alta", "Crítica"],
-    "task_dependency_types": ["FS", "SS", "FF", "SF"],
     "risk_categories": ["Tecnológico", "Operativo", "Comercial", "Financiero", "Legal"],
+    "stakeholder_roles": ["Sponsor Cliente", "Key User"],
 }
 DEFAULT_TEAM_CATALOGS: dict[str, list[str]] = {
     "resource_types": ["internal", "external"],
@@ -245,13 +244,18 @@ def seed_default_catalogs_for_user(owner_user_id: int) -> None:
     for catalog_key, values in DEFAULT_PROJECT_CATALOGS.items():
         for name in values:
             is_cancelled_status = catalog_key == "project_statuses" and name.strip().lower() == "cancelado"
+            is_system_stakeholder_role = (
+                catalog_key == "stakeholder_roles"
+                and name.strip().lower() in {"sponsor cliente", "key user"}
+            )
+            is_system_item = bool(is_cancelled_status or is_system_stakeholder_role)
             _ensure_project_catalog(
                 owner_user_id,
                 catalog_key,
                 name,
-                is_system=is_cancelled_status,
-                is_editable=not is_cancelled_status,
-                is_deletable=not is_cancelled_status,
+                is_system=is_system_item,
+                is_editable=not is_system_item,
+                is_deletable=not is_system_item,
                 exclude_from_default_list=is_cancelled_status,
             )
     for catalog_key, values in DEFAULT_TEAM_CATALOGS.items():

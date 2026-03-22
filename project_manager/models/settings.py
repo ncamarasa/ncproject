@@ -94,3 +94,27 @@ class TeamCalendarHolidayConfig(TimestampMixin, db.Model):
             name="uq_team_calendar_holiday_owner_calendar_date",
         ),
     )
+
+
+class ProjectCurrencyRateConfig(TimestampMixin, db.Model):
+    __tablename__ = "project_currency_rate_configs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    owner_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    from_currency = db.Column(db.String(10), nullable=False, index=True)
+    to_currency = db.Column(db.String(10), nullable=False, index=True)
+    valid_from = db.Column(db.Date, nullable=False, index=True)
+    valid_to = db.Column(db.Date, nullable=True, index=True)
+    rate = db.Column(db.Numeric(18, 6), nullable=False)
+    notes = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "owner_user_id",
+            "from_currency",
+            "to_currency",
+            "valid_from",
+            name="uq_project_currency_rate_owner_pair_from",
+        ),
+    )

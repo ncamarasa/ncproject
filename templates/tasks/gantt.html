@@ -3,7 +3,7 @@
 {% block page_title %}Cronograma / Gantt - {{ project.name }}{% endblock %}
 {% block page_subtitle %}Visualización gráfica y tabla de planificación{% endblock %}
 {% block page_actions %}
-<a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver a tareas</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver a tareas</a>
 {% endblock %}
 
 {% block dashboard_content %}
@@ -31,6 +31,7 @@
         <thead>
           <tr>
             <th>Tarea</th>
+            <th>Recurso asignado</th>
             <th>Inicio</th>
             <th>Fin</th>
             <th>Duración (días)</th>
@@ -44,18 +45,19 @@
           <tr>
             <td>
               {{ task.title }}
-              {% if task.parent_task_id %}<small class="text-secondary">(Subtarea de #{{ task.parent_task_id }})</small>{% endif %}
+              {% if task.parent_task_id %}<small class="text-secondary">(Subtarea de #{{ task.parent_task.project_task_id if task.parent_task else task.parent_task_id }})</small>{% endif %}
               {% if task.is_milestone %}<span class="badge badge-warning">Hito</span>{% endif %}
             </td>
+            <td>{{ task.responsible_resource.full_name if task.responsible_resource else (task.responsible or '-') }}</td>
             <td>{{ task.start_date or '-' }}</td>
             <td>{{ task.due_date or '-' }}</td>
-            <td>{{ duration_by_task_id.get(task.id) or '-' }}</td>
-            <td>{{ task.estimated_hours if task.estimated_hours is not none else '-' }}</td>
+            <td>{% if task.is_milestone %}1{% else %}{{ duration_by_task_id.get(task.id) or '-' }}{% endif %}</td>
+            <td>{{ task.estimated_hours|number(2) if task.estimated_hours is not none else '-' }}</td>
             <td>{{ task.task_type or '-' }}</td>
             <td>{{ task.status or '-' }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="7" class="text-center text-secondary">No hay tareas para graficar.</td></tr>
+          <tr><td colspan="8" class="text-center text-secondary">No hay tareas para graficar.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -63,22 +65,22 @@
   </div>
 </div>
 
-<script src="https://www.gstatic.com/charts/loader.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/frappe-gantt/dist/frappe-gantt.css">
+<script src="https://unpkg.com/frappe-gantt/dist/frappe-gantt.umd.js"></script>
 <script>
   (() => {
-    const chartDataRows = [
+    const rawTasks = [
       {% for task in tasks %}
-        {% if task.start_date and task.due_date %}
-        [
-          "task_{{ task.id }}",
-          {{ (task.title or ('Tarea #' ~ task.id))|tojson }},
-          {{ (task.task_type or 'Tarea')|tojson }},
-          new Date({{ task.start_date.year }}, {{ task.start_date.month - 1 }}, {{ task.start_date.day }}),
-          new Date({{ task.due_date.year }}, {{ task.due_date.month - 1 }}, {{ task.due_date.day }}),
-          null,
-          {{ task.progress_percent if task.progress_percent is not none else 0 }},
-          {{ (('task_' ~ dependency_by_successor[task.id][0]) if dependency_by_successor.get(task.id) else None)|tojson }}
-        ],
+        {% if task.start_date and (task.due_date or task.is_milestone) %}
+        {
+          id: {{ task.id }},
+          name: {{ (task.title or ('Tarea #' ~ (task.project_task_id or task.id)))|tojson }},
+          start: {{ task.start_date.isoformat()|tojson }},
+          end: {{ (visual_end_by_task_id.get(task.id).isoformat() if visual_end_by_task_id.get(task.id) else (task.due_date.isoformat() if task.due_date else task.start_date.isoformat()))|tojson }},
+          isMilestone: {{ "true" if task.is_milestone else "false" }},
+          progress: {{ task.progress_percent if task.progress_percent is not none else 0 }},
+          dependencies: {{ dependency_by_successor.get(task.id, [])|tojson }}
+        },
         {% endif %}
       {% endfor %}
     ];
@@ -87,37 +89,41 @@
     const emptyState = document.getElementById("ganttChartEmpty");
     if (!chartContainer) return;
 
-    if (!chartDataRows.length) {
+    if (!rawTasks.length) {
       chartContainer.style.display = "none";
       if (emptyState) emptyState.style.display = "block";
       return;
     }
 
-    google.charts.load("current", { packages: ["gantt"], language: "es" });
-    google.charts.setOnLoadCallback(() => {
-      const data = new google.visualization.DataTable();
-      data.addColumn("string", "Task ID");
-      data.addColumn("string", "Task Name");
-      data.addColumn("string", "Resource");
-      data.addColumn("date", "Start Date");
-      data.addColumn("date", "End Date");
-      data.addColumn("number", "Duration");
-      data.addColumn("number", "Percent Complete");
-      data.addColumn("string", "Dependencies");
-      data.addRows(chartDataRows);
+    const tasks = rawTasks.map((task) => ({
+      id: `task_${task.id}`,
+      name: task.name,
+      start: task.start,
+      end: task.end,
+      progress: task.progress,
+      dependencies: (task.dependencies || []).map((depId) => `task_${depId}`).join(","),
+      custom_class: task.isMilestone ? "bar-milestone" : "",
+    }));
+    const holidayDates = {{ holiday_dates|tojson }};
+    const useCalendarDays = {{ "true" if use_calendar_days else "false" }};
+    const holidayConfig = {
+      "var(--g-weekend-highlight-color)": "weekend",
+    };
+    if (holidayDates.length) {
+      holidayConfig["rgba(239, 68, 68, 0.16)"] = holidayDates;
+    }
 
-      const options = {
-        height: Math.max(360, 48 * chartDataRows.length + 40),
-        gantt: {
-          trackHeight: 32,
-          labelStyle: { fontName: "Source Sans Pro", fontSize: 12 },
-          criticalPathEnabled: false
-        }
-      };
-
-      const chart = new google.visualization.Gantt(chartContainer);
-      chart.draw(data, options);
-      window.addEventListener("resize", () => chart.draw(data, options));
+    chartContainer.innerHTML = "";
+    new Gantt(chartContainer, tasks, {
+      view_mode: "Day",
+      language: "es",
+      bar_height: 24,
+      padding: 20,
+      ignore: useCalendarDays ? [] : ["weekend"],
+      holidays: holidayConfig,
+      readonly: true,
+      readonly_dates: true,
+      readonly_progress: true,
     });
   })();
 </script>

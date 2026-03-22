@@ -23,12 +23,19 @@
         <label class="form-label">Permisos *</label>
         <div class="row g-2">
           {% for module, perms in permission_tree.items() %}
+          {% set module_key = perms[0].module if perms else 'module' %}
           <div class="col-12 col-md-6 col-xl-4">
             <div class="border rounded p-2 h-100">
-              <strong class="d-block mb-2 text-capitalize">{{ module }}</strong>
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong class="d-block mb-2 text-capitalize">{{ module }}</strong>
+                <div class="btn-group btn-group-sm">
+                  <button type="button" class="btn btn-outline-secondary py-0 px-2 js-perm-preset" data-module="{{ module_key }}" data-mode="read">Solo lectura</button>
+                  <button type="button" class="btn btn-outline-primary py-0 px-2 js-perm-preset" data-module="{{ module_key }}" data-mode="full">Control total</button>
+                </div>
+              </div>
               {% for perm in perms %}
               <div class="form-check">
-                <input class="form-check-input" type="checkbox" id="perm-{{ perm.id }}" name="permission_ids" value="{{ perm.id }}" {% if perm.id in selected_permission_ids %}checked{% endif %}>
+                <input class="form-check-input js-perm-check" type="checkbox" id="perm-{{ perm.id }}" name="permission_ids" value="{{ perm.id }}" data-module="{{ perm.module }}" data-readonly="{% if perm.key.endswith('.view') %}1{% else %}0{% endif %}" {% if perm.id in selected_permission_ids %}checked{% endif %}>
                 <label class="form-check-label" for="perm-{{ perm.id }}">{{ perm.label }}</label>
               </div>
               {% endfor %}
@@ -44,4 +51,23 @@
     </form>
   </div>
 </div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  (() => {
+    const buttons = Array.from(document.querySelectorAll(".js-perm-preset"));
+    if (!buttons.length) return;
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const moduleKey = button.dataset.module || "";
+        const mode = button.dataset.mode || "read";
+        const checks = Array.from(document.querySelectorAll(`.js-perm-check[data-module="${moduleKey}"]`));
+        checks.forEach((checkbox) => {
+          const isReadonly = checkbox.dataset.readonly === "1";
+          checkbox.checked = mode === "full" ? true : isReadonly;
+        });
+      });
+    });
+  })();
+</script>
 {% endblock %}

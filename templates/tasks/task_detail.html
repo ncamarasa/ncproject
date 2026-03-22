@@ -1,9 +1,9 @@
 {% extends 'dashboard/layout.html' %}
 {% block title %}Detalle de tarea | NCProject{% endblock %}
-{% block page_title %}Tarea #{{ task.id }} - {{ task.title }}{% endblock %}
+{% block page_title %}Tarea #{{ task.project_task_id or task.id }} - {{ task.title }}{% endblock %}
 {% block page_subtitle %}Proyecto: {{ project.name }}{% endblock %}
 {% block page_actions %}
-<a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="btn btn-outline-secondary btn-sm">Volver a tareas</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm">Volver</a>
 {% endblock %}
 
 {% block dashboard_content %}
@@ -20,6 +20,7 @@
         {% endif %}
         <form id="taskStatusForm" method="post" action="{{ url_for('tasks.update_task_status', project_id=project.id, task_id=task.id) }}" class="row g-2 mb-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
           <div class="col-12 col-lg-8">
             <label class="form-label">Estado</label>
             {% set current_status = task.status or '' %}
@@ -46,14 +47,18 @@
           <dt class="col-sm-4">Fechas</dt><dd class="col-sm-8">{{ task.start_date or '-' }} / {{ task.due_date or '-' }}</dd>
           <dt class="col-sm-4">Duración</dt>
           <dd class="col-sm-8">
-            {% if task.start_date and task.due_date %}
+            {% if task.is_milestone %}
+              0 días
+            {% elif task.estimated_duration_days is not none %}
+              {{ task.estimated_duration_days }} días
+            {% elif task.start_date and task.due_date %}
               {{ (task.due_date - task.start_date).days + 1 }} días
             {% else %}
               {{ task.estimated_duration_days or '-' }}
             {% endif %}
           </dd>
-          <dt class="col-sm-4">Esfuerzo estimado</dt><dd class="col-sm-8">{{ task.estimated_hours if task.estimated_hours is not none else '-' }} hs</dd>
-          <dt class="col-sm-4">Horas imputadas</dt><dd class="col-sm-8">{{ task.logged_hours if task.logged_hours is not none else '-' }} hs</dd>
+          <dt class="col-sm-4">Esfuerzo estimado</dt><dd class="col-sm-8">{{ task.estimated_hours|number(2) if task.estimated_hours is not none else '-' }} hs</dd>
+          <dt class="col-sm-4">Horas imputadas</dt><dd class="col-sm-8">{{ task.logged_hours|number(2) if task.logged_hours is not none else '-' }} hs</dd>
           <dt class="col-sm-4">Avance</dt><dd class="col-sm-8">{{ task.progress_percent or 0 }}%</dd>
           <dt class="col-sm-4">Descripción</dt><dd class="col-sm-8">{{ task.description or '-' }}</dd>
         </dl>
@@ -67,18 +72,30 @@
       <div class="card-body">
         <form method="post" action="{{ url_for('tasks.add_dependency', project_id=project.id, task_id=task.id) }}" class="row g-2">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
           <div class="col-12 col-lg-7">
             <label class="form-label">Predecesora</label>
-            <select name="predecessor_task_id" class="custom-select" required>
-              <option value="">Seleccionar</option>
-              {% for candidate in predecessor_candidates %}
-              <option value="{{ candidate.id }}">#{{ candidate.id }} - {{ candidate.title }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-12 col-lg-5">
-            <label class="form-label">Tipo dependencia</label>
-            <input name="dependency_type" class="form-control" placeholder="FS/SS/FF...">
+            <div class="border rounded p-2 bg-light">
+              <input
+                id="taskDetailPredecessorSearch"
+                type="search"
+                class="form-control form-control-sm mb-2"
+                placeholder="Buscar por ID o título..."
+                autocomplete="off"
+              >
+              <select id="taskDetailPredecessorSelect" name="predecessor_task_id" class="custom-select" required>
+                <option value="">Seleccionar</option>
+                {% for candidate in predecessor_candidates %}
+                <option
+                  value="{{ candidate.id }}"
+                  data-search="{{ ('#' ~ (candidate.project_task_id or candidate.id)|string ~ ' ' ~ (candidate.title or ''))|lower }}"
+                >
+                  #{{ candidate.project_task_id or candidate.id }} - {{ candidate.title }}
+                </option>
+                {% endfor %}
+              </select>
+              <small id="taskDetailPredecessorMeta" class="text-secondary d-block mt-1">Mostrando {{ predecessor_candidates|length }} tareas</small>
+            </div>
           </div>
           <div class="col-12"><button class="btn btn-primary btn-sm btn-action-standard" type="submit">Agregar dependencia</button></div>
         </form>
@@ -93,14 +110,14 @@
           <li class="list-group-item d-flex justify-content-between align-items-center">
             <span>
               {% if dep.predecessor_task_id == task.id %}
-                #{{ dep.successor_task.id }} {{ dep.successor_task.title }} (sucesora)
+                #{{ dep.successor_task.project_task_id or dep.successor_task.id }} {{ dep.successor_task.title }} (sucesora)
               {% else %}
-                #{{ dep.predecessor_task.id }} {{ dep.predecessor_task.title }} (predecesora)
+                #{{ dep.predecessor_task.project_task_id or dep.predecessor_task.id }} {{ dep.predecessor_task.title }} (predecesora)
               {% endif %}
-              <small class="text-secondary">{{ dep.dependency_type or '' }}</small>
             </span>
             <form method="post" action="{{ url_for('tasks.delete_dependency', project_id=project.id, dependency_id=dep.id) }}" onsubmit="return confirm('¿Eliminar dependencia?');">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
               <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-trash"></i></button>
             </form>
           </li>
@@ -118,6 +135,7 @@
       <div class="card-body">
         <form method="post" action="{{ url_for('tasks.add_task_collaborator', project_id=project.id, task_id=task.id) }}" class="row g-2 align-items-end mb-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
           <div class="col-12 col-lg-8">
             <label class="form-label">Recurso</label>
             <select name="resource_id" class="custom-select" required>
@@ -135,6 +153,7 @@
             <span>{{ collaborator.resource.full_name if collaborator.resource else '-' }}</span>
             <form method="post" action="{{ url_for('tasks.delete_task_collaborator', project_id=project.id, assignment_id=collaborator.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
               <button class="btn btn-sm btn-outline-danger" type="submit">Quitar</button>
             </form>
           </li>
@@ -150,6 +169,7 @@
       <div class="card-body">
         <form method="post" class="mb-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
           <label class="form-label">Nuevo comentario</label>
           <textarea name="comment_body" class="form-control" rows="2" placeholder="Agregar comentario"></textarea>
           <button class="btn btn-primary btn-sm mt-2" type="submit">Guardar comentario</button>
@@ -175,6 +195,7 @@
       <div class="card-body">
         <form method="post" enctype="multipart/form-data" class="mb-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
           <label class="form-label">Adjuntar archivo</label>
           <input type="file" name="attachment" class="form-control">
           <button class="btn btn-primary btn-sm mt-2" type="submit">Subir</button>
@@ -196,18 +217,43 @@
 <script>
   (() => {
     const lockCloseStatus = {{ "true" if (task.subtasks and task_has_open_subtasks) else "false" }};
-    if (!lockCloseStatus) return;
     const form = document.getElementById("taskStatusForm");
     const select = document.getElementById("taskDetailStatusSelect");
     const closedStatuses = new Set({{ closed_statuses|tojson }});
-    if (!form || !select) return;
-    form.addEventListener("submit", (event) => {
-      const selected = (select.value || "").trim().toLowerCase();
-      if (closedStatuses.has(selected)) {
-        event.preventDefault();
-        alert("No podés cerrar esta tarea hasta cerrar todas sus subtareas.");
-      }
-    });
+    if (lockCloseStatus && form && select) {
+      form.addEventListener("submit", (event) => {
+        const selected = (select.value || "").trim().toLowerCase();
+        if (closedStatuses.has(selected)) {
+          event.preventDefault();
+          alert("No podés cerrar esta tarea hasta cerrar todas sus subtareas.");
+        }
+      });
+    }
+
+    const predecessorSearch = document.getElementById("taskDetailPredecessorSearch");
+    const predecessorSelect = document.getElementById("taskDetailPredecessorSelect");
+    const predecessorMeta = document.getElementById("taskDetailPredecessorMeta");
+    if (predecessorSearch && predecessorSelect) {
+      const applyFilter = () => {
+        const query = (predecessorSearch.value || "").trim().toLowerCase();
+        let visibleCount = 0;
+        Array.from(predecessorSelect.options).forEach((option, index) => {
+          if (index === 0) {
+            option.hidden = false;
+            return;
+          }
+          const searchable = (option.dataset.search || option.textContent || "").toLowerCase();
+          const visible = !query || searchable.includes(query);
+          option.hidden = !visible;
+          if (visible) visibleCount += 1;
+        });
+        if (predecessorMeta) {
+          predecessorMeta.textContent = `Mostrando ${visibleCount} tareas`;
+        }
+      };
+      predecessorSearch.addEventListener("input", applyFilter);
+      applyFilter();
+    }
   })();
 </script>
 {% endblock %}

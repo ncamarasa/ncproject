@@ -16,21 +16,23 @@ from project_manager.models import (
     CompanyTypeConfig,
     PaymentTypeConfig,
     Project,
+    ProjectCurrencyRateConfig,
     ProjectResource,
     Resource,
     ResourceAvailability,
     ResourceAvailabilityException,
     ResourceRole,
+    Stakeholder,
     SystemCatalogOptionConfig,
     TeamCalendarHolidayConfig,
     Task,
-    TaskDependency,
     TaskResource,
     TeamRole,
 )
 from project_manager.services.default_catalogs import seed_default_catalogs_for_user
 from project_manager.services.team_business_rules import ensure_system_team_roles
 from project_manager.utils.dates import parse_date_input
+from project_manager.utils.numbers import parse_decimal_input
 
 
 CLIENT_CATALOG_FIELDS = {
@@ -41,7 +43,7 @@ CLIENT_CATALOG_FIELDS = {
     "billing_mode": "Modalidad de facturación",
     "document_category": "Categoría de documento",
     "client_status": "Estado de cliente",
-    "segment": "Segmento",
+    "lead_source": "Origen de gestión comercial",
     "commercial_priority": "Prioridad comercial",
     "commercial_status": "Estado comercial",
     "risk_level": "Riesgo",
@@ -52,7 +54,6 @@ CLIENT_CATALOG_FIELDS = {
     "tax_condition": "Condición impositiva",
     "preferred_support_channel": "Canal de soporte preferido",
     "methodology": "Metodología",
-    "timezone": "Zona horaria",
     "language": "Idioma",
 }
 
@@ -66,8 +67,8 @@ PROJECT_CATALOG_FIELDS = {
     "task_types": "Tipos de tarea",
     "task_statuses": "Estados de tarea",
     "task_priorities": "Prioridades de tarea",
-    "task_dependency_types": "Tipos de dependencia",
     "risk_categories": "Categorías de riesgo",
+    "stakeholder_roles": "Roles de stakeholder",
     "project_close_reasons": "Motivos de cierre",
     "project_close_results": "Resultados de cierre",
 }
@@ -82,10 +83,11 @@ PROJECT_CATALOG_DESCRIPTIONS = {
     "task_types": "Administra tipos de tarea para planificación y reporting de trabajo.",
     "task_statuses": "Configura estados de tareas para tableros y seguimiento operativo.",
     "task_priorities": "Define prioridades de tareas para secuenciar ejecución.",
-    "task_dependency_types": "Gestiona tipos de dependencia entre tareas (FS, SS, FF, SF).",
     "risk_categories": "Configura categorías de riesgo para análisis y mitigación.",
+    "stakeholder_roles": "Define roles de stakeholders del proyecto (ej: Sponsor Cliente, Key User).",
     "project_close_reasons": "Define motivos de cierre del proyecto para trazabilidad de gestión.",
     "project_close_results": "Configura resultados de cierre para análisis de performance.",
+    "currency_rates": "Administra cotizaciones de monedas para convertir costos/precios entre divisas.",
 }
 
 SHARED_CLIENT_CATALOG_FIELDS_BY_MODULE = {
@@ -95,7 +97,6 @@ SHARED_CLIENT_CATALOG_FIELDS_BY_MODULE = {
     },
     "team": {
         "currency_code": "Moneda",
-        "timezone": "Zona horaria",
     },
 }
 
@@ -121,8 +122,9 @@ TEAM_CATALOG_DESCRIPTIONS = {
 TEAM_ROLE_CANONICAL_NAMES = {
     "ejecutivo de cuenta": "Ejecutivo comercial",
     "ejecutivo comercial": "Ejecutivo comercial",
-    "gerente de cuenta": "Account manager",
-    "account manager": "Account manager",
+    "gerente de cuenta": "Gerente de cuenta",
+    "account manager": "Gerente de cuenta",
+    "responsable cliente": "Gerente de cuenta",
     "delivery manager": "Responsable delivery",
     "responsable delivery": "Responsable delivery",
     "responsable tecnico": "Responsable delivery",
@@ -212,6 +214,14 @@ def _count_usage(model, column, value: str) -> int:
     ).scalar_one()
 
 
+def _team_role_usage_count(role_id: int) -> int:
+    return int(
+        (db.session.execute(select(func.count()).select_from(ResourceRole).where(ResourceRole.role_id == role_id)).scalar_one() or 0)
+        + (db.session.execute(select(func.count()).select_from(ProjectResource).where(ProjectResource.role_id == role_id)).scalar_one() or 0)
+        + (db.session.execute(select(func.count()).select_from(TaskResource).where(TaskResource.role_id == role_id)).scalar_one() or 0)
+    )
+
+
 def _ensure_team_catalog_defaults() -> None:
     seed_default_catalogs_for_user(g.user.id)
     db.session.commit()
@@ -240,16 +250,15 @@ def _client_catalog_in_use(field_key: str, name: str) -> bool:
         )
     if field_key == "billing_mode":
         return (
-            _count_usage(Client, Client.billing_mode, name) > 0
-            or _count_usage(ClientContract, ClientContract.billing_mode, name) > 0
+            _count_usage(ClientContract, ClientContract.billing_mode, name) > 0
             or _count_usage(Project, Project.billing_mode, name) > 0
         )
     if field_key == "document_category":
         return _count_usage(ClientDocument, ClientDocument.category, name) > 0
     if field_key == "client_status":
         return _count_usage(Client, Client.status, name) > 0
-    if field_key == "segment":
-        return _count_usage(Client, Client.segment, name) > 0
+    if field_key == "lead_source":
+        return _count_usage(Client, Client.lead_source, name) > 0
     if field_key == "commercial_priority":
         return _count_usage(Client, Client.commercial_priority, name) > 0
     if field_key == "commercial_status":
@@ -274,8 +283,6 @@ def _client_catalog_in_use(field_key: str, name: str) -> bool:
         return _count_usage(Client, Client.preferred_support_channel, name) > 0
     if field_key == "methodology":
         return _count_usage(Client, Client.methodology, name) > 0
-    if field_key == "timezone":
-        return _count_usage(Client, Client.timezone, name) > 0
     if field_key == "language":
         return _count_usage(Client, Client.language, name) > 0
     return False
@@ -302,9 +309,37 @@ def _project_catalog_in_use(catalog_key: str, name: str) -> bool:
         return _count_usage(Task, Task.status, name) > 0
     if catalog_key == "task_priorities":
         return _count_usage(Task, Task.priority, name) > 0
-    if catalog_key == "task_dependency_types":
-        return _count_usage(TaskDependency, TaskDependency.dependency_type, name) > 0
+    if catalog_key == "stakeholder_roles":
+        return _count_usage(Stakeholder, Stakeholder.role, name) > 0
     return False
+
+
+def _project_catalog_usage_count(catalog_key: str, name: str) -> int:
+    if not name:
+        return 0
+    if catalog_key == "project_types":
+        return _count_usage(Project, Project.project_type, name)
+    if catalog_key == "project_statuses":
+        return _count_usage(Project, Project.status, name)
+    if catalog_key == "project_priorities":
+        return _count_usage(Project, Project.priority, name)
+    if catalog_key == "project_complexities":
+        return _count_usage(Project, Project.complexity_level, name)
+    if catalog_key == "project_criticalities":
+        return _count_usage(Project, Project.criticality_level, name)
+    if catalog_key == "project_methodologies":
+        return _count_usage(Project, Project.methodology, name)
+    if catalog_key == "project_origins":
+        return _count_usage(Project, Project.project_origin, name)
+    if catalog_key == "task_types":
+        return _count_usage(Task, Task.task_type, name)
+    if catalog_key == "task_statuses":
+        return _count_usage(Task, Task.status, name)
+    if catalog_key == "task_priorities":
+        return _count_usage(Task, Task.priority, name)
+    if catalog_key == "stakeholder_roles":
+        return _count_usage(Stakeholder, Stakeholder.role, name)
+    return 0
 
 
 def _team_catalog_in_use(catalog_key: str, name: str) -> bool:
@@ -338,12 +373,38 @@ def _authorize_settings_module():
     if g.get("user") is None:
         flash("Debes iniciar sesión para continuar.", "warning")
         return redirect(url_for("auth.login"))
+    endpoint = request.endpoint or ""
     is_write = request.method not in {"GET", "HEAD", "OPTIONS"}
-    needed_permission = "settings.edit" if is_write else "settings.view"
     if is_write and g.user.read_only:
         flash("Tu usuario es de solo lectura.", "danger")
         return redirect(url_for("main.home"))
-    if not has_permission(g.user, needed_permission):
+    write_permissions_by_endpoint = {
+        "settings.team_calendars": ["settings.catalogs.manage", "settings.edit"],
+        "settings.delete_team_calendar_holiday": ["settings.catalogs.manage", "settings.edit"],
+        "settings.add_team_calendar_holiday_from_edit": ["settings.catalogs.manage", "settings.edit"],
+        "settings.team_roles": ["settings.catalogs.manage", "settings.edit"],
+        "settings.edit_team_role": ["settings.catalogs.manage", "settings.edit"],
+        "settings.toggle_team_role": ["settings.catalogs.manage", "settings.edit"],
+        "settings.team_catalog": ["settings.catalogs.manage", "settings.edit"],
+        "settings.edit_team_catalog": ["settings.catalogs.manage", "settings.edit"],
+        "settings.delete_team_catalog": ["settings.catalogs.manage", "settings.edit"],
+        "settings.project_catalog": ["settings.catalogs.manage", "settings.edit"],
+        "settings.edit_project_catalog": ["settings.catalogs.manage", "settings.edit"],
+        "settings.delete_project_catalog": ["settings.catalogs.manage", "settings.edit"],
+        "settings.project_currency_rates": ["settings.catalogs.manage", "settings.edit"],
+        "settings.delete_project_currency_rate": ["settings.catalogs.manage", "settings.edit"],
+        "settings.company_types": ["settings.catalogs.manage", "settings.edit"],
+        "settings.delete_company_type": ["settings.catalogs.manage", "settings.edit"],
+        "settings.edit_company_type": ["settings.catalogs.manage", "settings.edit"],
+        "settings.payment_types": ["settings.catalogs.manage", "settings.edit"],
+        "settings.delete_payment_type": ["settings.catalogs.manage", "settings.edit"],
+        "settings.edit_payment_type": ["settings.catalogs.manage", "settings.edit"],
+        "settings.client_catalog": ["settings.catalogs.manage", "settings.edit"],
+        "settings.edit_client_catalog": ["settings.catalogs.manage", "settings.edit"],
+        "settings.delete_client_catalog": ["settings.catalogs.manage", "settings.edit"],
+    }
+    required = write_permissions_by_endpoint.get(endpoint, ["settings.edit"] if is_write else ["settings.view"])
+    if not any(has_permission(g.user, permission_key) for permission_key in required):
         flash("No tienes permisos para configuración.", "danger")
         return redirect(url_for("main.home"))
 
@@ -363,6 +424,134 @@ def projects_settings():
         project_catalog_descriptions=PROJECT_CATALOG_DESCRIPTIONS,
         shared_catalog_fields=SHARED_CLIENT_CATALOG_FIELDS_BY_MODULE.get("projects", {}),
     )
+
+
+def _normalize_currency_code(value: str | None) -> str:
+    return _safe_strip(value).upper()
+
+
+def _ranges_overlap(start_a: date, end_a: date | None, start_b: date, end_b: date | None) -> bool:
+    a_end = end_a or date.max
+    b_end = end_b or date.max
+    return start_a <= b_end and start_b <= a_end
+
+
+@bp.route("/projects/currency-rates", methods=["GET", "POST"])
+@login_required
+def project_currency_rates():
+    edit_id = request.args.get("edit_id")
+    try:
+        edit_id_int = int(edit_id) if edit_id else None
+    except ValueError:
+        edit_id_int = None
+    edit_rate = db.session.get(ProjectCurrencyRateConfig, edit_id_int) if edit_id_int else None
+    if edit_rate and edit_rate.owner_user_id != g.user.id:
+        abort(404)
+
+    if request.method == "POST":
+        errors: list[str] = []
+        rate_id = request.form.get("rate_id")
+        target = db.session.get(ProjectCurrencyRateConfig, int(rate_id)) if rate_id else None
+        if target and target.owner_user_id != g.user.id:
+            abort(404)
+
+        from_currency = _normalize_currency_code(request.form.get("from_currency"))
+        to_currency = _normalize_currency_code(request.form.get("to_currency"))
+        valid_from = _parse_date(request.form.get("valid_from"))
+        valid_to = _parse_date(request.form.get("valid_to"))
+        rate = request.form.get("rate")
+        notes = _safe_strip(request.form.get("notes"))
+
+        rate_value = parse_decimal_input(rate)
+
+        if len(from_currency) < 3 or len(to_currency) < 3:
+            errors.append("Debes informar monedas válidas (ej: USD, ARS).")
+        if from_currency == to_currency and from_currency:
+            errors.append("La moneda origen y destino deben ser diferentes.")
+        if not valid_from:
+            errors.append("La fecha Desde es obligatoria.")
+        if valid_from and valid_to and valid_to < valid_from:
+            errors.append("La fecha Hasta no puede ser menor a Desde.")
+        if rate_value is None or rate_value <= 0:
+            errors.append("La cotización debe ser mayor a 0.")
+
+        if not errors and valid_from:
+            rows = db.session.execute(
+                select(ProjectCurrencyRateConfig).where(
+                    ProjectCurrencyRateConfig.owner_user_id == g.user.id,
+                    ProjectCurrencyRateConfig.from_currency == from_currency,
+                    ProjectCurrencyRateConfig.to_currency == to_currency,
+                    ProjectCurrencyRateConfig.is_active.is_(True),
+                )
+            ).scalars().all()
+            for row in rows:
+                if target and row.id == target.id:
+                    continue
+                if _ranges_overlap(valid_from, valid_to, row.valid_from, row.valid_to):
+                    errors.append("Ya existe una cotización activa superpuesta para ese par de monedas.")
+                    break
+
+        if errors:
+            for err in errors:
+                flash(err, "danger")
+        else:
+            if target:
+                target.from_currency = from_currency
+                target.to_currency = to_currency
+                target.valid_from = valid_from
+                target.valid_to = valid_to
+                target.rate = rate_value
+                target.notes = notes or None
+                target.is_active = True
+                flash("Cotización actualizada.", "success")
+            else:
+                db.session.add(
+                    ProjectCurrencyRateConfig(
+                        owner_user_id=g.user.id,
+                        from_currency=from_currency,
+                        to_currency=to_currency,
+                        valid_from=valid_from,
+                        valid_to=valid_to,
+                        rate=rate_value,
+                        notes=notes or None,
+                        is_active=True,
+                    )
+                )
+                flash("Cotización agregada.", "success")
+            db.session.commit()
+            return redirect(url_for("settings.project_currency_rates"))
+
+    rates = db.session.execute(
+        select(ProjectCurrencyRateConfig)
+        .where(
+            ProjectCurrencyRateConfig.owner_user_id == g.user.id,
+            ProjectCurrencyRateConfig.is_active.is_(True),
+        )
+        .order_by(
+            ProjectCurrencyRateConfig.from_currency.asc(),
+            ProjectCurrencyRateConfig.to_currency.asc(),
+            ProjectCurrencyRateConfig.valid_from.desc(),
+        )
+    ).scalars().all()
+
+    return render_template(
+        "settings/project_currency_rates.html",
+        rates=rates,
+        edit_rate=edit_rate,
+        form_values=request.form if request.method == "POST" else {},
+    )
+
+
+@bp.route("/projects/currency-rates/<int:rate_id>/delete", methods=["POST"])
+@login_required
+def delete_project_currency_rate(rate_id: int):
+    rate = db.session.get(ProjectCurrencyRateConfig, rate_id)
+    if not rate or rate.owner_user_id != g.user.id:
+        abort(404)
+    rate.is_active = False
+    db.session.commit()
+    flash("Cotización eliminada.", "info")
+    return redirect(url_for("settings.project_currency_rates"))
 
 
 @bp.route("/team")
@@ -555,7 +744,8 @@ def team_roles():
         return redirect(url_for("settings.team_roles"))
 
     roles = db.session.execute(select(TeamRole).order_by(TeamRole.name.asc())).scalars().all()
-    return render_template("settings/team_roles.html", roles=roles)
+    role_usage = {role.id: _team_role_usage_count(role.id) for role in roles}
+    return render_template("settings/team_roles.html", roles=roles, role_usage=role_usage)
 
 
 @bp.route("/team/roles/<int:role_id>/edit", methods=["GET", "POST"])
@@ -607,13 +797,9 @@ def toggle_team_role(role_id: int):
         if not role.is_deletable:
             flash("No se puede desactivar: el rol es de sistema.", "danger")
             return redirect(url_for("settings.team_roles"))
-        in_use = (
-            db.session.execute(select(func.count()).select_from(ResourceRole).where(ResourceRole.role_id == role.id)).scalar_one()
-            + db.session.execute(select(func.count()).select_from(ProjectResource).where(ProjectResource.role_id == role.id)).scalar_one()
-            + db.session.execute(select(func.count()).select_from(TaskResource).where(TaskResource.role_id == role.id)).scalar_one()
-        ) > 0
-        if in_use:
-            flash("No se puede desactivar: el rol está siendo utilizado.", "danger")
+        usage_count = _team_role_usage_count(role.id)
+        if usage_count > 0:
+            flash(f"No se puede desactivar: el rol está siendo utilizado ({usage_count} referencia/s).", "danger")
             return redirect(url_for("settings.team_roles"))
     role.is_active = not role.is_active
     db.session.commit()
@@ -788,6 +974,8 @@ def project_catalog(catalog_key: str):
     catalog_label = PROJECT_CATALOG_FIELDS.get(catalog_key)
     if not catalog_label:
         abort(404)
+    seed_default_catalogs_for_user(g.user.id)
+    db.session.commit()
 
     if request.method == "POST":
         name = _safe_strip(request.form.get("name"))
@@ -827,13 +1015,15 @@ def project_catalog(catalog_key: str):
             SystemCatalogOptionConfig.catalog_key == catalog_key,
             SystemCatalogOptionConfig.is_active.is_(True),
         )
-        .order_by(SystemCatalogOptionConfig.name.asc())
-    ).scalars()
+        .order_by(SystemCatalogOptionConfig.is_system.asc(), SystemCatalogOptionConfig.name.asc())
+    ).scalars().all()
+    usage_counts = {item.id: _project_catalog_usage_count(catalog_key, item.name) for item in items}
     return render_template(
         "settings/project_catalog.html",
         items=items,
         catalog_key=catalog_key,
         catalog_label=catalog_label,
+        usage_counts=usage_counts,
     )
 
 

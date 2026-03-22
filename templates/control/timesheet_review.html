@@ -1,0 +1,105 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Revisión Timesheet | NCProject{% endblock %}
+{% block page_title %}Revisión de Timesheet{% endblock %}
+{% block page_subtitle %}Validación de horas antes de aprobar{% endblock %}
+{% block page_actions %}
+<a href="{{ url_for('control.timesheets') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver a aprobaciones</a>
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="card border-0 metric-card mb-3">
+  <div class="card-body py-2">
+    <div class="row g-2">
+      <div class="col-12 col-md-3"><strong>Recurso:</strong> {{ header.resource.full_name if header.resource else '-' }}</div>
+      <div class="col-12 col-md-3"><strong>Semana:</strong> {{ header.week_start }} a {{ header.week_end }}</div>
+      <div class="col-12 col-md-2"><strong>Estado:</strong> {{ header.status }}</div>
+      <div class="col-12 col-md-2"><strong>Total horas:</strong> {{ total_hours }}</div>
+      <div class="col-12 col-md-2"><strong>Enviado:</strong> {{ header.submitted_at or '-' }}</div>
+      <div class="col-12 col-md-3"><strong>Capacidad:</strong> {{ summary.capacity_hours }} hs</div>
+      <div class="col-12 col-md-3"><strong>Pendientes:</strong> {{ summary.remaining_hours }} hs</div>
+      <div class="col-12 col-md-3">
+        <strong>Extra:</strong>
+        {% if summary.overage_hours > 0 %}
+        <span class="badge badge-danger">{{ summary.overage_hours }} hs</span>
+        {% else %}
+        0 hs
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 metric-card mb-3">
+  <div class="card-header"><strong>Detalle de carga</strong></div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Proyecto</th>
+            <th>Tarea</th>
+            <th style="width: 140px;">Horas</th>
+            <th style="width: 140px;">Avance %</th>
+            <th>Nota</th>
+            <th class="text-end">Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in lines %}
+          <tr>
+            <td>{{ line.work_date }}</td>
+            <td>{{ line.task.project.name if line.task and line.task.project else '-' }}</td>
+            <td>#{{ line.task.project_task_id if line.task else '-' }} - {{ line.task.title if line.task else '-' }}</td>
+            <td>
+              <form method="post" class="d-flex align-items-center gap-2 justify-content-end">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="update_line">
+                <input type="hidden" name="line_id" value="{{ line.id }}">
+                <input type="text" inputmode="decimal" name="hours" class="form-control form-control-sm" value="{{ line.hours|decimal_input(2) }}" {% if header.status == 'approved' %}disabled{% endif %}>
+            </td>
+            <td>
+                <input type="number" name="progress_percent_after" min="0" max="100" step="1" class="form-control form-control-sm" value="{{ line.progress_percent_after if line.progress_percent_after is not none else '' }}" {% if header.status == 'approved' %}disabled{% endif %}>
+            </td>
+            <td>
+                <input type="text" name="note" class="form-control form-control-sm" value="{{ line.note or '' }}" {% if header.status == 'approved' %}disabled{% endif %}>
+            </td>
+            <td class="text-end">
+                {% if header.status != 'approved' %}
+                <button type="submit" class="btn btn-sm btn-outline-primary">Guardar</button>
+                {% else %}
+                -
+                {% endif %}
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-center text-secondary py-3">Sin líneas de timesheet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>Aprobación</strong></div>
+  <div class="card-body">
+    {% if header.status != 'approved' %}
+    <form method="post" class="d-inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="approve">
+      <button type="submit" class="btn btn-success btn-sm btn-action-standard">Aprobar timesheet</button>
+    </form>
+    <form method="post" class="d-inline ml-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="reject">
+      <input type="text" name="comment" class="form-control d-inline-block" style="width: 320px;" placeholder="Motivo de rechazo (obligatorio)">
+      <button type="submit" class="btn btn-outline-danger btn-sm btn-action-standard ml-1">Rechazar</button>
+    </form>
+    {% else %}
+    <span class="text-secondary">Este timesheet ya está aprobado.</span>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

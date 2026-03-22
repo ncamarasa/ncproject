@@ -70,12 +70,12 @@
       <div class="card-body">
         <dl class="row mb-0">
           <dt class="col-sm-5">Origen</dt><dd class="col-sm-7">{{ client.lead_source or '-' }}</dd>
-          <dt class="col-sm-5">Segmento</dt><dd class="col-sm-7">{{ client.segment or '-' }}</dd>
+          <dt class="col-sm-5">Tamaño</dt><dd class="col-sm-7">{{ client.company_size or '-' }}</dd>
           <dt class="col-sm-5">Prioridad</dt><dd class="col-sm-7">{{ client.commercial_priority or '-' }}</dd>
-          <dt class="col-sm-5">Ejecutivo</dt><dd class="col-sm-7">{{ client.sales_executive or '-' }}</dd>
-          <dt class="col-sm-5">Account manager</dt><dd class="col-sm-7">{{ client.account_manager or '-' }}</dd>
+          <dt class="col-sm-5">Ejecutivo comercial</dt><dd class="col-sm-7">{{ client.sales_executive or '-' }}</dd>
+          <dt class="col-sm-5">Gerente de cuenta</dt><dd class="col-sm-7">{{ client.account_manager or '-' }}</dd>
           <dt class="col-sm-5">Estado comercial</dt><dd class="col-sm-7">{{ client.commercial_status or '-' }}</dd>
-          <dt class="col-sm-5">Potencial</dt><dd class="col-sm-7">{{ client.billing_potential or '-' }}</dd>
+          <dt class="col-sm-5">Potencial</dt><dd class="col-sm-7">{{ client.billing_potential|money(client.currency_code) if client.billing_potential is not none else '-' }}</dd>
           <dt class="col-sm-5">Health score</dt><dd class="col-sm-7">{{ client.health_score if client.health_score is not none else '-' }}</dd>
           <dt class="col-sm-5">Última interacción</dt><dd class="col-sm-7">{{ client.last_interaction_at or '-' }}</dd>
           <dt class="col-sm-5">Próxima acción</dt><dd class="col-sm-7">{{ client.next_action_at or '-' }}</dd>
@@ -95,7 +95,7 @@
           <dt class="col-sm-5">Condición pago</dt><dd class="col-sm-7">{{ client.payment_terms or '-' }}</dd>
           <dt class="col-sm-5">OC requerida</dt><dd class="col-sm-7">{{ 'Sí' if client.purchase_order_required else 'No' }}</dd>
           <dt class="col-sm-5">Tarifas</dt><dd class="col-sm-7">{{ client.rate_card or '-' }}</dd>
-          <dt class="col-sm-5">Límite crédito</dt><dd class="col-sm-7">{{ client.credit_limit or '-' }}</dd>
+          <dt class="col-sm-5">Límite crédito</dt><dd class="col-sm-7">{{ client.credit_limit|money(client.currency_code) if client.credit_limit is not none else '-' }}</dd>
         </dl>
       </div>
     </div>
@@ -109,14 +109,9 @@
           <dt class="col-sm-5">Metodología</dt><dd class="col-sm-7">{{ client.methodology or '-' }}</dd>
           <dt class="col-sm-5">Canal soporte</dt><dd class="col-sm-7">{{ client.preferred_support_channel or '-' }}</dd>
           <dt class="col-sm-5">Horario</dt><dd class="col-sm-7">{{ client.support_hours or '-' }}</dd>
-          <dt class="col-sm-5">Zona horaria</dt><dd class="col-sm-7">{{ client.timezone or '-' }}</dd>
           <dt class="col-sm-5">Idioma</dt><dd class="col-sm-7">{{ client.language or '-' }}</dd>
           <dt class="col-sm-5">Delivery manager</dt><dd class="col-sm-7">{{ client.delivery_manager or '-' }}</dd>
           <dt class="col-sm-5">Criticidad</dt><dd class="col-sm-7">{{ client.criticality_level or '-' }}</dd>
-          <dt class="col-sm-5">Tipo servicio</dt><dd class="col-sm-7">{{ client.service_type or '-' }}</dd>
-          <dt class="col-sm-5">Modalidad facturación</dt><dd class="col-sm-7">{{ client.billing_mode or '-' }}</dd>
-          <dt class="col-sm-5">Tarifa default</dt><dd class="col-sm-7">{{ client.default_rate or '-' }}</dd>
-          <dt class="col-sm-5">Horas contratadas</dt><dd class="col-sm-7">{{ client.contracted_hours or '-' }}</dd>
         </dl>
       </div>
     </div>
@@ -175,6 +170,7 @@
             <div>
               <strong>{{ item.contract_type }}</strong> {{ item.contract_code and ('(' ~ item.contract_code ~ ')') or '' }}
               <div class="small text-secondary">{{ item.status or '-' }} | Inicio: {{ item.start_date or '-' }} | Fin: {{ item.end_date or '-' }} | Renovación: {{ item.renewal_date or '-' }}</div>
+              <div class="small text-secondary">Servicio: {{ item.service_type or '-' }} | Modalidad: {{ item.billing_mode or '-' }} | Tarifa: {{ item.default_rate|money(item.currency_code) if item.default_rate is not none else '-' }} | Horas: {{ item.contracted_hours|number(2) if item.contracted_hours is not none else '-' }}</div>
               {% if item.attachment_file_name %}
               <a class="small" href="{{ url_for('clients.download_contract_attachment', client_id=client.id, contract_id=item.id) }}">Descargar adjunto</a>
               {% endif %}

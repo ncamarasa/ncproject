@@ -15,7 +15,6 @@ class Resource(TimestampMixin, db.Model):
     area = db.Column(db.String(120), nullable=True)
     resource_type = db.Column(db.String(20), nullable=False, default="internal")
     calendar_name = db.Column(db.String(120), nullable=True)
-    timezone = db.Column(db.String(60), nullable=True)
     vendor_name = db.Column(db.String(180), nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 

@@ -5,6 +5,13 @@ from project_manager.models.client import (
     ClientDocument,
     ClientInteraction,
 )
+from project_manager.models.control import (
+    ProjectBaseline,
+    ProjectHealthSnapshot,
+    TimesheetHeader,
+    TimesheetLine,
+    TimesheetPeriod,
+)
 from project_manager.models.project import (
     Project,
     Stakeholder,
@@ -13,11 +20,13 @@ from project_manager.models.project import (
     TaskAttachment,
     TaskComment,
     TaskDependency,
+    TaskWorklog,
 )
 from project_manager.models.settings import (
     ClientCatalogOptionConfig,
     CompanyTypeConfig,
     PaymentTypeConfig,
+    ProjectCurrencyRateConfig,
     SystemCatalogOptionConfig,
     TeamCalendarHolidayConfig,
 )
@@ -56,9 +65,11 @@ __all__ = [
     "TaskDependency",
     "TaskComment",
     "TaskAttachment",
+    "TaskWorklog",
     "ClientCatalogOptionConfig",
     "CompanyTypeConfig",
     "PaymentTypeConfig",
+    "ProjectCurrencyRateConfig",
     "SystemCatalogOptionConfig",
     "TeamCalendarHolidayConfig",
     "Resource",
@@ -78,4 +89,9 @@ __all__ = [
     "AccessAuditLog",
     "AuditTrailLog",
     "User",
+    "ProjectBaseline",
+    "ProjectHealthSnapshot",
+    "TimesheetHeader",
+    "TimesheetLine",
+    "TimesheetPeriod",
 ]

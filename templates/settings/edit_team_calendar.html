@@ -41,7 +41,9 @@
             <td class="text-end">
               <form method="post" class="d-inline" action="{{ url_for('settings.delete_team_calendar_holiday', item_id=holiday.id, calendar_item_id=item.id) }}" onsubmit="return confirm('¿Eliminar día no laborable?');">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar</button>
+                <button class="btn btn-sm btn-outline-danger btn-action-icon" type="submit" title="Eliminar" aria-label="Eliminar">
+                  <i class="fas fa-trash"></i>
+                </button>
               </form>
             </td>
           </tr>

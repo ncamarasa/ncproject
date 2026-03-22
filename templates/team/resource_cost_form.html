@@ -16,7 +16,7 @@
     </div>
     {% endif %}
     {% set selected_type = form_values.get('cost_type', 'hourly' if cost.hourly_cost is not none else 'monthly') %}
-    {% set selected_amount = form_values.get('cost_amount', cost.hourly_cost if cost.hourly_cost is not none else cost.monthly_cost) %}
+    {% set selected_amount = form_values.get('cost_amount', cost.hourly_cost|decimal_input(2) if cost.hourly_cost is not none else cost.monthly_cost|decimal_input(2)) %}
     {% set selected_currency = form_values.get('currency', cost.currency) %}
     <form method="post" action="{{ url_for('team.edit_cost', cost_id=cost.id) }}" class="row g-2 align-items-end">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -30,7 +30,7 @@
           <option value="monthly" {% if selected_type == 'monthly' %}selected{% endif %}>Por mes</option>
         </select>
       </div>
-      <div class="col-12 col-md-2"><label class="form-label">Costo *</label><input type="number" min="0" step="0.01" name="cost_amount" class="form-control" required value="{{ selected_amount }}"></div>
+      <div class="col-12 col-md-2"><label class="form-label">Costo *</label><input type="text" inputmode="decimal" name="cost_amount" class="form-control" required value="{{ selected_amount }}"></div>
       <div class="col-12 col-md-2">
         <label class="form-label">Moneda *</label>
         <select name="currency" class="custom-select" required>

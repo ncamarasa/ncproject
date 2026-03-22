@@ -32,6 +32,7 @@
           {% endfor %}
         </select>
       </div>
+      <div class="col-12 col-md-3"><label class="form-label">Tipo de servicio</label><input name="service_type" class="form-control" value="{{ form_values.get('service_type', edit_contract.service_type if edit_contract else '') }}"></div>
       <div class="col-12 col-md-3">
         <label class="form-label">Moneda</label>
         {% set current = form_values.get('currency_code', edit_contract.currency_code if edit_contract else '') %}
@@ -42,7 +43,9 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-12 col-md-3"><label class="form-label">Monto</label><input name="amount" class="form-control" value="{{ form_values.get('amount', edit_contract.amount if edit_contract and edit_contract.amount is not none else '') }}"></div>
+      <div class="col-12 col-md-3"><label class="form-label">Monto</label><input name="amount" inputmode="decimal" class="form-control" value="{{ form_values.get('amount', edit_contract.amount|decimal_input(2) if edit_contract and edit_contract.amount is not none else '') }}"></div>
+      <div class="col-12 col-md-3"><label class="form-label">Tarifa por defecto</label><input name="default_rate" inputmode="decimal" class="form-control" value="{{ form_values.get('default_rate', edit_contract.default_rate|decimal_input(2) if edit_contract and edit_contract.default_rate is not none else '') }}"></div>
+      <div class="col-12 col-md-3"><label class="form-label">Horas contratadas</label><input name="contracted_hours" inputmode="decimal" class="form-control" value="{{ form_values.get('contracted_hours', edit_contract.contracted_hours|decimal_input(2) if edit_contract and edit_contract.contracted_hours is not none else '') }}"></div>
       <div class="col-12 col-md-6"><label class="form-label">Adjunto</label><input type="file" name="attachment" class="form-control">{% if edit_contract and edit_contract.attachment_file_name %}<small class="text-secondary">Actual: <a href="{{ url_for('clients.download_contract_attachment', client_id=client.id, contract_id=edit_contract.id) }}">{{ edit_contract.attachment_original_name or edit_contract.attachment_file_name }}</a></small>{% endif %}</div>
       {% set nda = form_values.get('nda_signed', '1' if edit_contract and edit_contract.nda_signed else '0') %}
       {% set dpa = form_values.get('data_processing_agreement', '1' if edit_contract and edit_contract.data_processing_agreement else '0') %}
@@ -64,7 +67,8 @@
       <li class="list-group-item d-flex justify-content-between align-items-start">
         <div>
           <strong>{{ item.contract_type }}</strong> {{ item.contract_code and ('(' ~ item.contract_code ~ ')') or '' }} {{ item.contract_name and ('- ' ~ item.contract_name) or '' }}
-          <div class="small text-secondary">Estado: {{ item.status or '-' }} | Inicio: {{ item.start_date or '-' }} | Fin: {{ item.end_date or '-' }} | Renovación: {{ item.renewal_date or '-' }} | {{ item.currency_code or '' }} {{ item.amount or '' }}</div>
+          <div class="small text-secondary">Estado: {{ item.status or '-' }} | Inicio: {{ item.start_date or '-' }} | Fin: {{ item.end_date or '-' }} | Renovación: {{ item.renewal_date or '-' }} | {{ item.amount|money(item.currency_code) if item.amount is not none else '-' }}</div>
+          <div class="small text-secondary">Servicio: {{ item.service_type or '-' }} | Modalidad: {{ item.billing_mode or '-' }} | Tarifa: {{ item.default_rate|money(item.currency_code) if item.default_rate is not none else '-' }} | Horas: {{ item.contracted_hours|number(2) if item.contracted_hours is not none else '-' }}</div>
           {% if item.attachment_file_name %}<a class="small" href="{{ url_for('clients.download_contract_attachment', client_id=client.id, contract_id=item.id) }}">Descargar adjunto</a>{% endif %}
         </div>
         <div>

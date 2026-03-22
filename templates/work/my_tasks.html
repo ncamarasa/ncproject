@@ -1,0 +1,334 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Mi Trabajo | NCProject{% endblock %}
+{% block page_title %}Mi Trabajo{% endblock %}
+{% block page_subtitle %}Registro operativo de horas y avance por tarea{% endblock %}
+
+{% block dashboard_content %}
+<div class="card border-0 metric-card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Contexto de carga</strong>
+    {% if is_admin %}
+    <form method="get" class="form-inline d-flex align-items-center gap-2">
+      <label class="mr-2 mb-0">Usuario</label>
+      <select name="user_id" class="custom-select custom-select-sm mr-2">
+        {% for user in users %}
+        <option value="{{ user.id }}" {% if selected_user and user.id == selected_user.id %}selected{% endif %}>
+          {{ user.username }}{% if user.first_name or user.last_name %} - {{ user.display_name }}{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+      <select name="priority" class="custom-select custom-select-sm mr-2">
+        <option value="" {% if not selected_priority_filter %}selected{% endif %}>Todas las prioridades</option>
+        <option value="critica" {% if selected_priority_filter == 'critica' %}selected{% endif %}>Crítica</option>
+        <option value="alta" {% if selected_priority_filter == 'alta' %}selected{% endif %}>Alta</option>
+        <option value="media" {% if selected_priority_filter == 'media' %}selected{% endif %}>Media</option>
+        <option value="baja" {% if selected_priority_filter == 'baja' %}selected{% endif %}>Baja</option>
+      </select>
+      <label class="mb-0 small text-secondary d-flex align-items-center gap-1 mr-2">
+        <input type="checkbox" name="hide_no_due" value="1" {% if hide_no_due %}checked{% endif %}>
+        Ocultar sin fecha
+      </label>
+      <button type="submit" class="btn btn-sm btn-outline-primary btn-action-standard">Aplicar</button>
+    </form>
+    {% else %}
+    <form method="get" class="form-inline d-flex align-items-center gap-2">
+      <span class="text-secondary small mr-2">Mis tareas ({{ selected_user.display_name if selected_user else current_user.display_name }})</span>
+      <select name="priority" class="custom-select custom-select-sm mr-2">
+        <option value="" {% if not selected_priority_filter %}selected{% endif %}>Todas las prioridades</option>
+        <option value="critica" {% if selected_priority_filter == 'critica' %}selected{% endif %}>Crítica</option>
+        <option value="alta" {% if selected_priority_filter == 'alta' %}selected{% endif %}>Alta</option>
+        <option value="media" {% if selected_priority_filter == 'media' %}selected{% endif %}>Media</option>
+        <option value="baja" {% if selected_priority_filter == 'baja' %}selected{% endif %}>Baja</option>
+      </select>
+      <label class="mb-0 small text-secondary d-flex align-items-center gap-1 mr-2">
+        <input type="checkbox" name="hide_no_due" value="1" {% if hide_no_due %}checked{% endif %}>
+        Ocultar sin fecha
+      </label>
+      <button type="submit" class="btn btn-sm btn-outline-primary btn-action-standard">Aplicar</button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="card-body py-2">
+    {% if selected_resource %}
+    <small class="text-secondary">
+      Recurso asociado: <strong>{{ selected_resource.full_name }}</strong>
+      {% if selected_resource.email %}({{ selected_resource.email }}){% endif %}
+    </small>
+    <div class="mt-2 d-flex align-items-center gap-2 flex-wrap">
+      <small class="text-secondary">Semana: <strong>{{ week_start }} a {{ week_end }}</strong></small>
+      {% if week_capacity %}
+      <small class="text-secondary">Disponibles: <strong>{{ week_capacity.capacity_hours|number(2) }}</strong> hs</small>
+      <small class="text-secondary">Cargadas: <strong>{{ week_logged|number(2) }}</strong> hs</small>
+      <small class="text-secondary">Pendientes: <strong>{{ week_remaining|number(2) }}</strong> hs</small>
+      {% if week_overage > 0 %}
+      <span class="badge badge-danger">Extra: {{ week_overage|number(2) }} hs</span>
+      {% endif %}
+      {% endif %}
+      <span class="badge badge-{% if week_status == 'approved' %}success{% elif week_status == 'submitted' %}warning{% elif week_status == 'rejected' %}danger{% else %}secondary{% endif %}">
+        {{ week_status or 'draft' }}
+      </span>
+      <form method="post" class="d-inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if is_admin and selected_user %}<input type="hidden" name="user_id" value="{{ selected_user.id }}">{% endif %}
+        <input type="hidden" name="action" value="submit_week">
+        <input type="hidden" name="work_date" value="{{ default_work_date.isoformat() }}">
+        <button
+          type="submit"
+          class="btn btn-sm {% if week_status in ['approved', 'submitted'] %}btn-outline-secondary{% else %}btn-outline-primary{% endif %} btn-action-standard"
+          {% if week_status in ['approved', 'submitted'] %}disabled{% endif %}
+        >
+          {% if week_status == 'rejected' %}
+          Reenviar semana
+          {% elif week_status == 'submitted' %}
+          Semana enviada
+          {% elif week_status == 'approved' %}
+          Semana aprobada
+          {% else %}
+          Enviar semana
+          {% endif %}
+        </button>
+      </form>
+    </div>
+    {% else %}
+    <div class="text-danger small">
+      El usuario seleccionado no tiene recurso activo asociado por email. No se pueden mostrar tareas ni registrar horas.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row mb-3">
+  <div class="col-6 col-md-2 mb-2">
+    <div class="small-box bg-danger mb-0">
+      <div class="inner">
+        <h4>{{ priority_counts.critica if priority_counts else 0 }}</h4>
+        <p>Críticas</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2 mb-2">
+    <div class="small-box bg-warning mb-0">
+      <div class="inner">
+        <h4>{{ priority_counts.alta if priority_counts else 0 }}</h4>
+        <p>Altas</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2 mb-2">
+    <div class="small-box bg-info mb-0">
+      <div class="inner">
+        <h4>{{ priority_counts.media if priority_counts else 0 }}</h4>
+        <p>Medias</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2 mb-2">
+    <div class="small-box bg-secondary mb-0">
+      <div class="inner">
+        <h4>{{ priority_counts.baja if priority_counts else 0 }}</h4>
+        <p>Bajas</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2 mb-2">
+    <div class="small-box bg-light mb-0">
+      <div class="inner">
+        <h4>{{ priority_counts.sin_fecha if priority_counts else 0 }}</h4>
+        <p>Sin fecha</p>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2 mb-2">
+    <div class="small-box bg-primary mb-0">
+      <div class="inner">
+        <h4>{{ priority_counts.total if priority_counts else 0 }}</h4>
+        <p>Total</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 metric-card mb-3">
+  <div class="card-header"><strong>Tareas asignadas</strong></div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Proyecto</th>
+            <th>Tarea</th>
+            <th>Estado</th>
+            <th>Vence</th>
+            <th>Estimadas</th>
+            <th>Imputadas</th>
+            <th>Avance</th>
+            <th>Pendientes</th>
+            <th>Prioridad</th>
+            <th style="min-width: 360px;">Registrar trabajo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for task in tasks %}
+          {% set meta = task_meta_by_id.get(task.id, {}) %}
+          <tr>
+            <td>{{ task.project.name if task.project else '-' }}</td>
+            <td>
+              <a href="{{ url_for('tasks.task_detail', project_id=task.project_id, task_id=task.id, next=request.full_path.rstrip('?')) }}">
+                #{{ task.project_task_id or task.id }} - {{ task.title }}
+              </a>
+            </td>
+            <td>{{ task.status or '-' }}</td>
+            <td>{{ task.due_date or '-' }}</td>
+            <td>{{ task.estimated_hours|number(2) if task.estimated_hours is not none else '-' }}</td>
+            <td>{{ task.logged_hours|number(2) if task.logged_hours is not none else '0,00' }}</td>
+            <td>{{ task.progress_percent or 0 }}%</td>
+            <td>{% if meta.pending_hours is not none %}{{ meta.pending_hours|number(2) }}{% else %}-{% endif %}</td>
+            <td>
+              {% if meta.priority_label == 'Crítica' %}
+              <span class="badge badge-danger">Crítica</span>
+              {% elif meta.priority_label == 'Alta' %}
+              <span class="badge badge-warning">Alta</span>
+              {% elif meta.priority_label == 'Media' %}
+              <span class="badge badge-info">Media</span>
+              {% elif meta.priority_label == 'Baja' %}
+              <span class="badge badge-secondary">Baja</span>
+              {% else %}
+              <span class="badge badge-light">Sin fecha</span>
+              {% endif %}
+              {% if meta.slack_days is not none %}
+              <div class="small text-secondary mt-1">Holgura: {{ meta.slack_days }} d</div>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" class="form-inline d-flex align-items-center gap-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="log">
+                {% if is_admin and selected_user %}
+                <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+                {% endif %}
+                <input type="hidden" name="task_id" value="{{ task.id }}">
+                <input type="date" name="work_date" value="{{ default_work_date.isoformat() }}" class="form-control form-control-sm" required>
+                <input type="text" inputmode="decimal" name="hours" class="form-control form-control-sm" placeholder="hs" required>
+                <input type="text" name="note" class="form-control form-control-sm" placeholder="Comentario (opcional)">
+                <label class="mb-0 small text-secondary d-flex align-items-center gap-1">
+                  <input type="checkbox" name="allow_overage" value="1">
+                  Permitir horas extra
+                </label>
+                <button type="submit" class="btn btn-sm btn-primary btn-action-standard">Guardar</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="10" class="text-center text-secondary py-3">No hay tareas asignadas para mostrar.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if edit_log %}
+<div class="card border-0 metric-card mb-3 form-mode-card form-mode-edit">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Editar registro de trabajo</strong>
+    <span class="badge form-mode-badge">Modo edición</span>
+  </div>
+  <div class="card-body">
+    <form method="post" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="update_log">
+      <input type="hidden" name="log_id" value="{{ edit_log.id }}">
+      {% if is_admin and selected_user %}
+      <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+      {% endif %}
+      <div class="col-12 col-md-4">
+        <label class="form-label">Tarea</label>
+        <input class="form-control" value="#{{ edit_log.task.project_task_id if edit_log.task else '-' }} - {{ edit_log.task.title if edit_log.task else '-' }}" readonly>
+      </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Fecha</label>
+        <input class="form-control" value="{{ edit_log.work_date }}" readonly>
+      </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Horas</label>
+        <input type="text" inputmode="decimal" name="hours" class="form-control" required value="{{ edit_log.hours|decimal_input(2) }}">
+      </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Nota</label>
+        <input type="text" name="note" class="form-control" value="{{ edit_log.note or '' }}">
+      </div>
+      <div class="col-12">
+        <label class="mb-0 small text-secondary d-flex align-items-center gap-1">
+          <input type="checkbox" name="allow_overage" value="1">
+          Permitir horas extra
+        </label>
+      </div>
+      <div class="col-12 d-flex gap-2 mt-2">
+        <button type="submit" class="btn btn-primary btn-sm btn-action-standard">Guardar cambios</button>
+        <a href="{{ url_for('work.my_tasks', user_id=selected_user.id if is_admin and selected_user else None, work_date=default_work_date.isoformat()) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>Últimos registros</strong></div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Proyecto</th>
+            <th>Tarea</th>
+            <th>Horas</th>
+            <th>Avance actual tarea</th>
+            <th>Nota</th>
+            <th>Registrado por</th>
+            <th class="text-end">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in recent_logs %}
+          <tr>
+            <td>{{ log.work_date }}</td>
+            <td>{{ log.task.project.name if log.task and log.task.project else '-' }}</td>
+            <td>#{{ log.task.project_task_id if log.task else '-' }} - {{ log.task.title if log.task else '-' }}</td>
+            <td>{{ log.hours|number(2) }}</td>
+            <td>{{ log.task.progress_percent if log.task and log.task.progress_percent is not none else 0 }}%</td>
+            <td>{{ log.note or '-' }}</td>
+            <td>{{ log.user.display_name if log.user else '-' }}</td>
+            <td class="text-end">
+              <a
+                class="btn btn-sm btn-outline-secondary btn-action-icon"
+                href="{{ url_for('work.my_tasks', user_id=selected_user.id if is_admin and selected_user else None, work_date=default_work_date.isoformat(), edit_log_id=log.id) }}"
+                title="Editar"
+                aria-label="Editar"
+              ><i class="fas fa-pen"></i></a>
+              <form method="post" class="d-inline" onsubmit="return confirm('¿Eliminar registro?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="delete_log">
+                <input type="hidden" name="log_id" value="{{ log.id }}">
+                {% if is_admin and selected_user %}
+                <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+                {% endif %}
+                <button type="submit" class="btn btn-sm btn-outline-danger btn-action-icon" title="Eliminar" aria-label="Eliminar">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="8" class="text-center text-secondary py-3">Sin registros de trabajo.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

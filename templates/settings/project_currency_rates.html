@@ -1,0 +1,82 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Cotizaciones de monedas | NCProject{% endblock %}
+{% block page_title %}Configuración / Cotizaciones de monedas{% endblock %}
+{% block page_subtitle %}ABM de tipo de cambio para conversión de costos y precios{% endblock %}
+{% block page_actions %}
+<a href="{{ url_for('settings.projects_settings') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
+{% endblock %}
+
+{% block dashboard_content %}
+{% set is_edit = edit_rate is not none %}
+<div class="card border-0 metric-card mb-3 form-mode-card form-mode-{{ 'edit' if is_edit else 'create' }}">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>{{ 'Editar cotización' if is_edit else 'Nueva cotización' }}</strong>
+    <span class="badge form-mode-badge">{{ 'Modo edición' if is_edit else 'Modo alta' }}</span>
+  </div>
+  <div class="card-body">
+    <form method="post" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if is_edit %}<input type="hidden" name="rate_id" value="{{ edit_rate.id }}">{% endif %}
+      <div class="col-12 col-md-2">
+        <label class="form-label">Moneda origen *</label>
+        <input name="from_currency" class="form-control" maxlength="10" required value="{{ form_values.get('from_currency', edit_rate.from_currency if is_edit else 'ARS') }}">
+      </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Moneda destino *</label>
+        <input name="to_currency" class="form-control" maxlength="10" required value="{{ form_values.get('to_currency', edit_rate.to_currency if is_edit else 'USD') }}">
+      </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Válida desde *</label>
+        <input type="date" name="valid_from" class="form-control" required value="{{ form_values.get('valid_from', edit_rate.valid_from if is_edit else '') }}">
+      </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Válida hasta</label>
+        <input type="date" name="valid_to" class="form-control" value="{{ form_values.get('valid_to', edit_rate.valid_to if is_edit else '') }}">
+      </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Cotización *</label>
+        <input type="text" inputmode="decimal" name="rate" class="form-control" required value="{{ form_values.get('rate', edit_rate.rate|decimal_input(6) if is_edit else '') }}">
+      </div>
+      <div class="col-12 col-md-2 d-flex gap-2">
+        <button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar' if is_edit else 'Agregar' }}</button>
+        {% if is_edit %}<a href="{{ url_for('settings.project_currency_rates') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar</a>{% endif %}
+      </div>
+      <div class="col-12">
+        <label class="form-label">Notas</label>
+        <input name="notes" class="form-control" value="{{ form_values.get('notes', edit_rate.notes if is_edit else '') }}">
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>Cotizaciones activas</strong></div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead><tr><th>Par</th><th>Desde</th><th>Hasta</th><th>Cotización</th><th>Notas</th><th class="text-end">Acciones</th></tr></thead>
+        <tbody>
+          {% for item in rates %}
+          <tr>
+            <td>{{ item.from_currency }} -> {{ item.to_currency }}</td>
+            <td>{{ item.valid_from }}</td>
+            <td>{{ item.valid_to or 'actual' }}</td>
+            <td>{{ item.rate|number(6) }}</td>
+            <td>{{ item.notes or '-' }}</td>
+            <td class="text-end">
+              <a href="{{ url_for('settings.project_currency_rates', edit_id=item.id) }}" class="btn btn-sm btn-outline-secondary btn-action-icon mr-1" title="Editar"><i class="fas fa-pen"></i></a>
+              <form method="post" class="d-inline" action="{{ url_for('settings.delete_project_currency_rate', rate_id=item.id) }}" onsubmit="return confirm('¿Eliminar cotización?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-outline-danger btn-action-icon" type="submit" title="Eliminar"><i class="fas fa-trash"></i></button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center text-secondary py-3">Sin cotizaciones configuradas.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
