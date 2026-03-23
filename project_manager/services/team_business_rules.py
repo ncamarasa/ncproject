@@ -27,7 +27,7 @@ VALID_AVAILABILITY_TYPES = {"full_time", "part_time", "custom"}
 VALID_EXCEPTION_TYPES = {"time_off", "vacation", "leave", "holiday", "blocked"}
 VALID_WEEKDAY_CODES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 CANONICAL_SYSTEM_TEAM_ROLES: dict[str, tuple[str, ...]] = {
-    "Project Manager": ("project manager",),
+    "Project Manager": ("project manager", "pm"),
     "Ejecutivo comercial": ("ejecutivo comercial", "ejecutivo de cuenta"),
     "Gerente de cuenta": ("gerente de cuenta", "responsable cliente", "account manager"),
     "Responsable delivery": (
@@ -196,7 +196,9 @@ def validate_availability_payload(
     valid_availability_types = set(allowed_availability_types or list(VALID_AVAILABILITY_TYPES))
     if availability_type not in valid_availability_types:
         errors.append("Tipo de disponibilidad inválido.")
-    if weekly_hours is None or Decimal(weekly_hours) <= 0:
+    if weekly_hours is None and daily_hours is None:
+        errors.append("Debes informar horas diarias o semanales.")
+    if weekly_hours is not None and Decimal(weekly_hours) <= 0:
         errors.append("Horas semanales deben ser mayores a 0.")
     if daily_hours is not None and Decimal(daily_hours) <= 0:
         errors.append("Horas diarias inválidas.")
@@ -205,7 +207,14 @@ def validate_availability_payload(
     if valid_from and valid_to and valid_from > valid_to:
         errors.append("Rango de fechas inválido.")
 
-    if availability_type == "full_time" and weekly_hours is not None and Decimal(weekly_hours) != Decimal("40"):
+    working_count = max(1, _working_day_count(working_days))
+    weekly_hours_effective = None
+    if weekly_hours is not None:
+        weekly_hours_effective = Decimal(weekly_hours)
+    elif daily_hours is not None:
+        weekly_hours_effective = Decimal(daily_hours) * Decimal(working_count)
+
+    if availability_type == "full_time" and weekly_hours_effective is not None and weekly_hours_effective != Decimal("40"):
         errors.append("Full time debe ser 40 horas semanales.")
     if _working_day_count(working_days) <= 0:
         errors.append("Debes informar al menos un día laborable.")
@@ -366,7 +375,8 @@ def calculate_resource_net_availability(
         )
     ).all()
 
-    assigned_by_day: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
+    project_assigned_by_day: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
+    task_assigned_by_day: dict[date, Decimal] = defaultdict(lambda: Decimal("0"))
 
     for row in project_assignments:
         row_start = row.start_date or start_date
@@ -380,7 +390,7 @@ def calculate_resource_net_availability(
             continue
         per_day_dec = Decimal(per_day)
         for day in _iter_dates(overlap_start, overlap_end):
-            assigned_by_day[day] += per_day_dec
+            project_assigned_by_day[day] += per_day_dec
 
     for assignment, task_start_date, task_due_date in task_assignment_rows:
         row_start = assignment.start_date or task_start_date or start_date
@@ -394,7 +404,7 @@ def calculate_resource_net_availability(
             continue
         per_day_dec = Decimal(per_day)
         for day in _iter_dates(overlap_start, overlap_end):
-            assigned_by_day[day] += per_day_dec
+            task_assigned_by_day[day] += per_day_dec
 
     days: list[dict] = []
     totals = {
@@ -421,19 +431,36 @@ def calculate_resource_net_availability(
                     working_count = max(1, _working_day_count(availability.working_days))
                     base_hours = Decimal(availability.weekly_hours) / Decimal(working_count)
 
+        is_calendar_holiday = day in calendar_holidays_by_day
+        # Feriados de calendario se comportan como días no laborables:
+        # la base del día debe ser 0, igual que fines de semana.
+        if is_calendar_holiday:
+            base_hours = Decimal("0")
+            is_working_day = False
+
         exception_hours = Decimal("0")
+        has_full_day_exception = False
         for exception in exceptions_by_day.get(day, []):
             if exception.hours_lost is not None:
                 exception_hours += Decimal(exception.hours_lost)
             else:
+                has_full_day_exception = True
                 exception_hours += base_hours
-        is_calendar_holiday = day in calendar_holidays_by_day
-        if is_calendar_holiday:
-            exception_hours += base_hours
-        if base_hours > 0:
-            exception_hours = min(exception_hours, base_hours)
+        if base_hours > 0 and (has_full_day_exception or exception_hours >= base_hours):
+            # Si la excepción consume la jornada completa, el día se trata
+            # como no laborable para mantener consistencia visual y funcional.
+            base_hours = Decimal("0")
+            is_working_day = False
+            exception_hours = Decimal("0")
+        else:
+            exception_hours = max(Decimal("0"), min(exception_hours, base_hours))
 
-        assigned_hours = assigned_by_day.get(day, Decimal("0"))
+        # Evita doble conteo cuando hay planificación a nivel proyecto y a nivel tarea.
+        # Si ambas existen el mismo día, se usa la mayor demanda.
+        assigned_hours = max(
+            project_assigned_by_day.get(day, Decimal("0")),
+            task_assigned_by_day.get(day, Decimal("0")),
+        )
         raw_net = base_hours - exception_hours - assigned_hours
         net_available = max(Decimal("0"), raw_net)
         overbooked = max(Decimal("0"), Decimal("0") - raw_net)

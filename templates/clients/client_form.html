@@ -3,11 +3,12 @@
 {% block title %}{{ 'Editar cliente' if is_edit else 'Nuevo cliente' }} | NCProject{% endblock %}
 {% block page_title %}{{ 'Editar cliente' if is_edit else 'Nuevo cliente' }}{% endblock %}
 {% block page_subtitle %}Entidad base para proyectos, soporte, contratos e interacciones{% endblock %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('clients.list_clients') %}
 {% block page_actions %}
 {% if is_edit %}
-<a href="{{ url_for('clients.client_detail', client_id=client.id) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver detalle</a>
+<a href="{{ url_for('clients.client_detail', client_id=client.id, next=request.full_path.rstrip('?')) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver detalle</a>
 {% endif %}
-<a href="{{ url_for('clients.list_clients') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al listado</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
 {% endblock %}
 
 {% block dashboard_content %}
@@ -390,7 +391,7 @@
       </div>
       <div class="card-footer bg-white d-flex gap-2">
           <button class="btn btn-primary btn-action-standard" type="submit">{{ 'Guardar cambios' if is_edit else 'Crear cliente' }}</button>
-          <a href="{{ url_for('clients.list_clients') }}" class="btn btn-outline-secondary btn-action-standard">{{ 'Cancelar edición' if is_edit else 'Volver al listado' }}</a>
+          <a href="{{ back_url }}" class="btn btn-outline-secondary btn-action-standard">{{ 'Cancelar edición' if is_edit else 'Volver' }}</a>
       </div>
     </div>
   </div>

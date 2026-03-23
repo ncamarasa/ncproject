@@ -40,6 +40,7 @@ PERMISSION_CATALOG: list[tuple[str, str, str]] = [
     ("control.health.view", "Ver salud de proyectos", "control"),
     ("control.timesheets.approve", "Aprobar timesheets", "control"),
     ("control.periods.manage", "Gestionar períodos de timesheets", "control"),
+    ("reports.view", "Ver reportes", "reports"),
     ("team.view", "Ver equipo", "team"),
     ("team.edit", "Editar equipo", "team"),
     ("team.resources.manage", "Gestionar recursos del equipo", "team"),

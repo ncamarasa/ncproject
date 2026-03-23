@@ -136,6 +136,41 @@ class TeamBusinessRulesTestCase(unittest.TestCase):
             errors = validate_availability_payload(self.resource_id, payload)
             self.assertTrue(any("superposición" in e for e in errors))
 
+    def test_validate_availability_accepts_daily_or_weekly(self):
+        with self.app.app_context():
+            payload_daily_only = {
+                "availability_type": "part_time",
+                "weekly_hours": None,
+                "daily_hours": 6,
+                "working_days": "mon,tue,wed,thu,fri",
+                "valid_from": date(2026, 1, 1),
+                "valid_to": None,
+            }
+            errors_daily = validate_availability_payload(self.resource_id, payload_daily_only)
+            self.assertEqual(errors_daily, [])
+
+            payload_weekly_only = {
+                "availability_type": "part_time",
+                "weekly_hours": 30,
+                "daily_hours": None,
+                "working_days": "mon,tue,wed,thu,fri",
+                "valid_from": date(2026, 2, 1),
+                "valid_to": None,
+            }
+            errors_weekly = validate_availability_payload(self.resource_id, payload_weekly_only)
+            self.assertEqual(errors_weekly, [])
+
+            payload_none = {
+                "availability_type": "part_time",
+                "weekly_hours": None,
+                "daily_hours": None,
+                "working_days": "mon,tue,wed,thu,fri",
+                "valid_from": date(2026, 3, 1),
+                "valid_to": None,
+            }
+            errors_none = validate_availability_payload(self.resource_id, payload_none)
+            self.assertTrue(any("horas diarias o semanales" in e.lower() for e in errors_none))
+
     def test_validate_availability_exception_overlap(self):
         with self.app.app_context():
             db.session.add(
@@ -218,6 +253,8 @@ class TeamBusinessRulesTestCase(unittest.TestCase):
             result = calculate_resource_net_availability(self.resource_id, date(2026, 1, 5), date(2026, 1, 7))
             days = {item["date"]: item for item in result["days"]}
             self.assertEqual(days["2026-01-05"]["net_available_hours"], 4.0)
+            self.assertEqual(days["2026-01-06"]["base_hours"], 0.0)
+            self.assertEqual(days["2026-01-06"]["exception_hours"], 0.0)
             self.assertEqual(days["2026-01-06"]["net_available_hours"], 0.0)
             self.assertEqual(days["2026-01-06"]["overbooked_hours"], 4.0)
 
@@ -255,7 +292,8 @@ class TeamBusinessRulesTestCase(unittest.TestCase):
                 owner_user_id=self.user_id,
             )
             days = {item["date"]: item for item in result["days"]}
-            self.assertEqual(days["2026-07-03"]["base_hours"], 8.0)
+            self.assertEqual(days["2026-07-03"]["base_hours"], 0.0)
+            self.assertEqual(days["2026-07-03"]["exception_hours"], 0.0)
             self.assertEqual(days["2026-07-03"]["net_available_hours"], 0.0)
             self.assertTrue(days["2026-07-03"]["calendar_holiday"])
 

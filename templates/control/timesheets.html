@@ -2,22 +2,30 @@
 {% block title %}Aprobación Timesheets | NCProject{% endblock %}
 {% block page_title %}Aprobación de Timesheets{% endblock %}
 {% block page_subtitle %}Revisión semanal de horas registradas{% endblock %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('control.dashboard') %}
 {% block page_actions %}
-<a href="{{ url_for('control.dashboard') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver a Control PMO</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
 {% endblock %}
 
 {% block dashboard_content %}
-<div class="card border-0 metric-card mb-3">
-  <div class="card-body py-2">
-    <form method="get" class="form-inline d-flex align-items-center gap-2">
-      <label class="mb-0 mr-2">Estado</label>
-      <select name="status" class="custom-select custom-select-sm mr-2">
-        <option value="submitted" {% if status == 'submitted' %}selected{% endif %}>Pendiente aprobación</option>
-        <option value="approved" {% if status == 'approved' %}selected{% endif %}>Aprobado</option>
-        <option value="rejected" {% if status == 'rejected' %}selected{% endif %}>Rechazado</option>
-        <option value="draft" {% if status == 'draft' %}selected{% endif %}>Borrador</option>
-      </select>
-      <button type="submit" class="btn btn-sm btn-outline-primary btn-action-standard">Aplicar</button>
+<div class="card mb-3 search-panel-card">
+  <div class="card-header"><strong>Filtros de búsqueda</strong></div>
+  <div class="card-body">
+    <form method="get" class="row g-2 align-items-end">
+      {% if request.args.get('next') %}<input type="hidden" name="next" value="{{ request.args.get('next') }}">{% endif %}
+      <div class="col-12 col-md-4">
+        <label class="form-label">Estado</label>
+        <select name="status" class="custom-select">
+          <option value="submitted" {% if status == 'submitted' %}selected{% endif %}>Pendiente aprobación</option>
+          <option value="approved" {% if status == 'approved' %}selected{% endif %}>Aprobado</option>
+          <option value="rejected" {% if status == 'rejected' %}selected{% endif %}>Rechazado</option>
+          <option value="draft" {% if status == 'draft' %}selected{% endif %}>Borrador</option>
+        </select>
+      </div>
+      <div class="col-12 d-flex gap-2 mt-2">
+        <button type="submit" class="btn btn-outline-primary btn-sm btn-action-standard">Filtrar</button>
+        <a class="btn btn-outline-secondary btn-sm btn-action-standard" href="{{ url_for('control.timesheets', next=request.args.get('next')) if request.args.get('next') else url_for('control.timesheets') }}">Limpiar</a>
+      </div>
     </form>
   </div>
 </div>
@@ -59,7 +67,7 @@
             <td>{{ row.approved_by_user.display_name if row.approved_by_user else '-' }}</td>
             <td>{{ row.rejection_comment or '-' }}</td>
             <td class="text-end">
-              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('control.review_timesheet', header_id=row.id) }}">Revisar</a>
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('control.review_timesheet', header_id=row.id, next=request.full_path.rstrip('?')) }}">Revisar</a>
             </td>
           </tr>
           {% else %}

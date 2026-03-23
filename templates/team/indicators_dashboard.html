@@ -1,0 +1,107 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Equipo - Indicadores | NCProject{% endblock %}
+{% block page_title %}Equipo - Indicadores{% endblock %}
+{% block page_subtitle %}Vista agrupada de métricas del equipo{% endblock %}
+
+{% block dashboard_content %}
+<div class="row g-3 mb-3">
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="card border-0 metric-card h-100"><div class="card-body"><small class="text-secondary">Recursos totales</small><h4 class="mb-0">{{ kpis.total_resources }}</h4></div></div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="card border-0 metric-card h-100"><div class="card-body"><small class="text-secondary">Activos</small><h4 class="mb-0 text-success">{{ kpis.active_resources }}</h4></div></div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="card border-0 metric-card h-100"><div class="card-body"><small class="text-secondary">Inactivos</small><h4 class="mb-0 text-secondary">{{ kpis.inactive_resources }}</h4></div></div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="card border-0 metric-card h-100"><div class="card-body"><small class="text-secondary">Internos / Externos</small><h4 class="mb-0">{{ kpis.internal_resources }} / {{ kpis.external_resources }}</h4></div></div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-md-6 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>Cobertura de costos vigentes</strong></div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-6">
+            <small class="text-secondary">Con costo vigente</small>
+            <h4 class="mb-0 text-success">{{ kpis.with_cost_count }}</h4>
+          </div>
+          <div class="col-6">
+            <small class="text-secondary">Sin costo vigente</small>
+            <h4 class="mb-0 text-danger">{{ kpis.without_cost_count }}</h4>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>Cobertura de disponibilidad vigente</strong></div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-6">
+            <small class="text-secondary">Con disponibilidad</small>
+            <h4 class="mb-0 text-success">{{ kpis.with_availability_count }}</h4>
+          </div>
+          <div class="col-6">
+            <small class="text-secondary">Sin disponibilidad</small>
+            <h4 class="mb-0 text-danger">{{ kpis.without_availability_count }}</h4>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>Distribución por área</strong></div>
+      <div class="card-body p-3">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>N°</th><th>Área</th><th>Cantidad</th></tr></thead>
+            <tbody>
+              {% for area_name, count in area_rows %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ area_name }}</td>
+                <td>{{ count }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="3" class="text-secondary text-center">Sin datos.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 metric-card h-100">
+      <div class="card-header"><strong>Distribución por rol</strong></div>
+      <div class="card-body p-3">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>N°</th><th>Rol</th><th>Cantidad</th></tr></thead>
+            <tbody>
+              {% for role_name, count in role_rows %}
+              <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ role_name }}</td>
+                <td>{{ count }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="3" class="text-secondary text-center">Sin datos.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

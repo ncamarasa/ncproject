@@ -1,5 +1,6 @@
 from project_manager.extensions import db
 from project_manager.models.base import TimestampMixin
+from sqlalchemy import event, func, select
 
 
 class Stakeholder(TimestampMixin, db.Model):
@@ -189,10 +190,41 @@ class Task(TimestampMixin, db.Model):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    knowledge_links = db.relationship(
+        "TaskKnowledge",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
     __table_args__ = (
         db.UniqueConstraint("project_id", "project_task_id", name="uq_tasks_project_task_id"),
     )
+
+
+class TaskKnowledge(TimestampMixin, db.Model):
+    __tablename__ = "task_knowledge"
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_id = db.Column(db.Integer, db.ForeignKey("tasks.id"), nullable=False, index=True)
+    knowledge_id = db.Column(db.Integer, db.ForeignKey("team_knowledges.id"), nullable=False, index=True)
+
+    task = db.relationship("Task", back_populates="knowledge_links")
+    knowledge = db.relationship("TeamKnowledge", back_populates="task_links")
+
+    __table_args__ = (
+        db.UniqueConstraint("task_id", "knowledge_id", name="uq_task_knowledge_task_knowledge"),
+    )
+
+
+@event.listens_for(Task, "before_insert")
+def _task_autonumber_project_task_id(mapper, connection, target):
+    if target.project_task_id is not None or not target.project_id:
+        return
+    current_max = connection.execute(
+        select(func.coalesce(func.max(Task.project_task_id), 0)).where(Task.project_id == target.project_id)
+    ).scalar_one()
+    target.project_task_id = int(current_max or 0) + 1
 
 
 class TaskAssignee(TimestampMixin, db.Model):

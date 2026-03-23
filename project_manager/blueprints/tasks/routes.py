@@ -25,8 +25,10 @@ from project_manager.models import (
     TaskAttachment,
     TaskComment,
     TaskDependency,
+    TaskKnowledge,
     TaskResource,
     TeamCalendarHolidayConfig,
+    TeamKnowledge,
 )
 from project_manager.services.default_catalogs import seed_default_catalogs_for_user
 from project_manager.services.task_business_rules import (
@@ -222,7 +224,10 @@ def _task_list_stmt(project_id: int):
     return (
         select(Task)
         .where(Task.project_id == project_id)
-        .options(selectinload(Task.parent_task))
+        .options(
+            selectinload(Task.parent_task),
+            selectinload(Task.knowledge_links).selectinload(TaskKnowledge.knowledge),
+        )
         .order_by(
             Task.sort_order.asc(),
             root_task_id.asc(),
@@ -316,6 +321,28 @@ def _task_priority_options() -> list[str]:
             .order_by(SystemCatalogOptionConfig.is_system.asc(), SystemCatalogOptionConfig.name.asc())
         ).scalars().all()
     return values
+
+
+def _task_knowledge_options() -> list[TeamKnowledge]:
+    return db.session.execute(
+        select(TeamKnowledge).where(TeamKnowledge.is_active.is_(True)).order_by(TeamKnowledge.name.asc())
+    ).scalars().all()
+
+
+def _knowledge_ids_from_form(form) -> list[int]:
+    ids: list[int] = []
+    for raw in form.getlist("knowledge_ids"):
+        value = _to_int(raw)
+        if value:
+            ids.append(value)
+    seen: set[int] = set()
+    unique: list[int] = []
+    for item in ids:
+        if item in seen:
+            continue
+        seen.add(item)
+        unique.append(item)
+    return unique
 
 
 def _normalize_schedule_mode(raw_value: str | None, fallback: str = "automatic") -> str:
@@ -429,6 +456,19 @@ def _sync_task_predecessors(task_id: int, predecessor_ids: list[int]) -> None:
                 predecessor_task_id=predecessor_id,
                 successor_task_id=task_id,
                 dependency_type=DEFAULT_DEPENDENCY_TYPE,
+            )
+        )
+
+
+def _sync_task_knowledges(task_id: int, knowledge_ids: list[int]) -> None:
+    db.session.execute(
+        TaskKnowledge.__table__.delete().where(TaskKnowledge.task_id == task_id)
+    )
+    for knowledge_id in knowledge_ids:
+        db.session.add(
+            TaskKnowledge(
+                task_id=task_id,
+                knowledge_id=knowledge_id,
             )
         )
 
@@ -907,6 +947,20 @@ def _validate_task_payload(project_id: int, form, current_task_id: int | None = 
         else:
             responsible_name = resource.full_name
 
+    selected_knowledge_ids = _knowledge_ids_from_form(form)
+    if selected_knowledge_ids:
+        active_knowledge_ids = set(
+            db.session.execute(
+                select(TeamKnowledge.id).where(
+                    TeamKnowledge.is_active.is_(True),
+                    TeamKnowledge.id.in_(selected_knowledge_ids),
+                )
+            ).scalars().all()
+        )
+        invalid_knowledge_ids = [item for item in selected_knowledge_ids if item not in active_knowledge_ids]
+        if invalid_knowledge_ids:
+            errors.append("Hay conocimientos requeridos inválidos.")
+
     priority_value = _safe_strip(form.get("priority"))
     available_priorities = _task_priority_options()
     if priority_value and priority_value not in set(available_priorities):
@@ -950,6 +1004,7 @@ def _validate_task_payload(project_id: int, form, current_task_id: int | None = 
         "sort_order": _to_int(form.get("sort_order")) or 0,
         "tags": _safe_strip(form.get("tags")),
         "is_milestone": is_milestone,
+        "knowledge_ids": selected_knowledge_ids,
     }
     return payload, errors
 
@@ -1103,10 +1158,12 @@ def manage_tasks(project_id: int):
             for err in errors:
                 flash(err, "danger")
         else:
+            knowledge_ids = payload.pop("knowledge_ids", [])
             task = Task(project_id=project.id, **payload)
             db.session.add(task)
             db.session.flush()
             _sync_task_predecessors(task.id, predecessor_ids)
+            _sync_task_knowledges(task.id, knowledge_ids)
             if task.parent_task_id:
                 recalculate_parent_task(
                     task.parent_task_id,
@@ -1158,9 +1215,11 @@ def manage_tasks(project_id: int):
         task_statuses=_task_status_options(),
         task_types=_task_type_options(),
         task_priorities=_task_priority_options(),
+        task_knowledges=_task_knowledge_options(),
         default_pending_status=_pending_status_default(_task_status_options()),
         dependency_candidates=dependency_candidates,
         selected_predecessor_ids=_predecessor_ids_from_form(request.form) if request.method == "POST" else [],
+        selected_knowledge_ids=_knowledge_ids_from_form(request.form) if request.method == "POST" else [],
         task_schedule_modes=TASK_SCHEDULE_MODES,
         closed_statuses=sorted(CLOSED_STATUSES),
         status_badge_class=_status_badge_class,
@@ -1202,6 +1261,7 @@ def edit_task(project_id: int, task_id: int):
             for err in errors:
                 flash(err, "danger")
         else:
+            knowledge_ids = payload.pop("knowledge_ids", [])
             graph = _build_adjacency_for_project(project.id)
             for predecessor_id in predecessor_ids:
                 if _has_path(graph, task.id, predecessor_id):
@@ -1220,6 +1280,7 @@ def edit_task(project_id: int, task_id: int):
                 setattr(task, key, value)
             db.session.flush()
             _sync_task_predecessors(task.id, predecessor_ids)
+            _sync_task_knowledges(task.id, knowledge_ids)
             if old_parent_id and old_parent_id != task.parent_task_id:
                 recalculate_parent_task(old_parent_id, reason="subtask_moved", trigger_task_id=task.id)
             if task.parent_task_id:
@@ -1287,12 +1348,18 @@ def edit_task(project_id: int, task_id: int):
         task_statuses=_task_status_options(),
         task_types=_task_type_options(),
         task_priorities=_task_priority_options(),
+        task_knowledges=_task_knowledge_options(),
         default_pending_status=_pending_status_default(_task_status_options()),
         dependency_candidates=dependency_candidates,
         selected_predecessor_ids=(
             _predecessor_ids_from_form(request.form)
             if request.method == "POST"
             else [link.predecessor_task_id for link in task.predecessor_links]
+        ),
+        selected_knowledge_ids=(
+            _knowledge_ids_from_form(request.form)
+            if request.method == "POST"
+            else [link.knowledge_id for link in task.knowledge_links]
         ),
         task_schedule_modes=TASK_SCHEDULE_MODES,
         closed_statuses=sorted(CLOSED_STATUSES),

@@ -15,7 +15,7 @@
         <form method="post" action="{{ url_for('auth.logout') }}" class="m-0">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-outline-danger btn-sm btn-action-standard">
-            <i class="fas fa-sign-out-alt"></i> Logout
+            <i class="fas fa-sign-out-alt"></i> Cerrar sesión
           </button>
         </form>
       </li>
@@ -36,7 +36,7 @@
           <li class="nav-item">
             <a href="{{ url_for('main.home') }}" class="nav-link {% if request.endpoint == 'main.home' %}active{% endif %}">
               <i class="nav-icon fas fa-home"></i>
-              <p>Home</p>
+              <p>Inicio</p>
             </a>
           </li>
           {% endif %}
@@ -68,6 +68,15 @@
           </li>
           {% endif %}
 
+          {% if user_can('reports.view') %}
+          <li class="nav-item">
+            <a href="{{ url_for('reports.project_monthly') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('reports.') %}active{% endif %}">
+              <i class="nav-icon fas fa-chart-pie"></i>
+              <p>Reportes</p>
+            </a>
+          </li>
+          {% endif %}
+
           {% if user_can('clients.view') %}
           <li class="nav-item">
             <a href="{{ url_for('clients.list_clients') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('clients.') %}active{% endif %}">
@@ -78,11 +87,35 @@
           {% endif %}
 
           {% if user_can('team.view') %}
-          <li class="nav-item">
-            <a href="{{ url_for('team.list_resources') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('team.') %}active{% endif %}">
+          {% set team_section_active = request.endpoint and request.endpoint.startswith('team.') %}
+          <li class="nav-item {% if team_section_active %}menu-open{% endif %}">
+            <a href="#" class="nav-link {% if team_section_active %}active{% endif %}">
               <i class="nav-icon fas fa-users"></i>
-              <p>Equipo</p>
+              <p>
+                Equipo
+                <i class="fas fa-angle-left right"></i>
+              </p>
             </a>
+            <ul class="nav nav-treeview">
+              <li class="nav-item">
+                <a href="{{ url_for('team.list_resources') }}" class="nav-link {% if request.endpoint in ['team.list_resources', 'team.create_resource', 'team.edit_resource', 'team.resource_detail', 'team.manage_resource_profile', 'team.manage_resource_availability', 'team.manage_resource_costs', 'team.team_calendar'] %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>Recursos</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a href="{{ url_for('team.capacity_dashboard') }}" class="nav-link {% if request.endpoint == 'team.capacity_dashboard' %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>Capacidad</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a href="{{ url_for('team.indicators_dashboard') }}" class="nav-link {% if request.endpoint == 'team.indicators_dashboard' %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>Indicadores</p>
+                </a>
+              </li>
+            </ul>
           </li>
           {% endif %}
 
@@ -187,7 +220,7 @@
               </li>
               {% if user_can('team.view') %}
               <li class="nav-item">
-                <a href="{{ url_for('settings.team_settings') }}" class="nav-link {% if request.endpoint in ['settings.team_settings', 'settings.team_roles', 'settings.edit_team_role', 'settings.toggle_team_role', 'settings.team_catalog', 'settings.edit_team_catalog', 'settings.delete_team_catalog'] %}active{% endif %}">
+                <a href="{{ url_for('settings.team_settings') }}" class="nav-link {% if request.endpoint in ['settings.team_settings', 'settings.team_roles', 'settings.edit_team_role', 'settings.toggle_team_role', 'settings.team_knowledges', 'settings.edit_team_knowledge', 'settings.toggle_team_knowledge', 'settings.team_catalog', 'settings.edit_team_catalog', 'settings.delete_team_catalog'] %}active{% endif %}">
                   <i class="far fa-circle nav-icon"></i>
                   <p>Equipo</p>
                 </a>

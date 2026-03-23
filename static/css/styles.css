@@ -15,6 +15,12 @@ body {
   background-color: #fff !important;
 }
 
+.vendor-disabled {
+  background-color: #edf1f4 !important;
+  color: #6f7a85 !important;
+  border-color: #d7dde3 !important;
+}
+
 .form-label {
   display: inline-block;
   margin-bottom: 0.5rem;
@@ -176,16 +182,17 @@ table.dataTable.table-hover tbody tr:hover > td {
   color: #fff;
 }
 
+
 .search-panel-card {
-  border-left: 4px solid #e6c86a;
+  border-left: 4px solid #6fb58f;
 }
 
 .search-panel-card > .card-header {
-  background-color: #fff7e6;
+  background-color: #ebf7f0;
 }
 
 .search-panel-card > .card-body {
-  background-color: #fffbf1;
+  background-color: #f6fcf8;
 }
 
 .view360-client .view360-tone-1,
@@ -233,52 +240,6 @@ table.dataTable.table-hover tbody tr:hover > td {
   border-top: 1px solid #eef1f4;
 }
 
-.project-hero {
-  border: 1px solid #e7edf2;
-  background: linear-gradient(90deg, #f7fafc 0%, #ffffff 100%);
-  border-radius: 0.4rem;
-  padding: 0.7rem 0.8rem;
-}
-
-.project-kpi-card {
-  border-radius: 0.45rem;
-  border: 1px solid #e5ebf0;
-  background: #fff;
-  min-height: 92px;
-  display: flex;
-  align-items: center;
-  padding: 0.7rem 0.8rem;
-}
-
-.project-kpi-card h4 {
-  margin: 0;
-  font-size: 1.45rem;
-  font-weight: 700;
-  line-height: 1.15;
-}
-
-.project-kpi-card p {
-  margin: 0.2rem 0 0;
-  color: #5f6b75;
-  font-size: 0.86rem;
-}
-
-.project-kpi-card.kpi-info {
-  border-left: 4px solid #2b90d9;
-}
-
-.project-kpi-card.kpi-warning {
-  border-left: 4px solid #c98a15;
-}
-
-.project-kpi-card.kpi-primary {
-  border-left: 4px solid #4b6fd6;
-}
-
-.project-kpi-card.kpi-danger {
-  border-left: 4px solid #c75252;
-}
-
 .project-mini-kpi {
   border: 1px solid #e9eef2;
   border-radius: 0.35rem;
@@ -310,14 +271,6 @@ table.dataTable.table-hover tbody tr:hover > td {
   border-bottom: 0;
 }
 
-.project-closure-notes {
-  min-height: 110px;
-  border: 1px solid #e8edf1;
-  border-radius: 0.35rem;
-  background: #fbfcfd;
-  padding: 0.7rem 0.75rem;
-  white-space: pre-wrap;
-}
 
 .project-fin-block {
   border: 1px solid #e7edf2;

@@ -51,6 +51,7 @@ DEFAULT_PROJECT_CATALOGS: dict[str, list[str]] = {
     "task_priorities": ["Baja", "Media", "Alta", "Crítica"],
     "risk_categories": ["Tecnológico", "Operativo", "Comercial", "Financiero", "Legal"],
     "stakeholder_roles": ["Sponsor Cliente", "Key User"],
+    "internal_task_categories": ["Soporte interno", "Capacitación", "Licencia por enfermedad", "Administración interna"],
 }
 DEFAULT_TEAM_CATALOGS: dict[str, list[str]] = {
     "resource_types": ["internal", "external"],
@@ -59,7 +60,7 @@ DEFAULT_TEAM_CATALOGS: dict[str, list[str]] = {
     "calendars": ["Argentina", "Estados Unidos", "Chile", "Uruguay"],
     "positions": ["Project Manager", "Consultor", "Analista Funcional", "Desarrollador", "QA"],
     "areas": ["Delivery", "Comercial", "Operaciones", "Tecnologia", "Soporte"],
-    "vendors": ["Interno", "Partner A", "Partner B", "Freelance", "Consultora Externa"],
+    "vendors": ["Proveedor externo"],
 }
 
 RESOURCE_TYPE_ALIASES: dict[str, tuple[str, ...]] = {
@@ -80,7 +81,7 @@ AVAILABILITY_EXCEPTION_TYPE_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
-def _ensure_company_type(owner_user_id: int, name: str) -> None:
+def _ensure_company_type(owner_user_id: int, name: str, *, reactivate_if_inactive: bool = True) -> None:
     existing = db.session.execute(
         select(CompanyTypeConfig).where(
             CompanyTypeConfig.owner_user_id == owner_user_id,
@@ -88,12 +89,13 @@ def _ensure_company_type(owner_user_id: int, name: str) -> None:
         )
     ).scalar_one_or_none()
     if existing:
-        existing.is_active = True
+        if reactivate_if_inactive:
+            existing.is_active = True
         return
     db.session.add(CompanyTypeConfig(owner_user_id=owner_user_id, name=name, is_active=True))
 
 
-def _ensure_payment_type(owner_user_id: int, name: str) -> None:
+def _ensure_payment_type(owner_user_id: int, name: str, *, reactivate_if_inactive: bool = True) -> None:
     existing = db.session.execute(
         select(PaymentTypeConfig).where(
             PaymentTypeConfig.owner_user_id == owner_user_id,
@@ -101,7 +103,8 @@ def _ensure_payment_type(owner_user_id: int, name: str) -> None:
         )
     ).scalar_one_or_none()
     if existing:
-        existing.is_active = True
+        if reactivate_if_inactive:
+            existing.is_active = True
         return
     db.session.add(PaymentTypeConfig(owner_user_id=owner_user_id, name=name, is_active=True))
 
@@ -115,6 +118,7 @@ def _ensure_client_catalog(
     is_editable: bool = True,
     is_deletable: bool = True,
     exclude_from_default_list: bool = False,
+    reactivate_if_inactive: bool = True,
 ) -> None:
     existing = db.session.execute(
         select(ClientCatalogOptionConfig).where(
@@ -124,7 +128,8 @@ def _ensure_client_catalog(
         )
     ).scalar_one_or_none()
     if existing:
-        existing.is_active = True
+        if reactivate_if_inactive:
+            existing.is_active = True
         existing.is_system = bool(existing.is_system or is_system)
         existing.is_editable = bool(existing.is_editable and is_editable)
         existing.is_deletable = bool(existing.is_deletable and is_deletable)
@@ -153,6 +158,7 @@ def _ensure_project_catalog(
     is_editable: bool = True,
     is_deletable: bool = True,
     exclude_from_default_list: bool = False,
+    reactivate_if_inactive: bool = True,
 ) -> None:
     existing = db.session.execute(
         select(SystemCatalogOptionConfig).where(
@@ -163,7 +169,8 @@ def _ensure_project_catalog(
         )
     ).scalar_one_or_none()
     if existing:
-        existing.is_active = True
+        if reactivate_if_inactive:
+            existing.is_active = True
         existing.is_system = bool(existing.is_system or is_system)
         existing.is_editable = bool(existing.is_editable and is_editable)
         existing.is_deletable = bool(existing.is_deletable and is_deletable)
@@ -193,6 +200,7 @@ def _ensure_team_catalog(
     is_editable: bool = True,
     is_deletable: bool = True,
     exclude_from_default_list: bool = False,
+    reactivate_if_inactive: bool = True,
 ) -> None:
     existing = db.session.execute(
         select(SystemCatalogOptionConfig).where(
@@ -203,7 +211,8 @@ def _ensure_team_catalog(
         )
     ).scalar_one_or_none()
     if existing:
-        existing.is_active = True
+        if reactivate_if_inactive:
+            existing.is_active = True
         existing.is_system = bool(existing.is_system or is_system)
         existing.is_editable = bool(existing.is_editable and is_editable)
         existing.is_deletable = bool(existing.is_deletable and is_deletable)
@@ -226,9 +235,9 @@ def _ensure_team_catalog(
 
 def seed_default_catalogs_for_user(owner_user_id: int) -> None:
     for name in DEFAULT_COMPANY_TYPES:
-        _ensure_company_type(owner_user_id, name)
+        _ensure_company_type(owner_user_id, name, reactivate_if_inactive=False)
     for name in DEFAULT_PAYMENT_TYPES:
-        _ensure_payment_type(owner_user_id, name)
+        _ensure_payment_type(owner_user_id, name, reactivate_if_inactive=False)
     for field_key, values in DEFAULT_CLIENT_CATALOGS.items():
         for name in values:
             is_deleted_status = field_key == "client_status" and name.strip().lower() == "eliminado"
@@ -240,6 +249,7 @@ def seed_default_catalogs_for_user(owner_user_id: int) -> None:
                 is_editable=not is_deleted_status,
                 is_deletable=not is_deleted_status,
                 exclude_from_default_list=is_deleted_status,
+                reactivate_if_inactive=is_deleted_status,
             )
     for catalog_key, values in DEFAULT_PROJECT_CATALOGS.items():
         for name in values:
@@ -257,6 +267,7 @@ def seed_default_catalogs_for_user(owner_user_id: int) -> None:
                 is_editable=not is_system_item,
                 is_deletable=not is_system_item,
                 exclude_from_default_list=is_cancelled_status,
+                reactivate_if_inactive=is_system_item,
             )
     for catalog_key, values in DEFAULT_TEAM_CATALOGS.items():
         for name in values:
@@ -269,6 +280,7 @@ def seed_default_catalogs_for_user(owner_user_id: int) -> None:
                 is_system=is_system,
                 is_editable=is_editable,
                 is_deletable=not is_system,
+                reactivate_if_inactive=is_system,
             )
     _normalize_resource_types(owner_user_id)
     _normalize_availability_types(owner_user_id)

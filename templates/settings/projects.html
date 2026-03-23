@@ -3,6 +3,7 @@
 {% block page_title %}Configuración / Proyectos{% endblock %}
 {% block page_subtitle %}Espacio para catálogos y reglas del módulo de proyectos{% endblock %}
 {% block dashboard_content %}
+{% set current_url = request.full_path.rstrip('?') %}
 <div class="card border-0 metric-card">
   <div class="card-header"><strong>Catálogos del módulo de Proyectos y Tareas</strong></div>
   <div class="card-body">
@@ -24,9 +25,9 @@
       >
         <div class="card border mb-3">
           <div class="card-body">
-            <h3 class="h6">ABM {{ label }}</h3>
+            <h3 class="h6">{{ label }}</h3>
             <p class="small text-secondary mb-3">{{ project_catalog_descriptions.get(key, 'Gestiona los valores disponibles para este catálogo.') }}</p>
-            <a href="{{ url_for('settings.project_catalog', catalog_key=key) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar {{ label|lower }}</a>
+            <a href="{{ url_for('settings.project_catalog', catalog_key=key, next=current_url) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar {{ label|lower }}</a>
           </div>
         </div>
       </div>
@@ -46,9 +47,9 @@
       <div class="col-12 col-md-6 catalog-card" data-label="cotizaciones monedas tipo cambio" data-desc="configuracion compartida cotizaciones para conversion de costos y precios">
         <div class="card border mb-3">
           <div class="card-body">
-            <h3 class="h6">ABM Cotizaciones de monedas</h3>
+            <h3 class="h6">Cotizaciones de monedas</h3>
             <p class="small text-secondary mb-3">Se usa en Proyectos, Equipo y Finanzas para unificar importes entre monedas.</p>
-            <a href="{{ url_for('settings.project_currency_rates') }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar cotizaciones</a>
+            <a href="{{ url_for('settings.project_currency_rates', next=current_url) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar cotizaciones</a>
           </div>
         </div>
       </div>
@@ -57,9 +58,9 @@
       <div class="col-12 col-md-6 catalog-card" data-label="{{ label|lower }}" data-desc="catalogo compartido {{ label|lower }}">
         <div class="card border mb-3">
           <div class="card-body">
-            <h3 class="h6">ABM {{ label }}</h3>
+            <h3 class="h6">{{ label }}</h3>
             <p class="small text-secondary mb-3">Disponible también desde Configuración de Clientes.</p>
-            <a href="{{ url_for('settings.client_catalog', field_key=key) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar {{ label|lower }}</a>
+            <a href="{{ url_for('settings.client_catalog', field_key=key, next=current_url) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar {{ label|lower }}</a>
           </div>
         </div>
       </div>

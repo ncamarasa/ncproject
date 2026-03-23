@@ -17,9 +17,11 @@ from project_manager.models import (
     ResourceAvailability,
     ResourceAvailabilityException,
     ResourceCost,
+    ResourceKnowledge,
     ResourceRole,
     SystemCatalogOptionConfig,
     Task,
+    TeamKnowledge,
     TaskResource,
     TeamRole,
 )
@@ -70,9 +72,16 @@ def _authorize_team_module():
         "team.delete_resource": ["team.resources.manage", "team.edit"],
         "team.add_resource_role": ["team.resources.manage", "team.edit"],
         "team.remove_resource_role": ["team.resources.manage", "team.edit"],
+        "team.add_resource_knowledge": ["team.resources.manage", "team.edit"],
+        "team.remove_resource_knowledge": ["team.resources.manage", "team.edit"],
+        "team.add_resource_roles_batch": ["team.resources.manage", "team.edit"],
+        "team.remove_resource_roles_batch": ["team.resources.manage", "team.edit"],
+        "team.add_resource_knowledges_batch": ["team.resources.manage", "team.edit"],
+        "team.remove_resource_knowledges_batch": ["team.resources.manage", "team.edit"],
         "team.add_availability": ["team.resources.manage", "team.edit"],
         "team.add_availability_exception": ["team.resources.manage", "team.edit"],
         "team.toggle_availability": ["team.resources.manage", "team.edit"],
+        "team.delete_availability": ["team.resources.manage", "team.edit"],
         "team.edit_availability": ["team.resources.manage", "team.edit"],
         "team.toggle_availability_exception": ["team.resources.manage", "team.edit"],
         "team.edit_availability_exception": ["team.resources.manage", "team.edit"],
@@ -144,8 +153,59 @@ def _active_roles():
     return db.session.execute(select(TeamRole).where(TeamRole.is_active.is_(True)).order_by(TeamRole.name.asc())).scalars().all()
 
 
+def _active_knowledges():
+    return db.session.execute(
+        select(TeamKnowledge).where(TeamKnowledge.is_active.is_(True)).order_by(TeamKnowledge.name.asc())
+    ).scalars().all()
+
+
 def _active_resources():
     return db.session.execute(select(Resource).where(Resource.is_active.is_(True)).order_by(Resource.full_name.asc())).scalars().all()
+
+
+def _resolve_utilization_window(raw_window: str | None) -> tuple[str, date, date, str]:
+    today = date.today()
+    window_key = (raw_window or "month").strip().lower()
+    if window_key == "week":
+        start_date = today - timedelta(days=today.weekday())
+        end_date = start_date + timedelta(days=6)
+        return "week", start_date, end_date, "Semana actual"
+
+    start_date = today.replace(day=1)
+    if start_date.month == 12:
+        next_month = date(start_date.year + 1, 1, 1)
+    else:
+        next_month = date(start_date.year, start_date.month + 1, 1)
+    end_date = next_month - timedelta(days=1)
+    return "month", start_date, end_date, "Mes actual"
+
+
+def _compute_utilization_by_resource(resources: list[Resource], start_date: date, end_date: date) -> dict[int, dict[str, float | None]]:
+    utilization_by_resource: dict[int, dict[str, float | None]] = {}
+    for resource in resources:
+        try:
+            availability_payload = calculate_resource_net_availability(
+                resource.id,
+                start_date,
+                end_date,
+                owner_user_id=g.user.id if g.get("user") else None,
+            )
+            totals = availability_payload.get("totals", {})
+            assigned_hours = float(totals.get("assigned_hours") or 0.0)
+            base_hours = float(totals.get("base_hours") or 0.0)
+            utilization_pct = (assigned_hours / base_hours * 100.0) if base_hours > 0 else None
+            utilization_by_resource[resource.id] = {
+                "assigned_hours": assigned_hours,
+                "base_hours": base_hours,
+                "utilization_pct": utilization_pct,
+            }
+        except ValueError:
+            utilization_by_resource[resource.id] = {
+                "assigned_hours": 0.0,
+                "base_hours": 0.0,
+                "utilization_pct": None,
+            }
+    return utilization_by_resource
 
 
 def _team_catalog_values(catalog_key: str, fallback: list[str]) -> list[str]:
@@ -213,12 +273,30 @@ def _validate_catalog_value(value: str, options: list[str], field_label: str, er
     return cleaned
 
 
+def _working_days_count(working_days: str | None) -> int:
+    tokens = [item for item in (working_days or "").split(",") if item]
+    return len(tokens) if tokens else 5
+
+
+def _autocomplete_availability_hours(payload: dict) -> None:
+    weekly_hours = payload.get("weekly_hours")
+    daily_hours = payload.get("daily_hours")
+    if weekly_hours is None and daily_hours is None:
+        return
+    day_count = max(1, _working_days_count(payload.get("working_days")))
+    if weekly_hours is None and daily_hours is not None:
+        payload["weekly_hours"] = Decimal(daily_hours) * Decimal(day_count)
+    elif daily_hours is None and weekly_hours is not None:
+        payload["daily_hours"] = Decimal(weekly_hours) / Decimal(day_count)
+
+
 def _resource_or_404(resource_id: int) -> Resource:
     resource = db.session.execute(
         select(Resource)
         .where(Resource.id == resource_id)
         .options(
             selectinload(Resource.role_links).selectinload(ResourceRole.role),
+            selectinload(Resource.knowledge_links).selectinload(ResourceKnowledge.knowledge),
             selectinload(Resource.availabilities),
             selectinload(Resource.availability_exceptions),
             selectinload(Resource.costs),
@@ -326,8 +404,16 @@ def list_resources():
     active = _safe_strip(request.args.get("active", "1"))
     resource_type = _canonical_resource_type(request.args.get("resource_type"))
     role_id = _to_int(request.args.get("role_id"))
+    knowledge_id = _to_int(request.args.get("knowledge_id"))
 
-    stmt = select(Resource).order_by(Resource.updated_at.desc())
+    stmt = (
+        select(Resource)
+        .options(
+            selectinload(Resource.role_links).selectinload(ResourceRole.role),
+            selectinload(Resource.knowledge_links).selectinload(ResourceKnowledge.knowledge),
+        )
+        .order_by(Resource.updated_at.desc())
+    )
     if q:
         token = f"%{q}%"
         stmt = stmt.where(
@@ -345,19 +431,193 @@ def list_resources():
         stmt = stmt.where(Resource.resource_type == resource_type)
     if role_id:
         stmt = stmt.join(ResourceRole, ResourceRole.resource_id == Resource.id).where(ResourceRole.role_id == role_id)
+    if knowledge_id:
+        stmt = stmt.join(ResourceKnowledge, ResourceKnowledge.resource_id == Resource.id).where(
+            ResourceKnowledge.knowledge_id == knowledge_id
+        )
 
-    resources = db.session.execute(stmt).scalars().all()
+    resources = db.session.execute(stmt).unique().scalars().all()
     return render_template(
         "team/resource_list.html",
         resources=resources,
         roles=_active_roles(),
+        knowledges=_active_knowledges(),
         resource_types=resource_types,
         filters={
             "q": q,
             "active": active,
             "resource_type": resource_type,
             "role_id": role_id or "",
+            "knowledge_id": knowledge_id or "",
         },
+    )
+
+
+@bp.route("/capacity")
+@login_required
+def capacity_dashboard():
+    q = _safe_strip(request.args.get("q"))
+    role_id = _to_int(request.args.get("role_id"))
+    utilization_window = _safe_strip(request.args.get("utilization_window", "month"))
+    utilization_window, window_start, window_end, utilization_window_label = _resolve_utilization_window(utilization_window)
+
+    stmt = (
+        select(Resource)
+        .where(Resource.is_active.is_(True))
+        .options(selectinload(Resource.role_links).selectinload(ResourceRole.role))
+        .order_by(Resource.full_name.asc())
+    )
+    if q:
+        token = f"%{q}%"
+        stmt = stmt.where(
+            or_(
+                Resource.full_name.ilike(token),
+                Resource.email.ilike(token),
+                Resource.position.ilike(token),
+                Resource.area.ilike(token),
+            )
+        )
+    if role_id:
+        stmt = stmt.join(ResourceRole, ResourceRole.resource_id == Resource.id).where(ResourceRole.role_id == role_id)
+
+    resources = db.session.execute(stmt).unique().scalars().all()
+    utilization_by_resource = _compute_utilization_by_resource(resources, window_start, window_end)
+
+    rows: list[dict] = []
+    total_assigned = 0.0
+    total_base = 0.0
+    overloaded_count = 0
+    low_utilization_count = 0
+    for resource in resources:
+        utilization = utilization_by_resource.get(resource.id, {})
+        assigned_hours = float(utilization.get("assigned_hours") or 0.0)
+        base_hours = float(utilization.get("base_hours") or 0.0)
+        pct = utilization.get("utilization_pct")
+        if pct is not None:
+            if pct > 100:
+                status_label = "Sobrecargado"
+                badge_class = "danger"
+                overloaded_count += 1
+            elif pct >= 60:
+                status_label = "Saludable"
+                badge_class = "success"
+            else:
+                status_label = "Subutilizado"
+                badge_class = "secondary"
+                low_utilization_count += 1
+        else:
+            status_label = "Sin base"
+            badge_class = "light"
+        total_assigned += assigned_hours
+        total_base += base_hours
+        rows.append(
+            {
+                "resource": resource,
+                "pct": pct,
+                "assigned_hours": assigned_hours,
+                "base_hours": base_hours,
+                "status_label": status_label,
+                "badge_class": badge_class,
+            }
+        )
+
+    global_pct = (total_assigned / total_base * 100.0) if total_base > 0 else None
+    return render_template(
+        "team/capacity_dashboard.html",
+        rows=rows,
+        roles=_active_roles(),
+        filters={
+            "q": q,
+            "role_id": role_id or "",
+            "utilization_window": utilization_window,
+        },
+        utilization_window_label=utilization_window_label,
+        period_label=f"{window_start.strftime('%d/%m/%Y')} - {window_end.strftime('%d/%m/%Y')}",
+        kpis={
+            "resource_count": len(resources),
+            "total_assigned": total_assigned,
+            "total_base": total_base,
+            "global_pct": global_pct,
+            "overloaded_count": overloaded_count,
+            "low_utilization_count": low_utilization_count,
+        },
+    )
+
+
+@bp.route("/indicators")
+@login_required
+def indicators_dashboard():
+    today = date.today()
+    resources = db.session.execute(
+        select(Resource)
+        .options(
+            selectinload(Resource.role_links).selectinload(ResourceRole.role),
+            selectinload(Resource.costs),
+            selectinload(Resource.availabilities),
+        )
+        .order_by(Resource.full_name.asc())
+    ).scalars().all()
+
+    active_resources = [item for item in resources if item.is_active]
+    inactive_resources = [item for item in resources if not item.is_active]
+    internal_count = len([item for item in active_resources if (item.resource_type or "").lower() in {"internal", "interno"}])
+    external_count = len([item for item in active_resources if (item.resource_type or "").lower() in {"external", "externo"}])
+
+    with_cost_count = 0
+    without_cost_count = 0
+    with_availability_count = 0
+    without_availability_count = 0
+
+    area_counts: dict[str, int] = {}
+    role_counts: dict[str, int] = {}
+
+    for resource in active_resources:
+        area_label = (resource.area or "Sin área").strip() or "Sin área"
+        area_counts[area_label] = area_counts.get(area_label, 0) + 1
+
+        role_names = sorted({link.role.name for link in resource.role_links if link.role and link.role.is_active})
+        for role_name in role_names:
+            role_counts[role_name] = role_counts.get(role_name, 0) + 1
+
+        has_current_cost = any(
+            cost.valid_from and cost.valid_from <= today and (cost.valid_to is None or cost.valid_to >= today)
+            for cost in resource.costs
+        )
+        if has_current_cost:
+            with_cost_count += 1
+        else:
+            without_cost_count += 1
+
+        has_current_availability = any(
+            availability.is_active
+            and availability.valid_from
+            and availability.valid_from <= today
+            and (availability.valid_to is None or availability.valid_to >= today)
+            for availability in resource.availabilities
+        )
+        if has_current_availability:
+            with_availability_count += 1
+        else:
+            without_availability_count += 1
+
+    area_rows = sorted(area_counts.items(), key=lambda item: (-item[1], item[0].lower()))
+    role_rows = sorted(role_counts.items(), key=lambda item: (-item[1], item[0].lower()))
+
+    return render_template(
+        "team/indicators_dashboard.html",
+        kpis={
+            "total_resources": len(resources),
+            "active_resources": len(active_resources),
+            "inactive_resources": len(inactive_resources),
+            "internal_resources": internal_count,
+            "external_resources": external_count,
+            "with_cost_count": with_cost_count,
+            "without_cost_count": without_cost_count,
+            "with_availability_count": with_availability_count,
+            "without_availability_count": without_availability_count,
+        },
+        area_rows=area_rows,
+        role_rows=role_rows,
     )
 
 
@@ -429,7 +689,10 @@ def create_resource():
         )
         payload["position"] = _validate_catalog_value(request.form.get("position"), position_options, "Cargo", errors)
         payload["area"] = _validate_catalog_value(request.form.get("area"), area_options, "Area", errors)
-        payload["vendor_name"] = _validate_catalog_value(request.form.get("vendor_name"), vendor_options, "Proveedor", errors)
+        if payload["resource_type"] == "internal":
+            payload["vendor_name"] = ""
+        else:
+            payload["vendor_name"] = _validate_catalog_value(request.form.get("vendor_name"), vendor_options, "Proveedor", errors)
         if errors:
             for error in errors:
                 flash(error, "danger")
@@ -516,7 +779,10 @@ def edit_resource(resource_id: int):
         )
         payload["position"] = _validate_catalog_value(request.form.get("position"), position_options, "Cargo", errors)
         payload["area"] = _validate_catalog_value(request.form.get("area"), area_options, "Area", errors)
-        payload["vendor_name"] = _validate_catalog_value(request.form.get("vendor_name"), vendor_options, "Proveedor", errors)
+        if payload["resource_type"] == "internal":
+            payload["vendor_name"] = ""
+        else:
+            payload["vendor_name"] = _validate_catalog_value(request.form.get("vendor_name"), vendor_options, "Proveedor", errors)
         if errors:
             for error in errors:
                 flash(error, "danger")
@@ -775,13 +1041,28 @@ def resource_detail(resource_id: int):
 @bp.route("/resources/<int:resource_id>/roles")
 @login_required
 def manage_resource_roles(resource_id: int):
+    return _redirect_with_next("team.manage_resource_profile", resource_id=resource_id)
+
+
+@bp.route("/resources/<int:resource_id>/knowledges")
+@login_required
+def manage_resource_knowledges(resource_id: int):
+    return _redirect_with_next("team.manage_resource_profile", resource_id=resource_id)
+
+
+@bp.route("/resources/<int:resource_id>/profile")
+@login_required
+def manage_resource_profile(resource_id: int):
     resource = _resource_or_404(resource_id)
     role_ids = {link.role_id for link in resource.role_links}
+    knowledge_ids = {link.knowledge_id for link in resource.knowledge_links}
     return render_template(
-        "team/resource_roles.html",
+        "team/resource_profile.html",
         resource=resource,
         roles=_active_roles(),
         role_ids=role_ids,
+        knowledges=_active_knowledges(),
+        knowledge_ids=knowledge_ids,
     )
 
 
@@ -808,6 +1089,7 @@ def manage_resource_availability(resource_id: int):
     return render_template(
         "team/resource_availability.html",
         resource=resource,
+        today_date=date.today(),
         availability_types=_team_catalog_values("availability_types", ["full_time", "part_time", "custom"]),
         availability_exception_types=_team_catalog_values(
             "availability_exception_types",
@@ -870,6 +1152,85 @@ def add_resource_role(resource_id: int):
     return _redirect_with_next("team.manage_resource_roles", resource_id=resource.id)
 
 
+@bp.route("/resources/<int:resource_id>/roles/batch-add", methods=["POST"])
+@login_required
+def add_resource_roles_batch(resource_id: int):
+    resource = _resource_or_404(resource_id)
+    role_ids = sorted({_to_int(item) for item in request.form.getlist("role_ids")} - {None})
+    if not role_ids:
+        flash("Selecciona al menos un rol.", "danger")
+        return _redirect_with_next("team.manage_resource_profile", resource_id=resource.id)
+
+    added = 0
+    for role_id in role_ids:
+        errors = validate_assignment(resource.id, role_id)
+        if errors:
+            for error in errors:
+                flash(error, "danger")
+            continue
+        existing = db.session.execute(
+            select(ResourceRole).where(ResourceRole.resource_id == resource.id, ResourceRole.role_id == role_id)
+        ).scalar_one_or_none()
+        if existing:
+            continue
+        db.session.add(ResourceRole(resource_id=resource.id, role_id=role_id))
+        added += 1
+    if added:
+        db.session.commit()
+        flash(f"Se asignaron {added} rol(es).", "success")
+    else:
+        db.session.rollback()
+        flash("No hubo roles nuevos para asignar.", "warning")
+    return _redirect_with_next("team.manage_resource_profile", resource_id=resource.id)
+
+
+@bp.route("/resources/<int:resource_id>/roles/batch-remove", methods=["POST"])
+@login_required
+def remove_resource_roles_batch(resource_id: int):
+    resource = _resource_or_404(resource_id)
+    role_ids = sorted({_to_int(item) for item in request.form.getlist("role_ids")} - {None})
+    if not role_ids:
+        flash("Selecciona al menos un rol asignado para quitar.", "danger")
+        return _redirect_with_next("team.manage_resource_profile", resource_id=resource.id)
+
+    removed = 0
+    blocked = 0
+    for role_id in role_ids:
+        link = db.session.execute(
+            select(ResourceRole).where(ResourceRole.resource_id == resource.id, ResourceRole.role_id == role_id)
+        ).scalar_one_or_none()
+        if not link:
+            continue
+        project_names = db.session.execute(
+            select(Project.name)
+            .join(ProjectResource, ProjectResource.project_id == Project.id)
+            .where(
+                ProjectResource.resource_id == link.resource_id,
+                ProjectResource.role_id == link.role_id,
+                ProjectResource.is_active.is_(True),
+            )
+            .order_by(Project.name.asc())
+            .limit(3)
+        ).scalars().all()
+        if project_names:
+            blocked += 1
+            flash(
+                f"No se puede remover el rol '{link.role.name if link.role else link.role_id}' porque está asignado en proyectos activos.",
+                "danger",
+            )
+            continue
+        db.session.delete(link)
+        removed += 1
+    if removed:
+        db.session.commit()
+        flash(f"Se removieron {removed} rol(es).", "info")
+    else:
+        db.session.rollback()
+    if blocked and not removed:
+        flash("No se removió ningún rol por restricciones de uso.", "warning")
+    return _redirect_with_next("team.manage_resource_profile", resource_id=resource.id)
+
+
 @bp.route("/resource-role/<int:link_id>/delete", methods=["POST"])
 @login_required
 def remove_resource_role(link_id: int):
@@ -898,7 +1259,111 @@ def remove_resource_role(link_id: int):
     db.session.delete(link)
     db.session.commit()
     flash("Rol removido.", "info")
-    return _redirect_with_next("team.manage_resource_roles", resource_id=resource_id)
+    return _redirect_with_next("team.manage_resource_profile", resource_id=resource_id)
+
+
+@bp.route("/resources/<int:resource_id>/knowledges/add", methods=["POST"])
+@login_required
+def add_resource_knowledge(resource_id: int):
+    resource = _resource_or_404(resource_id)
+    knowledge_id = _to_int(request.form.get("knowledge_id"))
+    if not knowledge_id:
+        flash("Selecciona un conocimiento.", "danger")
+        return _redirect_with_next("team.manage_resource_profile", resource_id=resource.id)
+
+    knowledge = db.session.get(TeamKnowledge, knowledge_id)
+    if not knowledge or not knowledge.is_active:
+        flash("El conocimiento seleccionado no es válido.", "danger")
+        return _redirect_with_next("team.manage_resource_profile", resource_id=resource.id)
+
+    existing = db.session.execute(
+        select(ResourceKnowledge).where(ResourceKnowledge.resource_id == resource.id, ResourceKnowledge.knowledge_id == knowledge_id)
+    ).scalar_one_or_none()
+    if existing:
+        flash("El conocimiento ya está asignado al recurso.", "warning")
+    else:
+        db.session.add(ResourceKnowledge(resource_id=resource.id, knowledge_id=knowledge_id))
+        db.session.commit()
+        flash("Conocimiento asignado.", "success")
+    return _redirect_with_next("team.manage_resource_profile", resource_id=resource.id)
+
+
+@bp.route("/resources/<int:resource_id>/knowledges/batch-add", methods=["POST"])
+@login_required
+def add_resource_knowledges_batch(resource_id: int):
+    resource = _resource_or_404(resource_id)
+    knowledge_ids = sorted({_to_int(item) for item in request.form.getlist("knowledge_ids")} - {None})
+    if not knowledge_ids:
+        flash("Selecciona al menos un conocimiento.", "danger")
+        return _redirect_with_next("team.manage_resource_profile", resource_id=resource.id)
+
+    active_knowledge_ids = set(
+        db.session.execute(
+            select(TeamKnowledge.id).where(
+                TeamKnowledge.is_active.is_(True),
+                TeamKnowledge.id.in_(knowledge_ids),
+            )
+        ).scalars().all()
+    )
+    added = 0
+    for knowledge_id in knowledge_ids:
+        if knowledge_id not in active_knowledge_ids:
+            continue
+        existing = db.session.execute(
+            select(ResourceKnowledge).where(ResourceKnowledge.resource_id == resource.id, ResourceKnowledge.knowledge_id == knowledge_id)
+        ).scalar_one_or_none()
+        if existing:
+            continue
+        db.session.add(ResourceKnowledge(resource_id=resource.id, knowledge_id=knowledge_id))
+        added += 1
+    if added:
+        db.session.commit()
+        flash(f"Se asignaron {added} conocimiento(s).", "success")
+    else:
+        db.session.rollback()
+        flash("No hubo conocimientos nuevos para asignar.", "warning")
+    return _redirect_with_next("team.manage_resource_profile", resource_id=resource.id)
+
+
+@bp.route("/resources/<int:resource_id>/knowledges/batch-remove", methods=["POST"])
+@login_required
+def remove_resource_knowledges_batch(resource_id: int):
+    resource = _resource_or_404(resource_id)
+    knowledge_ids = sorted({_to_int(item) for item in request.form.getlist("knowledge_ids")} - {None})
+    if not knowledge_ids:
+        flash("Selecciona al menos un conocimiento asignado para quitar.", "danger")
+        return _redirect_with_next("team.manage_resource_profile", resource_id=resource.id)
+
+    removed = 0
+    links = db.session.execute(
+        select(ResourceKnowledge).where(
+            ResourceKnowledge.resource_id == resource.id,
+            ResourceKnowledge.knowledge_id.in_(knowledge_ids),
+        )
+    ).scalars().all()
+    for link in links:
+        db.session.delete(link)
+        removed += 1
+    if removed:
+        db.session.commit()
+        flash(f"Se removieron {removed} conocimiento(s).", "info")
+    else:
+        db.session.rollback()
+        flash("No hubo conocimientos para remover.", "warning")
+    return _redirect_with_next("team.manage_resource_profile", resource_id=resource.id)
+
+
+@bp.route("/resource-knowledge/<int:link_id>/delete", methods=["POST"])
+@login_required
+def remove_resource_knowledge(link_id: int):
+    link = db.session.get(ResourceKnowledge, link_id)
+    if not link:
+        abort(404)
+    resource_id = link.resource_id
+    db.session.delete(link)
+    db.session.commit()
+    flash("Conocimiento removido.", "info")
+    return _redirect_with_next("team.manage_resource_profile", resource_id=resource_id)
 
 
 @bp.route("/resources/<int:resource_id>/availability/add", methods=["POST"])
@@ -917,6 +1382,7 @@ def add_availability(resource_id: int):
         "observations": _safe_strip(request.form.get("observations")),
         "is_active": _to_bool(request.form.get("is_active", "1")),
     }
+    _autocomplete_availability_hours(payload)
     errors = validate_availability_payload(
         resource.id,
         payload,
@@ -976,6 +1442,23 @@ def toggle_availability(availability_id: int):
     return _redirect_with_next("team.manage_resource_availability", resource_id=availability.resource_id)
 
 
+@bp.route("/availability/<int:availability_id>/delete", methods=["POST"])
+@login_required
+def delete_availability(availability_id: int):
+    availability = db.session.get(ResourceAvailability, availability_id)
+    if not availability:
+        abort(404)
+    if not availability.valid_from or availability.valid_from <= date.today():
+        flash("Solo se pueden eliminar disponibilidades futuras.", "danger")
+        return _redirect_with_next("team.manage_resource_availability", resource_id=availability.resource_id)
+
+    resource_id = availability.resource_id
+    db.session.delete(availability)
+    db.session.commit()
+    flash("Disponibilidad futura eliminada.", "info")
+    return _redirect_with_next("team.manage_resource_availability", resource_id=resource_id)
+
+
 @bp.route("/availability/<int:availability_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit_availability(availability_id: int):
@@ -1006,6 +1489,7 @@ def edit_availability(availability_id: int):
             "observations": _safe_strip(request.form.get("observations")),
             "is_active": availability.is_active,
         }
+        _autocomplete_availability_hours(payload)
         errors = validate_availability_payload(
             resource.id,
             payload,
@@ -1018,6 +1502,7 @@ def edit_availability(availability_id: int):
             return render_template(
                 "team/resource_availability.html",
                 resource=resource,
+                today_date=date.today(),
                 availability_types=availability_types,
                 availability_exception_types=_team_catalog_values(
                     "availability_exception_types",
@@ -1097,6 +1582,7 @@ def edit_availability_exception(exception_id: int):
             return render_template(
                 "team/resource_availability.html",
                 resource=resource,
+                today_date=date.today(),
                 availability_types=_team_catalog_values("availability_types", ["full_time", "part_time", "custom"]),
                 availability_exception_types=availability_exception_types,
                 edit_availability=None,
@@ -1251,6 +1737,58 @@ def _validate_assignment_dates(start_date, end_date) -> list[str]:
     return []
 
 
+def _ranges_overlap(start_a: date | None, end_a: date | None, start_b: date | None, end_b: date | None) -> bool:
+    real_start_a = start_a or date.min
+    real_end_a = end_a or date.max
+    real_start_b = start_b or date.min
+    real_end_b = end_b or date.max
+    return real_start_a <= real_end_b and real_start_b <= real_end_a
+
+
+def _validate_assignment_effort(payload: dict) -> list[str]:
+    errors: list[str] = []
+    planned_hours = payload.get("planned_hours")
+    planned_daily_hours = payload.get("planned_daily_hours")
+    allocation_percent = payload.get("allocation_percent")
+
+    if planned_hours is not None and Decimal(planned_hours) <= 0:
+        errors.append("Las horas planificadas deben ser mayores a 0.")
+    if planned_daily_hours is not None and Decimal(planned_daily_hours) <= 0:
+        errors.append("Las horas diarias planificadas deben ser mayores a 0.")
+    if allocation_percent is not None:
+        if Decimal(allocation_percent) <= 0 or Decimal(allocation_percent) > 100:
+            errors.append("La asignación porcentual debe estar entre 0 y 100.")
+    return errors
+
+
+def _project_assignment_overlaps(resource_id: int, project_id: int, start_date: date | None, end_date: date | None) -> bool:
+    rows = db.session.execute(
+        select(ProjectResource.start_date, ProjectResource.end_date).where(
+            ProjectResource.resource_id == resource_id,
+            ProjectResource.project_id == project_id,
+            ProjectResource.is_active.is_(True),
+        )
+    ).all()
+    for row_start, row_end in rows:
+        if _ranges_overlap(start_date, end_date, row_start, row_end):
+            return True
+    return False
+
+
+def _task_assignment_overlaps(resource_id: int, task_id: int, start_date: date | None, end_date: date | None) -> bool:
+    rows = db.session.execute(
+        select(TaskResource.start_date, TaskResource.end_date).where(
+            TaskResource.resource_id == resource_id,
+            TaskResource.task_id == task_id,
+            TaskResource.is_active.is_(True),
+        )
+    ).all()
+    for row_start, row_end in rows:
+        if _ranges_overlap(start_date, end_date, row_start, row_end):
+            return True
+    return False
+
+
 @bp.route("/resources/<int:resource_id>/availability/net", methods=["GET"])
 @login_required
 def resource_net_availability(resource_id: int):
@@ -1400,9 +1938,12 @@ def assign_project(resource_id: int):
 
     errors = validate_assignment(resource.id, role_id)
     errors.extend(_validate_assignment_dates(payload["start_date"], payload["end_date"]))
+    errors.extend(_validate_assignment_effort(payload))
     project = db.session.get(Project, project_id) if project_id else None
     if not project or not project.is_active:
         errors.append("Proyecto inválido.")
+    elif _project_assignment_overlaps(resource.id, project.id, payload["start_date"], payload["end_date"]):
+        errors.append("Ya existe una asignación activa y superpuesta de este recurso en el proyecto.")
     if errors:
         for error in errors:
             flash(error, "danger")
@@ -1446,11 +1987,14 @@ def assign_task(resource_id: int):
 
     errors = validate_assignment(resource.id, role_id)
     errors.extend(_validate_assignment_dates(payload["start_date"], payload["end_date"]))
+    errors.extend(_validate_assignment_effort(payload))
     task = db.session.get(Task, task_id) if task_id else None
     if not task or not task.is_active:
         errors.append("Tarea inválida.")
     else:
         errors.extend(validate_task_assignment_project_consistency(task.id, resource.id))
+        if _task_assignment_overlaps(resource.id, task.id, payload["start_date"], payload["end_date"]):
+            errors.append("Ya existe una asignación activa y superpuesta de este recurso en la tarea.")
 
     if errors:
         for error in errors:

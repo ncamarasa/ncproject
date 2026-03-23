@@ -1019,6 +1019,12 @@ def contracts_by_client(client_id: int):
 def project_detail(project_id: int):
     project = _load_project_or_404(project_id)
     today = date.today()
+    if project.actual_end_date:
+        project_days_to_end_display = "Finalizado"
+    elif project.estimated_end_date:
+        project_days_to_end_display = str((project.estimated_end_date - today).days)
+    else:
+        project_days_to_end_display = "-"
     tasks = list(project.tasks)
     task_total = len(tasks)
     task_completed = sum(1 for task in tasks if is_closed_status(task.status))
@@ -1066,6 +1072,7 @@ def project_detail(project_id: int):
         milestone_upcoming=milestone_upcoming,
         client_sponsor_display=client_sponsor_display,
         key_user_display=key_user_display,
+        project_days_to_end_display=project_days_to_end_display,
         financial_summary=financial_summary,
         **_active_menu_context(),
     )

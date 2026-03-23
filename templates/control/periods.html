@@ -2,8 +2,9 @@
 {% block title %}Períodos Timesheets | NCProject{% endblock %}
 {% block page_title %}Períodos de Timesheets{% endblock %}
 {% block page_subtitle %}Apertura y cierre para control administrativo{% endblock %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('control.dashboard') %}
 {% block page_actions %}
-<a href="{{ url_for('control.dashboard') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver a Control PMO</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
 {% endblock %}
 
 {% block dashboard_content %}

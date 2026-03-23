@@ -307,7 +307,11 @@ def review_timesheet(header_id: int):
             return redirect(url_for("control.review_timesheet", header_id=header.id))
 
         if action == "approve":
-            approve_timesheet(header, approver_user_id=g.user.id)
+            try:
+                approve_timesheet(header, approver_user_id=g.user.id)
+            except ValueError as exc:
+                flash(str(exc), "danger")
+                return redirect(url_for("control.review_timesheet", header_id=header.id))
             db.session.commit()
             flash("Timesheet aprobado.", "success")
             return redirect(url_for("control.timesheets", status="submitted"))
@@ -317,7 +321,11 @@ def review_timesheet(header_id: int):
             if len(comment) < 3:
                 flash("Debes informar motivo de rechazo.", "danger")
                 return redirect(url_for("control.review_timesheet", header_id=header.id))
-            reject_timesheet(header, approver_user_id=g.user.id, comment=comment)
+            try:
+                reject_timesheet(header, approver_user_id=g.user.id, comment=comment)
+            except ValueError as exc:
+                flash(str(exc), "danger")
+                return redirect(url_for("control.review_timesheet", header_id=header.id))
             db.session.commit()
             flash("Timesheet rechazado.", "warning")
             return redirect(url_for("control.timesheets", status="submitted"))

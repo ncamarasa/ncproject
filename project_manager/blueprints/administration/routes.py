@@ -101,6 +101,7 @@ def _permission_tree():
         "tasks": "Tareas",
         "work": "Mi Trabajo",
         "control": "Control PMO",
+        "reports": "Reportes",
         "team": "Equipo",
         "settings": "Configuración",
     }

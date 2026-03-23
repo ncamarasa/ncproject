@@ -3,11 +3,12 @@
 {% block title %}{{ 'Editar proyecto' if is_edit else 'Nuevo proyecto' }} | NCProject{% endblock %}
 {% block page_title %}{{ 'Editar proyecto' if is_edit else 'Nuevo proyecto' }}{% endblock %}
 {% block page_subtitle %}Formulario integral del proyecto{% endblock %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('projects.list_projects') %}
 {% block page_actions %}
 {% if is_edit %}
-<a href="{{ url_for('projects.project_detail', project_id=project.id) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver detalle</a>
+<a href="{{ url_for('projects.project_detail', project_id=project.id, next=request.full_path.rstrip('?')) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver detalle</a>
 {% endif %}
-<a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al listado</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
 {% endblock %}
 
 {% block dashboard_content %}
@@ -422,7 +423,7 @@
       </div>
       <div class="card-footer bg-white d-flex gap-2 project-form-footer">
         <button type="submit" class="btn btn-primary btn-action-standard">{{ 'Guardar cambios' if is_edit else 'Crear proyecto' }}</button>
-        <a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-secondary btn-action-standard">{{ 'Cancelar edición' if is_edit else 'Volver al listado' }}</a>
+        <a href="{{ back_url }}" class="btn btn-outline-secondary btn-action-standard">{{ 'Cancelar edición' if is_edit else 'Volver' }}</a>
       </div>
     </div>
   </div>

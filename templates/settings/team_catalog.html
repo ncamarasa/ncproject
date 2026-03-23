@@ -1,8 +1,10 @@
 {% extends 'dashboard/layout.html' %}
 {% block title %}ABM {{ catalog_label }} | NCProject{% endblock %}
 {% block page_title %}Configuración / Equipo / {{ catalog_label }}{% endblock %}
+{% set current_url = request.full_path.rstrip('?') %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('settings.team_settings') %}
 {% block page_actions %}
-<a href="{{ url_for('settings.team_settings') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
 {% endblock %}
 {% block dashboard_content %}
 <div class="card border-0 metric-card mb-3 form-mode-card form-mode-create">
@@ -46,15 +48,19 @@
           <td>{% if item.is_system %}<span class="badge badge-secondary">Sistema</span>{% else %}<span class="badge badge-light">Configurable</span>{% endif %}</td>
           <td class="text-end">
             {% if catalog_key == 'calendars' %}
-              <a class="btn btn-sm btn-outline-primary mr-1" href="{{ url_for('settings.team_calendars', calendar=item.name) }}" title="Días no laborables">Días no laborables</a>
+              <a class="btn btn-sm btn-outline-primary mr-1" href="{{ url_for('settings.team_calendars', calendar=item.name, next=current_url) }}" title="Días no laborables">Días no laborables</a>
             {% endif %}
             {% if item.is_editable %}
-              <a class="btn btn-sm btn-outline-secondary btn-action-icon mr-1" href="{{ url_for('settings.edit_team_catalog', catalog_key=catalog_key, item_id=item.id) }}" title="Editar"><i class="fas fa-pen"></i></a>
+              <a class="btn btn-sm btn-outline-secondary btn-action-icon mr-1" href="{{ url_for('settings.edit_team_catalog', catalog_key=catalog_key, item_id=item.id, next=current_url) }}" title="Editar"><i class="fas fa-pen"></i></a>
             {% endif %}
-            {% if item.is_deletable %}
+            {% set in_use = usage_counts.get(item.id, False) if usage_counts is defined else false %}
+            {% if item.is_deletable and not in_use %}
               <form method="post" action="{{ url_for('settings.delete_team_catalog', catalog_key=catalog_key, item_id=item.id) }}" class="d-inline" onsubmit="return confirm('¿Eliminar valor?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-sm btn-outline-danger btn-action-icon" type="submit"><i class="fas fa-trash"></i></button>
               </form>
+            {% elif in_use %}
+              <span class="text-secondary small">En uso</span>
             {% endif %}
             {% if not item.is_editable and not item.is_deletable %}
               <span class="text-secondary small">Protegido</span>

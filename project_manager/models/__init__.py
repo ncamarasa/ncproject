@@ -20,6 +20,7 @@ from project_manager.models.project import (
     TaskAttachment,
     TaskComment,
     TaskDependency,
+    TaskKnowledge,
     TaskWorklog,
 )
 from project_manager.models.settings import (
@@ -36,9 +37,11 @@ from project_manager.models.team import (
     ResourceAvailability,
     ResourceAvailabilityException,
     ResourceCost,
+    ResourceKnowledge,
     RoleSalePrice,
     ResourceRole,
     TaskResource,
+    TeamKnowledge,
     TeamRole,
 )
 from project_manager.models.user import (
@@ -65,6 +68,7 @@ __all__ = [
     "TaskDependency",
     "TaskComment",
     "TaskAttachment",
+    "TaskKnowledge",
     "TaskWorklog",
     "ClientCatalogOptionConfig",
     "CompanyTypeConfig",
@@ -75,6 +79,8 @@ __all__ = [
     "Resource",
     "TeamRole",
     "ResourceRole",
+    "TeamKnowledge",
+    "ResourceKnowledge",
     "ResourceAvailability",
     "ResourceAvailabilityException",
     "ResourceCost",

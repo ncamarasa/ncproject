@@ -3,16 +3,21 @@
 {% block title %}{{ 'Editar recurso' if is_edit else 'Nuevo recurso' }} | NCProject{% endblock %}
 {% block page_title %}{{ 'Editar recurso' if is_edit else 'Nuevo recurso' }}{% endblock %}
 {% block page_subtitle %}Datos principales del recurso{% endblock %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('team.list_resources') %}
 {% block page_actions %}
 {% if is_edit %}
-<a href="{{ url_for('team.resource_detail', resource_id=resource.id) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver detalle</a>
+<a href="{{ url_for('team.resource_detail', resource_id=resource.id, next=request.full_path.rstrip('?')) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver detalle</a>
 {% endif %}
-<a href="{{ url_for('team.list_resources') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al listado</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
 {% endblock %}
 
 {% block dashboard_content %}
-<div class="card border-0 metric-card">
-  <div class="card-header"><strong>1. Datos principales del recurso</strong></div>
+{% set resource_form_mode = 'edit' if is_edit else 'create' %}
+<div class="card border-0 metric-card form-mode-card form-mode-{{ resource_form_mode }}">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>1. Datos principales del recurso</strong>
+    <span class="badge form-mode-badge">{{ 'Modo edición' if is_edit else 'Modo alta' }}</span>
+  </div>
   <div class="card-body">
     <form method="post" class="row g-3">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -41,20 +46,9 @@
         </select>
       </div>
       <div class="col-12 col-md-4">
-        <label class="form-label">Tipo *</label>
-        {% set type_value = form_values.get('resource_type', resource.resource_type if resource else 'internal') %}
-        <select name="resource_type" class="custom-select" required>
-          {% for item in resource_types %}
-          {% set normalized_item = item|lower %}
-          <option value="{{ item }}" {% if type_value == item %}selected{% endif %}>
-            {% if normalized_item in ['internal', 'interno'] %}Interno{% elif normalized_item in ['external', 'externo'] %}Externo{% else %}{{ item|replace('_', ' ')|title }}{% endif %}
-          </option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-12 col-md-4">
         <label class="form-label">Calendario</label>
-        {% set selected_calendar = form_values.get('calendar_name', resource.calendar_name if resource else '') %}
+        {% set default_calendar = 'Argentina' if not is_edit and 'Argentina' in calendar_options else '' %}
+        {% set selected_calendar = form_values.get('calendar_name', resource.calendar_name if resource else default_calendar) %}
         <select name="calendar_name" class="custom-select">
           <option value="">Seleccionar</option>
           {% for item in calendar_options %}
@@ -63,9 +57,24 @@
         </select>
       </div>
       <div class="col-12 col-md-4">
+        <label class="form-label">Tipo *</label>
+        {% set type_value = form_values.get('resource_type', resource.resource_type if resource else 'internal') %}
+        {% set normalized_type_value = (type_value or '')|lower %}
+        <select id="resourceTypeSelect" name="resource_type" class="custom-select" required>
+          {% for item in resource_types %}
+          {% set normalized_item = item|lower %}
+          {% set is_selected = (type_value == item) or (normalized_type_value in ['internal', 'interno'] and normalized_item in ['internal', 'interno']) or (normalized_type_value in ['external', 'externo'] and normalized_item in ['external', 'externo']) %}
+          <option value="{{ item }}" {% if is_selected %}selected{% endif %}>
+            {% if normalized_item in ['internal', 'interno'] %}Interno{% elif normalized_item in ['external', 'externo'] %}Externo{% else %}{{ item|replace('_', ' ')|title }}{% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-4">
         <label class="form-label">Proveedor</label>
         {% set selected_vendor = form_values.get('vendor_name', resource.vendor_name if resource else '') %}
-        <select name="vendor_name" class="custom-select">
+        {% set is_internal_selected = normalized_type_value in ['internal', 'interno'] %}
+        <select id="vendorNameSelect" name="vendor_name" class="custom-select {% if is_internal_selected %}vendor-disabled{% endif %}" {% if is_internal_selected %}disabled{% endif %}>
           <option value="">Seleccionar</option>
           {% for item in vendor_options %}
           <option value="{{ item }}" {% if selected_vendor == item %}selected{% endif %}>{{ item }}</option>
@@ -93,9 +102,31 @@
       {% endif %}
       <div class="col-12 d-flex gap-2">
         <button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar cambios' if is_edit else 'Crear recurso' }}</button>
-        {% if is_edit %}<a href="{{ url_for('team.list_resources') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar edición</a>{% endif %}
+        {% if is_edit %}<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar edición</a>{% endif %}
       </div>
     </form>
   </div>
 </div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  (() => {
+    const typeSelect = document.getElementById("resourceTypeSelect");
+    const vendorSelect = document.getElementById("vendorNameSelect");
+    if (!typeSelect || !vendorSelect) return;
+
+    const syncVendorState = () => {
+      const selected = (typeSelect.value || "").toLowerCase().trim();
+      const isInternal = selected === "internal" || selected === "interno";
+      vendorSelect.disabled = isInternal;
+      vendorSelect.classList.toggle("vendor-disabled", isInternal);
+      if (isInternal) {
+        vendorSelect.value = "";
+      }
+    };
+
+    typeSelect.addEventListener("change", syncVendorState);
+    syncVendorState();
+  })();
+</script>
 {% endblock %}

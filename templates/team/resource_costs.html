@@ -2,8 +2,9 @@
 {% block title %}Gestión de costos | NCProject{% endblock %}
 {% block page_title %}Gestión de costos{% endblock %}
 {% block page_subtitle %}Recurso: {{ resource.full_name }}{% endblock %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('team.resource_detail', resource_id=resource.id) %}
 {% block page_actions %}
-<a href="{{ url_for('team.resource_detail', resource_id=resource.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al detalle</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
 {% endblock %}
 
 {% block dashboard_content %}
@@ -27,7 +28,7 @@
         {% set selected_cost_amount = cost_values.get('cost_amount', edit_cost.hourly_cost|decimal_input(2) if edit_cost and edit_cost.hourly_cost is not none else (edit_cost.monthly_cost|decimal_input(2) if edit_cost else '')) %}
         <form method="post" action="{{ url_for('team.edit_cost', cost_id=edit_cost.id) if edit_cost else url_for('team.add_cost', resource_id=resource.id) }}" class="row g-2 align-items-end">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="next" value="{{ url_for('team.manage_resource_costs', resource_id=resource.id) }}">
+          <input type="hidden" name="next" value="{{ url_for('team.manage_resource_costs', resource_id=resource.id, next=request.args.get('next')) }}">
           <div class="col-6 col-md-2"><label class="form-label">Desde *</label><input type="date" name="valid_from" class="form-control" required value="{{ cost_values.get('valid_from', edit_cost.valid_from if edit_cost else '') }}"></div>
           <div class="col-6 col-md-2"><label class="form-label">Hasta</label><input type="date" name="valid_to" class="form-control" value="{{ cost_values.get('valid_to', edit_cost.valid_to if edit_cost else '') }}"></div>
           <div class="col-6 col-md-2">

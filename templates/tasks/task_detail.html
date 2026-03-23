@@ -44,6 +44,14 @@
           <dt class="col-sm-4">Estado</dt><dd class="col-sm-8">{{ task.status or '-' }}</dd>
           <dt class="col-sm-4">Prioridad</dt><dd class="col-sm-8">{{ task.priority or '-' }}</dd>
           <dt class="col-sm-4">Responsable</dt><dd class="col-sm-8">{{ task.responsible or '-' }}</dd>
+          <dt class="col-sm-4">Conocimientos</dt>
+          <dd class="col-sm-8">
+            {% for link in task.knowledge_links %}
+              {{ link.knowledge.name }}{% if not loop.last %}, {% endif %}
+            {% else %}
+              -
+            {% endfor %}
+          </dd>
           <dt class="col-sm-4">Fechas</dt><dd class="col-sm-8">{{ task.start_date or '-' }} / {{ task.due_date or '-' }}</dd>
           <dt class="col-sm-4">Duración</dt>
           <dd class="col-sm-8">

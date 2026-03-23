@@ -1,8 +1,9 @@
 {% extends 'dashboard/layout.html' %}
 {% block title %}Editar rol | NCProject{% endblock %}
 {% block page_title %}Editar rol{% endblock %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('administration.list_roles') %}
 {% block page_actions %}
-<a href="{{ url_for('administration.list_roles') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver a roles</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver a roles</a>
 {% endblock %}
 
 {% block dashboard_content %}
@@ -46,7 +47,7 @@
       </div>
       <div class="col-12 d-flex gap-2">
         <button class="btn btn-primary btn-action-standard" type="submit">Guardar cambios</button>
-        <a href="{{ url_for('administration.list_roles') }}" class="btn btn-outline-secondary btn-action-standard">Cancelar</a>
+        <a href="{{ back_url }}" class="btn btn-outline-secondary btn-action-standard">Cancelar</a>
       </div>
     </form>
   </div>

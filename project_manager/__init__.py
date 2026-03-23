@@ -19,9 +19,10 @@ def create_app() -> Flask:
         template_folder=os.path.join(project_root, "templates"),
         static_folder=os.path.join(project_root, "static"),
     )
+    default_sqlite_path = os.path.join(app.instance_path, "project_manager.db")
     app.config.from_mapping(
         SECRET_KEY=os.getenv("SECRET_KEY", "cambiar-esto-en-produccion"),
-        SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL", "sqlite:///project_manager.db"),
+        SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL", f"sqlite:///{default_sqlite_path}"),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         CONTRACT_UPLOAD_FOLDER=os.path.join(app.instance_path, "contracts"),
         CLIENT_CONTRACT_UPLOAD_FOLDER=os.path.join(app.instance_path, "client_contracts"),
@@ -41,6 +42,7 @@ def create_app() -> Flask:
     from project_manager.blueprints.control import bp as control_bp
     from project_manager.blueprints.main import bp as main_bp
     from project_manager.blueprints.projects import bp as projects_bp
+    from project_manager.blueprints.reports import bp as reports_bp
     from project_manager.blueprints.settings import bp as settings_bp
     from project_manager.blueprints.team import bp as team_bp
     from project_manager.blueprints.tasks import bp as tasks_bp
@@ -52,6 +54,7 @@ def create_app() -> Flask:
     app.register_blueprint(control_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(projects_bp)
+    app.register_blueprint(reports_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(team_bp)
     app.register_blueprint(tasks_bp)

@@ -11,6 +11,7 @@ from project_manager.auth_utils import allowed_project_ids, has_permission, logi
 from project_manager.blueprints.work import bp
 from project_manager.extensions import db
 from project_manager.models import (
+    Client,
     Project,
     Resource,
     SystemCatalogOptionConfig,
@@ -33,6 +34,17 @@ from project_manager.services.default_catalogs import seed_default_catalogs_for_
 from project_manager.services.team_business_rules import calculate_resource_net_availability
 from project_manager.utils.dates import parse_date_input
 from project_manager.utils.numbers import parse_decimal_input
+
+INTERNAL_CLIENT_CODE = "SYS-INTERNAL-CLIENT"
+INTERNAL_CLIENT_NAME = "Cliente Interno"
+INTERNAL_PROJECT_CODE = "SYS-INTERNAL"
+INTERNAL_PROJECT_NAME = "Proyecto Interno"
+INTERNAL_TASK_TITLES_FALLBACK = (
+    "Soporte interno",
+    "Capacitación",
+    "Licencia por enfermedad",
+    "Administración interna",
+)
 
 
 def _safe_strip(value: str | None) -> str:
@@ -319,6 +331,102 @@ def _sync_task_from_worklogs(task: Task) -> None:
     task.actual_end_date = logs[-1].work_date if int(task.progress_percent or 0) >= 100 else None
 
 
+def _internal_task_titles(owner_user_id: int | None) -> list[str]:
+    if not owner_user_id:
+        return list(INTERNAL_TASK_TITLES_FALLBACK)
+    values = db.session.execute(
+        select(SystemCatalogOptionConfig.name)
+        .where(
+            SystemCatalogOptionConfig.owner_user_id == owner_user_id,
+            SystemCatalogOptionConfig.module_key == "projects",
+            SystemCatalogOptionConfig.catalog_key == "internal_task_categories",
+            SystemCatalogOptionConfig.is_active.is_(True),
+        )
+        .order_by(SystemCatalogOptionConfig.is_system.asc(), SystemCatalogOptionConfig.name.asc())
+    ).scalars().all()
+    if values:
+        return values
+    return list(INTERNAL_TASK_TITLES_FALLBACK)
+
+
+def _ensure_internal_project_and_tasks() -> tuple[Project, list[Task]]:
+    internal_client = db.session.execute(
+        select(Client).where(
+            Client.is_active.is_(True),
+            (Client.client_code == INTERNAL_CLIENT_CODE) | (Client.name == INTERNAL_CLIENT_NAME),
+        )
+    ).scalar_one_or_none()
+    if not internal_client:
+        internal_client = Client(
+            client_code=INTERNAL_CLIENT_CODE,
+            name=INTERNAL_CLIENT_NAME,
+            status="Activo",
+            notes="Cliente técnico para imputaciones internas no facturables.",
+            is_active=True,
+        )
+        db.session.add(internal_client)
+        db.session.flush()
+
+    internal_project = db.session.execute(
+        select(Project).where(
+            Project.is_active.is_(True),
+            (Project.project_code == INTERNAL_PROJECT_CODE) | (Project.name == INTERNAL_PROJECT_NAME),
+        )
+    ).scalar_one_or_none()
+    if not internal_project:
+        internal_project = Project(
+            project_code=INTERNAL_PROJECT_CODE,
+            name=INTERNAL_PROJECT_NAME,
+            client_id=internal_client.id,
+            description="Proyecto técnico del sistema para registrar horas internas no facturables.",
+            objective="Centralizar soporte, capacitación y ausencias en un único proyecto interno.",
+            project_type="Interno",
+            status="Activo",
+            priority="Media",
+            owner="Sistema",
+            billing_mode="No facturable",
+            is_active=True,
+        )
+        db.session.add(internal_project)
+        db.session.flush()
+
+    existing_tasks = db.session.execute(
+        select(Task)
+        .where(Task.project_id == internal_project.id, Task.is_active.is_(True))
+        .order_by(Task.project_task_id.asc(), Task.id.asc())
+    ).scalars().all()
+    by_title = {_safe_strip(item.title).lower(): item for item in existing_tasks}
+
+    next_project_task_id = (
+        db.session.execute(select(func.coalesce(func.max(Task.project_task_id), 0)).where(Task.project_id == internal_project.id)).scalar_one()
+        + 1
+    )
+    task_titles = _internal_task_titles(g.user.id if g.get("user") else None)
+    for title in task_titles:
+        key = _safe_strip(title).lower()
+        if key in by_title:
+            continue
+        row = Task(
+            project_id=internal_project.id,
+            project_task_id=next_project_task_id,
+            title=title,
+            description=f"Imputación interna: {title}.",
+            task_type="Tarea",
+            status="Pendiente",
+            priority="Media",
+            creator="Sistema",
+            progress_percent=0,
+            is_active=True,
+        )
+        db.session.add(row)
+        by_title[key] = row
+        next_project_task_id += 1
+
+    db.session.flush()
+    tasks = [by_title[_safe_strip(title).lower()] for title in task_titles if _safe_strip(title).lower() in by_title]
+    return internal_project, tasks
+
+
 @bp.before_request
 def _authorize_module():
     if g.get("user") is None:
@@ -365,18 +473,46 @@ def my_tasks():
     hide_no_due = _to_bool(request.args.get("hide_no_due"))
     edit_log_id = _to_int(request.values.get("edit_log_id"))
     edit_log = None
+    internal_project = None
+    internal_tasks: list[Task] = []
+    internal_task_ids: set[int] = set()
+
+    def _redirect_my_tasks(*, work_date: date | None = None, edit_log_id_value: int | None = None):
+        params: dict[str, object] = {}
+        if is_admin and selected_user:
+            params["user_id"] = selected_user.id
+        if work_date:
+            params["work_date"] = work_date.isoformat()
+        if edit_log_id_value:
+            params["edit_log_id"] = edit_log_id_value
+        priority_value = _priority_filter_key(request.values.get("priority"))
+        if priority_value:
+            params["priority"] = priority_value
+        if _to_bool(request.values.get("hide_no_due")):
+            params["hide_no_due"] = "1"
+        return redirect(url_for("work.my_tasks", **params))
 
     if request.method == "POST":
         if g.user.read_only:
             flash("Tu usuario es de solo lectura.", "danger")
-            return redirect(url_for("work.my_tasks", user_id=selected_user.id if is_admin else None))
+            return _redirect_my_tasks()
 
         action = _safe_strip(request.form.get("action")) or "log"
+        if action in {"log", "log_internal"}:
+            try:
+                internal_project, internal_tasks = _ensure_internal_project_and_tasks()
+                internal_task_ids = {item.id for item in internal_tasks}
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                internal_project = None
+                internal_tasks = []
+                internal_task_ids = set()
         if action == "submit_week":
             submit_date = parse_date_input(request.form.get("work_date")) or default_work_date
             if not selected_resource:
                 flash("El usuario seleccionado no está vinculado a un recurso activo (por email).", "danger")
-                return redirect(url_for("work.my_tasks", user_id=selected_user.id if is_admin else None))
+                return _redirect_my_tasks()
             week_start, _ = week_bounds(submit_date)
             header = db.session.execute(
                 select(TimesheetHeader).where(
@@ -386,14 +522,18 @@ def my_tasks():
             ).scalar_one_or_none()
             if not header:
                 flash("No hay horas cargadas para esa semana.", "warning")
-                return redirect(url_for("work.my_tasks", user_id=selected_user.id if is_admin else None, work_date=submit_date.isoformat()))
+                return _redirect_my_tasks(work_date=submit_date)
             if header.status == "approved":
                 flash("La semana ya está aprobada. No se puede reenviar.", "danger")
-                return redirect(url_for("work.my_tasks", user_id=selected_user.id if is_admin else None, work_date=submit_date.isoformat()))
+                return _redirect_my_tasks(work_date=submit_date)
             if header.status == "submitted":
                 flash("La semana ya fue enviada y está pendiente de revisión PMO.", "info")
-                return redirect(url_for("work.my_tasks", user_id=selected_user.id if is_admin else None, work_date=submit_date.isoformat()))
-            submit_timesheet(header)
+                return _redirect_my_tasks(work_date=submit_date)
+            try:
+                submit_timesheet(header)
+            except ValueError as exc:
+                flash(str(exc), "danger")
+                return _redirect_my_tasks(work_date=submit_date)
             db.session.commit()
             summary = _resource_week_capacity(
                 selected_resource.id,
@@ -405,33 +545,33 @@ def my_tasks():
             if overage > 0:
                 flash(f"Semana enviada con exceso de {overage} hs para validación PMO.", "warning")
             flash("Semana enviada para aprobación.", "success")
-            return redirect(url_for("work.my_tasks", user_id=selected_user.id if is_admin else None, work_date=submit_date.isoformat()))
+            return _redirect_my_tasks(work_date=submit_date)
 
         if action in {"update_log", "delete_log"}:
             log_id = _to_int(request.form.get("log_id"))
             log = db.session.get(TaskWorklog, log_id) if log_id else None
             if not log or not log.is_active:
                 flash("Registro de trabajo no válido.", "danger")
-                return redirect(url_for("work.my_tasks", user_id=selected_user.id if is_admin else None))
+                return _redirect_my_tasks()
             if not selected_resource or log.resource_id != selected_resource.id:
                 flash("Solo puedes editar registros del recurso seleccionado.", "danger")
-                return redirect(url_for("work.my_tasks", user_id=selected_user.id if is_admin else None))
+                return _redirect_my_tasks()
             task = db.session.get(Task, log.task_id)
             if not task:
                 flash("La tarea del registro no existe.", "danger")
-                return redirect(url_for("work.my_tasks", user_id=selected_user.id if is_admin else None))
+                return _redirect_my_tasks()
             scope = allowed_project_ids(g.user)
             if scope is not None and task.project_id not in scope:
                 flash("No tienes acceso al proyecto de la tarea.", "danger")
-                return redirect(url_for("work.my_tasks", user_id=selected_user.id if is_admin else None))
+                return _redirect_my_tasks()
 
             header = log.timesheet_header
             if header and not can_edit_timesheet_header(header):
                 flash("No se puede editar: la semana está enviada/aprobada o el período está cerrado.", "danger")
-                return redirect(url_for("work.my_tasks", user_id=selected_user.id if is_admin else None, work_date=log.work_date.isoformat()))
+                return _redirect_my_tasks(work_date=log.work_date)
             if not header and is_day_in_closed_period(log.work_date):
                 flash("No se puede editar: la fecha pertenece a un período cerrado.", "danger")
-                return redirect(url_for("work.my_tasks", user_id=selected_user.id if is_admin else None, work_date=log.work_date.isoformat()))
+                return _redirect_my_tasks(work_date=log.work_date)
 
             if action == "delete_log":
                 line = db.session.execute(
@@ -445,7 +585,7 @@ def my_tasks():
                     recalculate_parent_task(task.parent_task_id, reason="worklog_delete", trigger_task_id=task.id)
                 db.session.commit()
                 flash("Registro eliminado.", "info")
-                return redirect(url_for("work.my_tasks", user_id=selected_user.id if is_admin else None, work_date=log.work_date.isoformat()))
+                return _redirect_my_tasks(work_date=log.work_date)
 
             # update_log
             hours = _to_decimal(request.form.get("hours"))
@@ -487,14 +627,7 @@ def my_tasks():
             if errors:
                 for error in errors:
                     flash(error, "danger")
-                return redirect(
-                    url_for(
-                        "work.my_tasks",
-                        user_id=selected_user.id if is_admin else None,
-                        work_date=log.work_date.isoformat(),
-                        edit_log_id=log.id,
-                    )
-                )
+                return _redirect_my_tasks(work_date=log.work_date, edit_log_id_value=log.id)
 
             log.hours = hours
             log.progress_percent_after = None
@@ -517,9 +650,11 @@ def my_tasks():
                     "warning",
                 )
             flash("Registro actualizado.", "success")
-            return redirect(url_for("work.my_tasks", user_id=selected_user.id if is_admin else None, work_date=log.work_date.isoformat()))
+            return _redirect_my_tasks(work_date=log.work_date)
 
         task_id = _to_int(request.form.get("task_id"))
+        if action == "log_internal":
+            task_id = _to_int(request.form.get("internal_task_id"))
         work_date = parse_date_input(request.form.get("work_date"))
         hours = _to_decimal(request.form.get("hours"))
         note = _safe_strip(request.form.get("note"))
@@ -539,11 +674,14 @@ def my_tasks():
             errors.append("Las horas deben ser mayores a 0.")
         elif hours > Decimal("24"):
             errors.append("Las horas por registro no pueden superar 24.")
-        if task and selected_resource and not _resource_is_assigned_task(task, selected_resource.id):
+        is_internal_task = bool(task and task.id in internal_task_ids)
+        if task and selected_resource and not is_internal_task and not _resource_is_assigned_task(task, selected_resource.id):
             errors.append("Solo puedes imputar sobre tareas asignadas al recurso seleccionado.")
+        if action == "log_internal" and task and not is_internal_task:
+            errors.append("La categoría interna seleccionada no es válida.")
 
         scope = allowed_project_ids(g.user)
-        if task and scope is not None and task.project_id not in scope:
+        if task and not is_internal_task and scope is not None and task.project_id not in scope:
             errors.append("No tienes acceso al proyecto de la tarea seleccionada.")
 
         overage_info = None
@@ -581,13 +719,7 @@ def my_tasks():
             header = ensure_timesheet_header(selected_resource.id, g.user.id if g.get("user") else None, work_date)
             if not can_edit_timesheet_header(header):
                 flash("No se puede registrar: la semana está aprobada o cerrada.", "danger")
-                return redirect(
-                    url_for(
-                        "work.my_tasks",
-                        user_id=selected_user.id if is_admin else None,
-                        work_date=work_date.isoformat(),
-                    )
-                )
+                return _redirect_my_tasks(work_date=work_date)
             worklog = TaskWorklog(
                 task_id=task.id,
                 resource_id=selected_resource.id,
@@ -623,13 +755,7 @@ def my_tasks():
                     "warning",
                 )
             flash("Registro de trabajo guardado.", "success")
-            return redirect(
-                url_for(
-                    "work.my_tasks",
-                    user_id=selected_user.id if is_admin else None,
-                    work_date=work_date.isoformat(),
-                )
-            )
+            return _redirect_my_tasks(work_date=work_date)
 
     requested_date = parse_date_input(request.args.get("work_date"))
     if requested_date:
@@ -651,6 +777,13 @@ def my_tasks():
         "total": 0,
     }
     if selected_resource:
+        try:
+            internal_project, internal_tasks = _ensure_internal_project_and_tasks()
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            internal_project = None
+            internal_tasks = []
         task_rows = db.session.execute(_assigned_tasks_stmt(selected_resource.id, g.user)).scalars().all()
         week_capacity = _resource_week_capacity(
             selected_resource.id,
@@ -742,4 +875,6 @@ def my_tasks():
         selected_priority_filter=selected_priority_filter,
         hide_no_due=hide_no_due,
         priority_counts=priority_counts,
+        internal_project=internal_project,
+        internal_tasks=internal_tasks,
     )

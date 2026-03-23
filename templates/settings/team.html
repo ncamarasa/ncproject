@@ -3,8 +3,9 @@
 {% block page_title %}Configuración / Equipo{% endblock %}
 {% block page_subtitle %}Catálogos y reglas operativas del módulo de equipo{% endblock %}
 {% block dashboard_content %}
+{% set current_url = request.full_path.rstrip('?') %}
 <div class="card border-0 metric-card">
-  <div class="card-header"><strong>ABM de configuración de Equipo</strong></div>
+  <div class="card-header"><strong>Configuración de Equipo</strong></div>
   <div class="card-body">
     <div class="form-group">
       <label for="teamCatalogSearch">Buscar configuración</label>
@@ -23,9 +24,9 @@
       >
         <div class="card border mb-3">
           <div class="card-body">
-            <h3 class="h6">ABM Cotizaciones de monedas</h3>
+            <h3 class="h6">Cotizaciones de monedas</h3>
             <p class="small text-secondary mb-3">Configuración compartida para convertir costos y precios entre monedas.</p>
-            <a href="{{ url_for('settings.project_currency_rates') }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar cotizaciones</a>
+            <a href="{{ url_for('settings.project_currency_rates', next=current_url) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar cotizaciones</a>
           </div>
         </div>
       </div>
@@ -37,9 +38,23 @@
       >
         <div class="card border mb-3">
           <div class="card-body">
-            <h3 class="h6">ABM Roles operativos</h3>
+            <h3 class="h6">Roles operativos</h3>
             <p class="small text-secondary mb-3">Gestioná roles para asignaciones: definen la función del recurso en el proyecto.</p>
-            <a href="{{ url_for('settings.team_roles') }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar roles</a>
+            <a href="{{ url_for('settings.team_roles', next=current_url) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar roles</a>
+          </div>
+        </div>
+      </div>
+
+      <div
+        class="col-12 col-md-6 catalog-card"
+        data-label="conocimientos skills habilidades"
+        data-desc="gestiona el catalogo de conocimientos para asignar a recursos y tareas"
+      >
+        <div class="card border mb-3">
+          <div class="card-body">
+            <h3 class="h6">Conocimientos</h3>
+            <p class="small text-secondary mb-3">Gestioná conocimientos para perfilar recursos y definir requerimientos en tareas.</p>
+            <a href="{{ url_for('settings.team_knowledges', next=current_url) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar conocimientos</a>
           </div>
         </div>
       </div>
@@ -55,7 +70,7 @@
           <div class="card-body">
             <h3 class="h6">Calendarios y feriados</h3>
             <p class="small text-secondary mb-3">ABM de calendarios y acceso a la gestión de días no laborables por calendario.</p>
-            <a href="{{ url_for('settings.team_catalog', catalog_key='calendars') }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar calendarios</a>
+            <a href="{{ url_for('settings.team_catalog', catalog_key='calendars', next=current_url) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar calendarios</a>
           </div>
         </div>
       </div>
@@ -67,9 +82,9 @@
       >
         <div class="card border mb-3">
           <div class="card-body">
-            <h3 class="h6">ABM {{ label }}</h3>
+            <h3 class="h6">{{ label }}</h3>
             <p class="small text-secondary mb-3">{{ team_catalog_descriptions.get(key, 'Gestiona los valores disponibles para este catálogo.') }}</p>
-            <a href="{{ url_for('settings.team_catalog', catalog_key=key) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar {{ label|lower }}</a>
+            <a href="{{ url_for('settings.team_catalog', catalog_key=key, next=current_url) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar {{ label|lower }}</a>
           </div>
         </div>
       </div>
@@ -92,9 +107,9 @@
       <div class="col-12 col-md-6 catalog-card" data-label="{{ label|lower }}" data-desc="catalogo compartido {{ label|lower }}">
         <div class="card border mb-3">
           <div class="card-body">
-            <h3 class="h6">ABM {{ label }}</h3>
+            <h3 class="h6">{{ label }}</h3>
             <p class="small text-secondary mb-3">Disponible también desde Configuración de Clientes.</p>
-            <a href="{{ url_for('settings.client_catalog', field_key=key) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar {{ label|lower }}</a>
+            <a href="{{ url_for('settings.client_catalog', field_key=key, next=current_url) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar {{ label|lower }}</a>
           </div>
         </div>
       </div>

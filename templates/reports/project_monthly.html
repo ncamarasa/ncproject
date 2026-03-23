@@ -1,0 +1,120 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Reportes | NCProject{% endblock %}
+{% block page_title %}Reportes{% endblock %}
+{% block page_subtitle %}Horas y costo mensual por proyecto{% endblock %}
+{% block page_actions %}
+<a href="{{ url_for('control.dashboard') }}" class="btn btn-outline-primary btn-sm btn-action-standard">Control PMO</a>
+<a href="{{ url_for('main.home') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Inicio</a>
+{% endblock %}
+
+{% block dashboard_content %}
+<div class="card mb-3 search-panel-card">
+  <div class="card-header"><strong>Filtros de búsqueda</strong></div>
+  <div class="card-body">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-12 col-md-3">
+        <label class="form-label">Mes</label>
+        <input type="month" name="month" value="{{ selected_month }}" class="form-control">
+      </div>
+      <div class="col-12 col-md-5">
+        <label class="form-label">Proyecto</label>
+        <select name="project_id" class="custom-select">
+          <option value="">Todos</option>
+          {% for project in projects %}
+          <option value="{{ project.id }}" {% if selected_project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-2">
+        <button type="submit" class="btn btn-outline-primary btn-sm btn-action-standard">Filtrar</button>
+      </div>
+      <div class="col-12 col-md-2">
+        <a href="{{ url_for('reports.project_monthly') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Limpiar</a>
+      </div>
+      <div class="col-12 col-md-2">
+        <small class="text-secondary">Período: {{ start_date }} a {{ end_date }}</small>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="row mb-3">
+  <div class="col-6 col-md-2 mb-2">
+    <div class="small-box bg-primary mb-0"><div class="inner"><h4>{{ total_projects }}</h4><p>Proyectos</p></div></div>
+  </div>
+  <div class="col-6 col-md-2 mb-2">
+    <div class="small-box bg-info mb-0"><div class="inner"><h4>{{ total_logs }}</h4><p>Registros</p></div></div>
+  </div>
+  <div class="col-6 col-md-2 mb-2">
+    <div class="small-box bg-success mb-0"><div class="inner"><h4>{{ total_hours|number(2) }}</h4><p>Horas</p></div></div>
+  </div>
+  <div class="col-6 col-md-3 mb-2">
+    <div class="small-box bg-warning mb-0"><div class="inner"><h4>{{ total_valued_logs }}/{{ total_logs }}</h4><p>Registros valorizados</p></div></div>
+  </div>
+  <div class="col-6 col-md-3 mb-2">
+    <div class="small-box bg-secondary mb-0"><div class="inner"><h4>{{ internal_hours|number(2) }}</h4><p>Horas internas</p></div></div>
+  </div>
+</div>
+
+{% if cost_by_currency %}
+<div class="card border-0 metric-card mb-3">
+  <div class="card-body py-2">
+    <small class="text-secondary mr-2">Costo valorizado por moneda:</small>
+    {% for code, amount in cost_by_currency %}
+    <span class="badge badge-light border mr-1">{{ amount|money(code) }}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card border-0 metric-card">
+  <div class="card-header"><strong>Detalle por proyecto</strong></div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Proyecto</th>
+            <th>Cliente</th>
+            <th>Estado</th>
+            <th class="text-right">Registros</th>
+            <th class="text-right">Horas</th>
+            <th class="text-right">Costo valorizado</th>
+            <th class="text-right">Cobertura costo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          {% set project = row.project %}
+          <tr>
+            <td>
+              <a href="{{ url_for('projects.project_detail', project_id=project.id) }}"><strong>{{ project.name }}</strong></a>
+              {% if project.project_code == 'SYS-INTERNAL' or project.name == 'Proyecto Interno' %}
+              <span class="badge badge-secondary ml-1">Interno</span>
+              {% endif %}
+            </td>
+            <td>{{ project.client.name if project.client else '-' }}</td>
+            <td>{{ project.status or '-' }}</td>
+            <td class="text-right">{{ row.logs }}</td>
+            <td class="text-right">{{ row.hours|number(2) }}</td>
+            <td class="text-right">{{ row.cost|money(project.currency_code or 'USD') }}</td>
+            <td class="text-right">
+              {% if row.logs > 0 %}
+                {{ row.valued_logs }}/{{ row.logs }}
+                {% if row.warnings > 0 %}
+                <span class="badge badge-warning ml-1">{{ row.warnings }} sin valorizar</span>
+                {% endif %}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="text-center text-secondary py-3">Sin datos para el período seleccionado.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

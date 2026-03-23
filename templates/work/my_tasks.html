@@ -4,7 +4,7 @@
 {% block page_subtitle %}Registro operativo de horas y avance por tarea{% endblock %}
 
 {% block dashboard_content %}
-<div class="card border-0 metric-card mb-3">
+<div class="card mb-3 search-panel-card">
   <div class="card-header d-flex justify-content-between align-items-center">
     <strong>Contexto de carga</strong>
     {% if is_admin %}
@@ -67,9 +67,19 @@
       <span class="badge badge-{% if week_status == 'approved' %}success{% elif week_status == 'submitted' %}warning{% elif week_status == 'rejected' %}danger{% else %}secondary{% endif %}">
         {{ week_status or 'draft' }}
       </span>
-      <form method="post" class="d-inline">
+      <form
+        method="post"
+        class="d-inline"
+        id="submit-week-form"
+        data-week-remaining="{{ week_remaining }}"
+        data-week-logged="{{ week_logged }}"
+        data-week-capacity="{{ week_capacity.capacity_hours if week_capacity else 0 }}"
+        data-week-overage="{{ week_overage }}"
+      >
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         {% if is_admin and selected_user %}<input type="hidden" name="user_id" value="{{ selected_user.id }}">{% endif %}
+        {% if selected_priority_filter %}<input type="hidden" name="priority" value="{{ selected_priority_filter }}">{% endif %}
+        {% if hide_no_due %}<input type="hidden" name="hide_no_due" value="1">{% endif %}
         <input type="hidden" name="action" value="submit_week">
         <input type="hidden" name="work_date" value="{{ default_work_date.isoformat() }}">
         <button
@@ -206,6 +216,8 @@
                 {% if is_admin and selected_user %}
                 <input type="hidden" name="user_id" value="{{ selected_user.id }}">
                 {% endif %}
+                {% if selected_priority_filter %}<input type="hidden" name="priority" value="{{ selected_priority_filter }}">{% endif %}
+                {% if hide_no_due %}<input type="hidden" name="hide_no_due" value="1">{% endif %}
                 <input type="hidden" name="task_id" value="{{ task.id }}">
                 <input type="date" name="work_date" value="{{ default_work_date.isoformat() }}" class="form-control form-control-sm" required>
                 <input type="text" inputmode="decimal" name="hours" class="form-control form-control-sm" placeholder="hs" required>
@@ -243,6 +255,8 @@
       {% if is_admin and selected_user %}
       <input type="hidden" name="user_id" value="{{ selected_user.id }}">
       {% endif %}
+      {% if selected_priority_filter %}<input type="hidden" name="priority" value="{{ selected_priority_filter }}">{% endif %}
+      {% if hide_no_due %}<input type="hidden" name="hide_no_due" value="1">{% endif %}
       <div class="col-12 col-md-4">
         <label class="form-label">Tarea</label>
         <input class="form-control" value="#{{ edit_log.task.project_task_id if edit_log.task else '-' }} - {{ edit_log.task.title if edit_log.task else '-' }}" readonly>
@@ -267,7 +281,48 @@
       </div>
       <div class="col-12 d-flex gap-2 mt-2">
         <button type="submit" class="btn btn-primary btn-sm btn-action-standard">Guardar cambios</button>
-        <a href="{{ url_for('work.my_tasks', user_id=selected_user.id if is_admin and selected_user else None, work_date=default_work_date.isoformat()) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar</a>
+        <a href="{{ url_for('work.my_tasks', user_id=selected_user.id if is_admin and selected_user else None, work_date=default_work_date.isoformat(), priority=selected_priority_filter or None, hide_no_due=1 if hide_no_due else None) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% if selected_resource and internal_project and internal_tasks %}
+<div class="card border-0 metric-card mb-3">
+  <div class="card-header"><strong>Registro interno - {{ internal_project.name }}</strong></div>
+  <div class="card-body">
+    <form method="post" class="row g-2 align-items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="log_internal">
+      {% if is_admin and selected_user %}
+      <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+      {% endif %}
+      {% if selected_priority_filter %}<input type="hidden" name="priority" value="{{ selected_priority_filter }}">{% endif %}
+      {% if hide_no_due %}<input type="hidden" name="hide_no_due" value="1">{% endif %}
+      <div class="col-12 col-md-3">
+        <label class="form-label">Categoría *</label>
+        <select name="internal_task_id" class="custom-select" required>
+          <option value="">Seleccionar</option>
+          {% for task in internal_tasks %}
+          <option value="{{ task.id }}">{{ task.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Fecha *</label>
+        <input type="date" name="work_date" value="{{ default_work_date.isoformat() }}" class="form-control" required>
+      </div>
+      <div class="col-12 col-md-2">
+        <label class="form-label">Horas *</label>
+        <input type="text" inputmode="decimal" name="hours" class="form-control" placeholder="0,00" required>
+      </div>
+      <div class="col-12 col-md-4">
+        <label class="form-label">Detalle</label>
+        <input type="text" name="note" class="form-control" placeholder="Ticket, tema o comentario (opcional)">
+      </div>
+      <div class="col-12 col-md-1">
+        <button type="submit" class="btn btn-primary btn-action-standard">Guardar</button>
       </div>
     </form>
   </div>
@@ -304,7 +359,7 @@
             <td class="text-end">
               <a
                 class="btn btn-sm btn-outline-secondary btn-action-icon"
-                href="{{ url_for('work.my_tasks', user_id=selected_user.id if is_admin and selected_user else None, work_date=default_work_date.isoformat(), edit_log_id=log.id) }}"
+                href="{{ url_for('work.my_tasks', user_id=selected_user.id if is_admin and selected_user else None, work_date=default_work_date.isoformat(), edit_log_id=log.id, priority=selected_priority_filter or None, hide_no_due=1 if hide_no_due else None) }}"
                 title="Editar"
                 aria-label="Editar"
               ><i class="fas fa-pen"></i></a>
@@ -315,6 +370,8 @@
                 {% if is_admin and selected_user %}
                 <input type="hidden" name="user_id" value="{{ selected_user.id }}">
                 {% endif %}
+                {% if selected_priority_filter %}<input type="hidden" name="priority" value="{{ selected_priority_filter }}">{% endif %}
+                {% if hide_no_due %}<input type="hidden" name="hide_no_due" value="1">{% endif %}
                 <button type="submit" class="btn btn-sm btn-outline-danger btn-action-icon" title="Eliminar" aria-label="Eliminar">
                   <i class="fas fa-trash"></i>
                 </button>
@@ -331,4 +388,44 @@
     </div>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ super() }}
+<script>
+  (function () {
+    function formatHours(value) {
+      return value.toFixed(2).replace(".", ",");
+    }
+
+    var form = document.getElementById("submit-week-form");
+    if (!form) return;
+
+    form.addEventListener("submit", function (event) {
+      var remaining = Number(form.dataset.weekRemaining || 0);
+      var logged = Number(form.dataset.weekLogged || 0);
+      var capacity = Number(form.dataset.weekCapacity || 0);
+      var overage = Number(form.dataset.weekOverage || 0);
+      var message = "¿Confirmas enviar la semana para aprobación?";
+
+      if (remaining > 0) {
+        message =
+          "Faltan horas por cargar en la semana.\n" +
+          "Disponibles: " + formatHours(capacity) + " hs\n" +
+          "Cargadas: " + formatHours(logged) + " hs\n" +
+          "Pendientes: " + formatHours(remaining) + " hs\n\n" +
+          "¿Deseas enviar igual?";
+      } else if (overage > 0) {
+        message =
+          "La semana tiene horas extra.\n" +
+          "Exceso: " + formatHours(overage) + " hs\n\n" +
+          "¿Deseas enviar igual para revisión?";
+      }
+
+      if (!window.confirm(message)) {
+        event.preventDefault();
+      }
+    });
+  })();
+</script>
 {% endblock %}

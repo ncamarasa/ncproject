@@ -21,11 +21,14 @@ from project_manager.models import (
     Resource,
     ResourceAvailability,
     ResourceAvailabilityException,
+    ResourceKnowledge,
     ResourceRole,
     Stakeholder,
     SystemCatalogOptionConfig,
     TeamCalendarHolidayConfig,
+    TeamKnowledge,
     Task,
+    TaskKnowledge,
     TaskResource,
     TeamRole,
 )
@@ -71,6 +74,7 @@ PROJECT_CATALOG_FIELDS = {
     "stakeholder_roles": "Roles de stakeholder",
     "project_close_reasons": "Motivos de cierre",
     "project_close_results": "Resultados de cierre",
+    "internal_task_categories": "Categorías internas",
 }
 
 PROJECT_CATALOG_DESCRIPTIONS = {
@@ -87,8 +91,11 @@ PROJECT_CATALOG_DESCRIPTIONS = {
     "stakeholder_roles": "Define roles de stakeholders del proyecto (ej: Sponsor Cliente, Key User).",
     "project_close_reasons": "Define motivos de cierre del proyecto para trazabilidad de gestión.",
     "project_close_results": "Configura resultados de cierre para análisis de performance.",
+    "internal_task_categories": "Define categorías imputables para el Proyecto Interno (soporte, capacitación, licencia, etc.).",
     "currency_rates": "Administra cotizaciones de monedas para convertir costos/precios entre divisas.",
 }
+INTERNAL_PROJECT_CODE = "SYS-INTERNAL"
+INTERNAL_PROJECT_NAME = "Proyecto Interno"
 
 SHARED_CLIENT_CATALOG_FIELDS_BY_MODULE = {
     "projects": {
@@ -222,6 +229,17 @@ def _team_role_usage_count(role_id: int) -> int:
     )
 
 
+def _team_knowledge_usage_count(knowledge_id: int) -> int:
+    return int(
+        (db.session.execute(
+            select(func.count()).select_from(ResourceKnowledge).where(ResourceKnowledge.knowledge_id == knowledge_id)
+        ).scalar_one() or 0)
+        + (db.session.execute(
+            select(func.count()).select_from(TaskKnowledge).where(TaskKnowledge.knowledge_id == knowledge_id)
+        ).scalar_one() or 0)
+    )
+
+
 def _ensure_team_catalog_defaults() -> None:
     seed_default_catalogs_for_user(g.user.id)
     db.session.commit()
@@ -311,6 +329,20 @@ def _project_catalog_in_use(catalog_key: str, name: str) -> bool:
         return _count_usage(Task, Task.priority, name) > 0
     if catalog_key == "stakeholder_roles":
         return _count_usage(Stakeholder, Stakeholder.role, name) > 0
+    if catalog_key == "internal_task_categories":
+        return (
+            db.session.execute(
+                select(func.count())
+                .select_from(Task)
+                .join(Project, Project.id == Task.project_id)
+                .where(
+                    Task.is_active.is_(True),
+                    (Project.project_code == INTERNAL_PROJECT_CODE) | (Project.name == INTERNAL_PROJECT_NAME),
+                    func.lower(Task.title) == name.lower(),
+                )
+            ).scalar_one()
+            > 0
+        )
     return False
 
 
@@ -339,6 +371,17 @@ def _project_catalog_usage_count(catalog_key: str, name: str) -> int:
         return _count_usage(Task, Task.priority, name)
     if catalog_key == "stakeholder_roles":
         return _count_usage(Stakeholder, Stakeholder.role, name)
+    if catalog_key == "internal_task_categories":
+        return db.session.execute(
+            select(func.count())
+            .select_from(Task)
+            .join(Project, Project.id == Task.project_id)
+            .where(
+                Task.is_active.is_(True),
+                (Project.project_code == INTERNAL_PROJECT_CODE) | (Project.name == INTERNAL_PROJECT_NAME),
+                func.lower(Task.title) == name.lower(),
+            )
+        ).scalar_one()
     return 0
 
 
@@ -365,6 +408,13 @@ def _team_catalog_in_use(catalog_key: str, name: str) -> bool:
         return _count_usage(Resource, Resource.area, name) > 0
     if catalog_key == "vendors":
         return _count_usage(Resource, Resource.vendor_name, name) > 0
+    if catalog_key == "knowledges":
+        knowledge = db.session.execute(
+            select(TeamKnowledge).where(func.lower(TeamKnowledge.name) == name.lower())
+        ).scalar_one_or_none()
+        if not knowledge:
+            return False
+        return _team_knowledge_usage_count(knowledge.id) > 0
     return False
 
 
@@ -383,6 +433,9 @@ def _authorize_settings_module():
         "settings.delete_team_calendar_holiday": ["settings.catalogs.manage", "settings.edit"],
         "settings.add_team_calendar_holiday_from_edit": ["settings.catalogs.manage", "settings.edit"],
         "settings.team_roles": ["settings.catalogs.manage", "settings.edit"],
+        "settings.team_knowledges": ["settings.catalogs.manage", "settings.edit"],
+        "settings.edit_team_knowledge": ["settings.catalogs.manage", "settings.edit"],
+        "settings.toggle_team_knowledge": ["settings.catalogs.manage", "settings.edit"],
         "settings.edit_team_role": ["settings.catalogs.manage", "settings.edit"],
         "settings.toggle_team_role": ["settings.catalogs.manage", "settings.edit"],
         "settings.team_catalog": ["settings.catalogs.manage", "settings.edit"],
@@ -748,6 +801,94 @@ def team_roles():
     return render_template("settings/team_roles.html", roles=roles, role_usage=role_usage)
 
 
+@bp.route("/team/knowledges", methods=["GET", "POST"])
+@login_required
+def team_knowledges():
+    if request.method == "POST":
+        name = " ".join(_safe_strip(request.form.get("name")).split())
+        description = _safe_strip(request.form.get("description"))
+        if len(name) < 2:
+            flash("El nombre del conocimiento es inválido.", "danger")
+        else:
+            existing = db.session.execute(
+                select(TeamKnowledge).where(func.lower(TeamKnowledge.name) == name.lower())
+            ).scalar_one_or_none()
+            if existing:
+                existing.description = description or existing.description
+                existing.is_active = True
+                flash("Conocimiento reactivado.", "success")
+            else:
+                db.session.add(
+                    TeamKnowledge(
+                        name=name,
+                        description=description,
+                        is_active=True,
+                    )
+                )
+                flash("Conocimiento creado.", "success")
+            db.session.commit()
+        return redirect(url_for("settings.team_knowledges"))
+
+    knowledges = db.session.execute(select(TeamKnowledge).order_by(TeamKnowledge.name.asc())).scalars().all()
+    usage_by_knowledge = {knowledge.id: _team_knowledge_usage_count(knowledge.id) for knowledge in knowledges}
+    return render_template(
+        "settings/team_knowledges.html",
+        knowledges=knowledges,
+        usage_by_knowledge=usage_by_knowledge,
+    )
+
+
+@bp.route("/team/knowledges/<int:knowledge_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_team_knowledge(knowledge_id: int):
+    knowledge = db.session.get(TeamKnowledge, knowledge_id)
+    if not knowledge:
+        abort(404)
+
+    if request.method == "POST":
+        name = " ".join(_safe_strip(request.form.get("name")).split())
+        description = _safe_strip(request.form.get("description"))
+        if len(name) < 2:
+            flash("El nombre del conocimiento es inválido.", "danger")
+        elif db.session.execute(
+            select(TeamKnowledge.id).where(
+                TeamKnowledge.id != knowledge.id,
+                func.lower(TeamKnowledge.name) == name.lower(),
+            )
+        ).scalar_one_or_none():
+            flash("Ya existe otro conocimiento con ese nombre.", "danger")
+        else:
+            knowledge.name = name
+            knowledge.description = description
+            db.session.commit()
+            flash("Conocimiento actualizado.", "success")
+            return redirect(url_for("settings.team_knowledges"))
+
+    return render_template(
+        "settings/edit_item.html",
+        item=knowledge,
+        kind="conocimiento",
+        back_url=url_for("settings.team_knowledges"),
+    )
+
+
+@bp.route("/team/knowledges/<int:knowledge_id>/toggle", methods=["POST"])
+@login_required
+def toggle_team_knowledge(knowledge_id: int):
+    knowledge = db.session.get(TeamKnowledge, knowledge_id)
+    if not knowledge:
+        abort(404)
+    if knowledge.is_active:
+        usage_count = _team_knowledge_usage_count(knowledge.id)
+        if usage_count > 0:
+            flash(f"No se puede desactivar: el conocimiento está siendo utilizado ({usage_count} referencia/s).", "danger")
+            return redirect(url_for("settings.team_knowledges"))
+    knowledge.is_active = not knowledge.is_active
+    db.session.commit()
+    flash("Estado del conocimiento actualizado.", "info")
+    return redirect(url_for("settings.team_knowledges"))
+
+
 @bp.route("/team/roles/<int:role_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit_team_role(role_id: int):
@@ -854,12 +995,14 @@ def team_catalog(catalog_key: str):
             SystemCatalogOptionConfig.is_active.is_(True),
         )
         .order_by(SystemCatalogOptionConfig.is_system.asc(), SystemCatalogOptionConfig.name.asc())
-    ).scalars()
+    ).scalars().all()
+    usage_counts = {item.id: _team_catalog_in_use(catalog_key, item.name) for item in items}
     return render_template(
         "settings/team_catalog.html",
         items=items,
         catalog_key=catalog_key,
         catalog_label=catalog_label,
+        usage_counts=usage_counts,
     )
 
 

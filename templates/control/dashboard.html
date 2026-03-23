@@ -3,8 +3,8 @@
 {% block page_title %}Control PMO{% endblock %}
 {% block page_subtitle %}Baseline, salud de proyectos y aprobación de horas{% endblock %}
 {% block page_actions %}
-<a href="{{ url_for('control.timesheets') }}" class="btn btn-outline-primary btn-sm btn-action-standard">Aprobación timesheets</a>
-<a href="{{ url_for('control.periods') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Períodos</a>
+<a href="{{ url_for('control.timesheets', next=request.full_path.rstrip('?')) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Aprobación timesheets</a>
+<a href="{{ url_for('control.periods', next=request.full_path.rstrip('?')) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Períodos</a>
 {% endblock %}
 
 {% block dashboard_content %}
@@ -26,7 +26,9 @@
           {% for project in projects %}
           {% set latest = latest_by_project.get(project.id) %}
           <tr>
-            <td>{{ project.name }}</td>
+            <td>
+              <a href="{{ url_for('projects.project_detail', project_id=project.id) }}">{{ project.name }}</a>
+            </td>
             <td>
               {% if project.baselines %}
                 {% set latest_baseline = (project.baselines|sort(attribute='version', reverse=True)|first) %}
@@ -47,7 +49,8 @@
             </td>
             <td>{{ latest.snapshot_date if latest else '-' }}</td>
             <td class="text-end">
-              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('control.project_baselines', project_id=project.id) }}">Baselines</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('projects.project_detail', project_id=project.id, next=request.full_path.rstrip('?')) }}">Proyecto</a>
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('control.project_baselines', project_id=project.id, next=request.full_path.rstrip('?')) }}">Baselines</a>
             </td>
           </tr>
           {% else %}

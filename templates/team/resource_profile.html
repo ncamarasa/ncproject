@@ -1,0 +1,167 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Gestión de roles y conocimientos | NCProject{% endblock %}
+{% block page_title %}Gestión de roles y conocimientos{% endblock %}
+{% block page_subtitle %}Recurso: {{ resource.full_name }}{% endblock %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('team.resource_detail', resource_id=resource.id) %}
+{% block page_actions %}
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
+{% endblock %}
+
+{% block dashboard_content %}
+{% set role_form_mode = 'create' %}
+{% set knowledge_form_mode = 'create' %}
+
+<div class="card border-0 metric-card mb-3">
+  <div class="card-header d-flex align-items-center">
+    <strong>Roles</strong>
+    <span class="badge badge-light ml-2">{{ resource.role_links|length }} registros</span>
+  </div>
+  <div class="card-body">
+    <div class="row">
+      <div class="col-12 col-xl-4 mb-3 mb-xl-0">
+        <div class="card border-0 metric-card h-100 form-mode-card form-mode-{{ role_form_mode }}">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>Nuevos roles</strong>
+            <span class="badge form-mode-badge">Modo alta</span>
+          </div>
+          <div class="card-body">
+            <form method="post" action="{{ url_for('team.add_resource_roles_batch', resource_id=resource.id) }}" class="row g-2 align-items-end">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="next" value="{{ url_for('team.manage_resource_profile', resource_id=resource.id, next=request.args.get('next')) }}">
+              <div class="col-12">
+                <label class="form-label">Buscar rol</label>
+                <input id="roleSearch" type="search" class="form-control form-control-sm" placeholder="Filtrar por nombre..." autocomplete="off">
+              </div>
+              <div class="col-12">
+                <label class="form-label">Roles disponibles</label>
+                <select id="roleSelect" name="role_ids" class="custom-select" multiple size="10">
+                  {% for role in roles %}
+                  <option value="{{ role.id }}" data-search="{{ role.name|lower }}" {% if role.id in role_ids %}disabled{% endif %}>{{ role.name }}{% if role.id in role_ids %} (asignado){% endif %}</option>
+                  {% endfor %}
+                </select>
+                <small class="text-secondary">Selección múltiple: Ctrl/Cmd + click.</small>
+              </div>
+              <div class="col-12 d-flex gap-2 mt-2">
+                <button class="btn btn-primary btn-sm btn-action-standard" type="submit">Agregar seleccionados</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-8">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Rol</th><th class="text-end">Acción</th></tr></thead>
+            <tbody>
+              {% for link in resource.role_links %}
+              <tr>
+                <td>{{ link.role.name }}</td>
+                <td class="text-end">
+                  <form method="post" class="d-inline" action="{{ url_for('team.remove_resource_role', link_id=link.id) }}" onsubmit="return confirm('¿Quitar rol?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="next" value="{{ url_for('team.manage_resource_profile', resource_id=resource.id, next=request.args.get('next')) }}">
+                    <button class="btn btn-sm btn-outline-danger btn-action-icon" type="submit" title="Quitar rol" aria-label="Quitar rol">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </form>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="2" class="text-secondary text-center">Sin roles asignados.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 metric-card">
+  <div class="card-header d-flex align-items-center">
+    <strong>Conocimientos</strong>
+    <span class="badge badge-light ml-2">{{ resource.knowledge_links|length }} registros</span>
+  </div>
+  <div class="card-body">
+    <div class="row">
+      <div class="col-12 col-xl-4 mb-3 mb-xl-0">
+        <div class="card border-0 metric-card h-100 form-mode-card form-mode-{{ knowledge_form_mode }}">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>Nuevos conocimientos</strong>
+            <span class="badge form-mode-badge">Modo alta</span>
+          </div>
+          <div class="card-body">
+            <form method="post" action="{{ url_for('team.add_resource_knowledges_batch', resource_id=resource.id) }}" class="row g-2 align-items-end">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="next" value="{{ url_for('team.manage_resource_profile', resource_id=resource.id, next=request.args.get('next')) }}">
+              <div class="col-12">
+                <label class="form-label">Buscar conocimiento</label>
+                <input id="knowledgeSearch" type="search" class="form-control form-control-sm" placeholder="Filtrar por nombre..." autocomplete="off">
+              </div>
+              <div class="col-12">
+                <label class="form-label">Conocimientos disponibles</label>
+                <select id="knowledgeSelect" name="knowledge_ids" class="custom-select" multiple size="12">
+                  {% for knowledge in knowledges %}
+                  <option value="{{ knowledge.id }}" data-search="{{ knowledge.name|lower }}" {% if knowledge.id in knowledge_ids %}disabled{% endif %}>{{ knowledge.name }}{% if knowledge.id in knowledge_ids %} (asignado){% endif %}</option>
+                  {% endfor %}
+                </select>
+                <small class="text-secondary">Selección múltiple: Ctrl/Cmd + click.</small>
+              </div>
+              <div class="col-12 d-flex gap-2 mt-2">
+                <button class="btn btn-info btn-sm btn-action-standard" type="submit">Agregar seleccionados</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-xl-8">
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead><tr><th>Conocimiento</th><th class="text-end">Acción</th></tr></thead>
+            <tbody>
+              {% for link in resource.knowledge_links %}
+              <tr>
+                <td>{{ link.knowledge.name }}</td>
+                <td class="text-end">
+                  <form method="post" class="d-inline" action="{{ url_for('team.remove_resource_knowledge', link_id=link.id) }}" onsubmit="return confirm('¿Quitar conocimiento?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="next" value="{{ url_for('team.manage_resource_profile', resource_id=resource.id, next=request.args.get('next')) }}">
+                    <button class="btn btn-sm btn-outline-danger btn-action-icon" type="submit" title="Quitar conocimiento" aria-label="Quitar conocimiento">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </form>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="2" class="text-secondary text-center">Sin conocimientos asignados.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (() => {
+    const bindSearch = (searchId, selectId) => {
+      const searchInput = document.getElementById(searchId);
+      const select = document.getElementById(selectId);
+      if (!searchInput || !select) return;
+      const runFilter = () => {
+        const term = (searchInput.value || "").trim().toLowerCase();
+        Array.from(select.options).forEach((option) => {
+          const text = (option.dataset.search || option.textContent || "").toLowerCase();
+          option.hidden = !!term && !text.includes(term);
+        });
+      };
+      searchInput.addEventListener("input", runFilter);
+      runFilter();
+    };
+
+    bindSearch("roleSearch", "roleSelect");
+    bindSearch("knowledgeSearch", "knowledgeSelect");
+  })();
+</script>
+{% endblock %}

@@ -4,6 +4,7 @@
 {% block page_subtitle %}Administración de usuarios y roles{% endblock %}
 
 {% block dashboard_content %}
+{% set current_url = request.full_path.rstrip('?') %}
 <div class="card mb-3 search-panel-card">
   <div class="card-header"><strong>Filtros de búsqueda</strong></div>
   <div class="card-body">
@@ -41,9 +42,9 @@
   <div class="card-header d-flex justify-content-between align-items-center">
     <strong>Listado de usuarios</strong>
     <div class="d-flex gap-2 ml-auto justify-content-end">
-      <a href="{{ url_for('administration.list_roles') }}" class="btn btn-outline-primary btn-sm btn-action-standard">Roles</a>
-      <a href="{{ url_for('administration.team_role_prices') }}" class="btn btn-outline-primary btn-sm btn-action-standard">Precios por rol</a>
-      <a href="{{ url_for('administration.create_user') }}" class="btn btn-primary btn-sm btn-action-standard"><i class="bi bi-plus-circle"></i> Nuevo usuario</a>
+      <a href="{{ url_for('administration.list_roles', next=current_url) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Roles</a>
+      <a href="{{ url_for('administration.team_role_prices', next=current_url) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Precios por rol</a>
+      <a href="{{ url_for('administration.create_user', next=current_url) }}" class="btn btn-primary btn-sm btn-action-standard"><i class="bi bi-plus-circle"></i> Nuevo usuario</a>
     </div>
   </div>
   <div class="card-body p-3">
@@ -74,7 +75,7 @@
             <td>{{ user.last_login_at or '-' }}</td>
             <td>{% if user.is_active %}<span class="badge badge-success">Activo</span>{% else %}<span class="badge badge-secondary">Inactivo</span>{% endif %}</td>
             <td class="text-end">
-              <a class="btn btn-sm btn-outline-secondary btn-action-icon" href="{{ url_for('administration.edit_user', user_id=user.id) }}" title="Editar"><i class="fas fa-pen"></i></a>
+              <a class="btn btn-sm btn-outline-secondary btn-action-icon" href="{{ url_for('administration.edit_user', user_id=user.id, next=current_url) }}" title="Editar"><i class="fas fa-pen"></i></a>
               <form method="post" class="d-inline" action="{{ url_for('administration.toggle_user', user_id=user.id) }}">
                 <button class="btn btn-sm btn-outline-warning btn-action-icon" type="submit" title="Activar/Desactivar"><i class="fas fa-power-off"></i></button>
               </form>

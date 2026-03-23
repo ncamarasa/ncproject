@@ -11,6 +11,7 @@ Tareas - {{ project.name }}
 {% set lock_close_status = edit_task and edit_task_has_subtasks and edit_task_open_subtasks %}
 {% set task_form_mode = 'edit' if edit_task else 'create' %}
 {% set list_next = current_list_url if current_list_url is defined and current_list_url else request.full_path.rstrip('?') %}
+{% set back_project_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('projects.project_detail', project_id=project.id) %}
 <div class="card border-0 metric-card mb-3 form-mode-card form-mode-{{ task_form_mode }}">
   <div class="card-header d-flex justify-content-between align-items-center">
     <strong>{{ 'Editar tarea' if edit_task else 'Nueva tarea' }}</strong>
@@ -161,6 +162,18 @@ Tareas - {{ project.name }}
           {% endfor %}
         </select>
       </div>
+      <div class="col-12 col-lg-5">
+        <label class="form-label">Conocimientos requeridos</label>
+        {% set selected_knowledge_ids_set = selected_knowledge_ids|map('string')|list %}
+        <select name="knowledge_ids" class="custom-select" multiple size="5">
+          {% for knowledge in task_knowledges %}
+          <option value="{{ knowledge.id }}" {% if knowledge.id|string in selected_knowledge_ids_set %}selected{% endif %}>
+            {{ knowledge.name }}
+          </option>
+          {% endfor %}
+        </select>
+        <small class="text-secondary d-block mt-1">Opcional. Selección múltiple (Ctrl/Cmd + click).</small>
+      </div>
       <div class="col-12">
         <label class="form-label">Descripción</label>
         <textarea name="description" class="form-control" rows="2">{{ form_values.get('description', edit_task.description if edit_task else '') }}</textarea>
@@ -221,14 +234,14 @@ Tareas - {{ project.name }}
       {% else %}
       <a href="{{ url_for('tasks.manage_tasks', project_id=project.id, page=current_page, hide_completed=1) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Ocultar completadas</a>
       {% endif %}
-      <a href="{{ url_for('projects.project_detail', project_id=project.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al proyecto</a>
+      <a href="{{ back_project_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
       <a href="{{ url_for('tasks.gantt', project_id=project.id, next=list_next) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver Gantt</a>
     </div>
   </div>
   <div class="card-body p-3">
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0">
-        <thead><tr><th>ID proyecto</th><th>Título</th><th>Estado</th><th>Responsable</th><th>Fechas</th><th>Duración</th><th>Esfuerzo</th><th>Avance</th><th class="text-end">Acciones</th></tr></thead>
+        <thead><tr><th>ID proyecto</th><th>Título</th><th>Estado</th><th>Responsable</th><th>Conocimientos</th><th>Fechas</th><th>Duración</th><th>Esfuerzo</th><th>Avance</th><th class="text-end">Acciones</th></tr></thead>
         <tbody>
           {% for task in tasks %}
           {% set has_children = task.id in parent_task_ids %}
@@ -265,6 +278,15 @@ Tareas - {{ project.name }}
               <span class="badge badge-{{ status_badge_class(task.status) }}">{{ task.status or '-' }}</span>
             </td>
             <td>{{ task.responsible or '-' }}</td>
+            <td>
+              {% if task.knowledge_links %}
+                {% for link in task.knowledge_links %}
+                <span class="badge badge-light">{{ link.knowledge.name }}</span>{% if not loop.last %} {% endif %}
+                {% endfor %}
+              {% else %}
+                <span class="text-secondary">-</span>
+              {% endif %}
+            </td>
             <td><small>{{ task.start_date or '-' }}<br>{{ task.due_date or '-' }}</small></td>
             <td>
               {% if task.is_milestone %}
@@ -288,7 +310,7 @@ Tareas - {{ project.name }}
             </td>
           </tr>
           {% else %}
-          <tr><td colspan="9" class="text-center text-secondary py-3">Sin tareas cargadas.</td></tr>
+          <tr><td colspan="10" class="text-center text-secondary py-3">Sin tareas cargadas.</td></tr>
           {% endfor %}
         </tbody>
       </table>

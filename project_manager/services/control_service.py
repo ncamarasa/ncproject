@@ -219,17 +219,20 @@ def can_edit_timesheet_header(header: TimesheetHeader) -> bool:
     return True
 
 
-def submit_timesheet(header: TimesheetHeader) -> None:
-    if header.status == "approved":
-        return
+def submit_timesheet(header: TimesheetHeader) -> bool:
     if header.period and header.period.is_closed:
-        return
+        raise ValueError("No se puede enviar: el período está cerrado.")
+    if header.status not in {"draft", "rejected"}:
+        raise ValueError("Solo se pueden enviar timesheets en borrador o rechazados.")
     header.status = "submitted"
     header.submitted_at = datetime.utcnow()
     header.rejection_comment = None
+    return True
 
 
 def approve_timesheet(header: TimesheetHeader, *, approver_user_id: int) -> None:
+    if header.status != "submitted":
+        raise ValueError("Solo se pueden aprobar timesheets enviados.")
     header.status = "approved"
     header.approved_at = datetime.utcnow()
     header.approved_by_user_id = approver_user_id
@@ -237,6 +240,8 @@ def approve_timesheet(header: TimesheetHeader, *, approver_user_id: int) -> None
 
 
 def reject_timesheet(header: TimesheetHeader, *, approver_user_id: int, comment: str) -> None:
+    if header.status != "submitted":
+        raise ValueError("Solo se pueden rechazar timesheets enviados.")
     header.status = "rejected"
     header.approved_at = datetime.utcnow()
     header.approved_by_user_id = approver_user_id

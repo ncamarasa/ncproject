@@ -3,8 +3,9 @@
 {% block title %}Stakeholders | NCProject{% endblock %}
 {% block page_title %}Stakeholders - {{ project.name }}{% endblock %}
 {% block page_subtitle %}Gestión de stakeholders del proyecto{% endblock %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('projects.project_detail', project_id=project.id) %}
 {% block page_actions %}
-<a href="{{ url_for('projects.project_detail', project_id=project.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al detalle</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
 {% endblock %}
 
 {% block dashboard_content %}
@@ -15,16 +16,13 @@
     <span class="badge form-mode-badge">{{ 'Modo edición' if edit_stakeholder else 'Modo alta' }}</span>
   </div>
   <div class="card-body">
-    <form method="post" action="{{ url_for('projects.edit_stakeholder', project_id=project.id, stakeholder_id=edit_stakeholder.id, page=current_page) if edit_stakeholder else url_for('projects.manage_stakeholders', project_id=project.id, page=current_page) }}" class="row g-3">
+    <form method="post" action="{{ url_for('projects.edit_stakeholder', project_id=project.id, stakeholder_id=edit_stakeholder.id, page=current_page, next=request.args.get('next')) if edit_stakeholder else url_for('projects.manage_stakeholders', project_id=project.id, page=current_page, next=request.args.get('next')) }}" class="row g-3">
       <div class="col-12 col-lg-4">
         <label class="form-label">Nombre *</label>
         <input required name="name" class="form-control" value="{{ form_values.get('name', edit_stakeholder.name if edit_stakeholder else '') }}">
       </div>
       <div class="col-12 col-lg-4">
-        <label class="form-label d-flex justify-content-between align-items-center">
-          <span>Rol</span>
-          <a href="{{ url_for('settings.project_catalog', catalog_key='stakeholder_roles') }}" class="btn btn-link btn-sm p-0">Configurar roles</a>
-        </label>
+        <label class="form-label">Rol</label>
         {% set current_role = form_values.get('role', edit_stakeholder.role if edit_stakeholder else '') %}
         <select name="role" class="custom-select" required>
           <option value="">Seleccionar</option>
@@ -48,7 +46,7 @@
       <div class="col-12 d-flex gap-2 mt-2">
         <button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar cambios' if edit_stakeholder else 'Agregar stakeholder' }}</button>
         {% if edit_stakeholder %}
-          <a class="btn btn-outline-secondary btn-sm btn-action-standard" href="{{ url_for('projects.manage_stakeholders', project_id=project.id, page=current_page) }}">Cancelar edición</a>
+          <a class="btn btn-outline-secondary btn-sm btn-action-standard" href="{{ url_for('projects.manage_stakeholders', project_id=project.id, page=current_page, next=request.args.get('next')) }}">Cancelar edición</a>
         {% endif %}
       </div>
     </form>
@@ -79,8 +77,8 @@
               <td>{{ stakeholder.phone or '-' }}</td>
               <td>{{ stakeholder.notes or '-' }}</td>
               <td class="text-end">
-                <a class="btn btn-sm btn-outline-secondary btn-action-icon" href="{{ url_for('projects.edit_stakeholder', project_id=project.id, stakeholder_id=stakeholder.id, page=current_page) }}"><i class="fas fa-pen"></i></a>
-                <form method="post" action="{{ url_for('projects.delete_stakeholder', project_id=project.id, stakeholder_id=stakeholder.id, page=current_page) }}" class="d-inline" onsubmit="return confirm('¿Eliminar stakeholder?');">
+                <a class="btn btn-sm btn-outline-secondary btn-action-icon" href="{{ url_for('projects.edit_stakeholder', project_id=project.id, stakeholder_id=stakeholder.id, page=current_page, next=request.args.get('next')) }}"><i class="fas fa-pen"></i></a>
+                <form method="post" action="{{ url_for('projects.delete_stakeholder', project_id=project.id, stakeholder_id=stakeholder.id, page=current_page, next=request.args.get('next')) }}" class="d-inline" onsubmit="return confirm('¿Eliminar stakeholder?');">
                   <button class="btn btn-sm btn-outline-danger btn-action-icon" type="submit"><i class="fas fa-trash"></i></button>
                 </form>
               </td>
@@ -95,19 +93,19 @@
     <nav aria-label="Paginación">
       <ul class="pagination pagination-sm mt-3 mb-0 justify-content-end">
         <li class="page-item {% if not stakeholders_pagination.has_prev %}disabled{% endif %}">
-          <a class="page-link" href="{{ url_for('projects.manage_stakeholders', project_id=project.id, page=stakeholders_pagination.prev_num) if stakeholders_pagination.has_prev else '#' }}">Anterior</a>
+          <a class="page-link" href="{{ url_for('projects.manage_stakeholders', project_id=project.id, page=stakeholders_pagination.prev_num, next=request.args.get('next')) if stakeholders_pagination.has_prev else '#' }}">Anterior</a>
         </li>
         {% for page_num in stakeholders_pagination.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
           {% if page_num %}
             <li class="page-item {% if page_num == stakeholders_pagination.page %}active{% endif %}">
-              <a class="page-link" href="{{ url_for('projects.manage_stakeholders', project_id=project.id, page=page_num) }}">{{ page_num }}</a>
+              <a class="page-link" href="{{ url_for('projects.manage_stakeholders', project_id=project.id, page=page_num, next=request.args.get('next')) }}">{{ page_num }}</a>
             </li>
           {% else %}
             <li class="page-item disabled"><span class="page-link">...</span></li>
           {% endif %}
         {% endfor %}
         <li class="page-item {% if not stakeholders_pagination.has_next %}disabled{% endif %}">
-          <a class="page-link" href="{{ url_for('projects.manage_stakeholders', project_id=project.id, page=stakeholders_pagination.next_num) if stakeholders_pagination.has_next else '#' }}">Siguiente</a>
+          <a class="page-link" href="{{ url_for('projects.manage_stakeholders', project_id=project.id, page=stakeholders_pagination.next_num, next=request.args.get('next')) if stakeholders_pagination.has_next else '#' }}">Siguiente</a>
         </li>
       </ul>
     </nav>

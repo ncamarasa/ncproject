@@ -24,6 +24,12 @@ class Resource(TimestampMixin, db.Model):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    knowledge_links = db.relationship(
+        "ResourceKnowledge",
+        back_populates="resource",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
     availabilities = db.relationship(
         "ResourceAvailability",
         back_populates="resource",
@@ -81,6 +87,28 @@ class TeamRole(TimestampMixin, db.Model):
     )
 
 
+class TeamKnowledge(TimestampMixin, db.Model):
+    __tablename__ = "team_knowledges"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    description = db.Column(db.String(255), nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    resource_links = db.relationship(
+        "ResourceKnowledge",
+        back_populates="knowledge",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+    task_links = db.relationship(
+        "TaskKnowledge",
+        back_populates="knowledge",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+
 class ResourceRole(TimestampMixin, db.Model):
     __tablename__ = "resource_role"
 
@@ -93,6 +121,21 @@ class ResourceRole(TimestampMixin, db.Model):
 
     __table_args__ = (
         db.UniqueConstraint("resource_id", "role_id", name="uq_resource_role_resource_role"),
+    )
+
+
+class ResourceKnowledge(TimestampMixin, db.Model):
+    __tablename__ = "resource_knowledge"
+
+    id = db.Column(db.Integer, primary_key=True)
+    resource_id = db.Column(db.Integer, db.ForeignKey("resources.id"), nullable=False, index=True)
+    knowledge_id = db.Column(db.Integer, db.ForeignKey("team_knowledges.id"), nullable=False, index=True)
+
+    resource = db.relationship("Resource", back_populates="knowledge_links")
+    knowledge = db.relationship("TeamKnowledge", back_populates="resource_links")
+
+    __table_args__ = (
+        db.UniqueConstraint("resource_id", "knowledge_id", name="uq_resource_knowledge_resource_knowledge"),
     )
 
 

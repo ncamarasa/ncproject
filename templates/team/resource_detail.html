@@ -2,9 +2,10 @@
 {% block title %}Recurso {{ resource.full_name }} | NCProject{% endblock %}
 {% block page_title %}Vista 360 - {{ resource.full_name }}{% endblock %}
 {% block page_subtitle %}Vista 360: solo visualización{% endblock %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('team.list_resources') %}
 {% block page_actions %}
-<a href="{{ url_for('team.edit_resource', resource_id=resource.id) }}" class="btn btn-primary btn-sm btn-action-standard">Editar</a>
-<a href="{{ url_for('team.list_resources') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al listado</a>
+<a href="{{ url_for('team.edit_resource', resource_id=resource.id, next=request.full_path.rstrip('?')) }}" class="btn btn-primary btn-sm btn-action-standard">Editar</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
 {% endblock %}
 
 {% block dashboard_content %}
@@ -13,22 +14,22 @@
 {% set exception_type_labels = {'time_off': 'Ausencia', 'vacation': 'Vacaciones', 'leave': 'Licencia', 'holiday': 'Feriado', 'blocked': 'Bloqueado'} %}
 <div class="row g-3 mb-2">
   <div class="col-6 col-lg-2">
-    <a href="{{ url_for('team.manage_resource_roles', resource_id=resource.id) }}" class="text-reset d-block">
+    <a href="{{ url_for('team.manage_resource_profile', resource_id=resource.id, next=request.full_path.rstrip('?')) }}" class="text-reset d-block">
       <div class="small-box bg-info"><div class="inner"><h4>{{ resource.role_links|length }}</h4><p>Roles</p></div></div>
     </a>
   </div>
   <div class="col-6 col-lg-2">
-    <a href="{{ url_for('team.manage_resource_availability', resource_id=resource.id) }}" class="text-reset d-block">
+    <a href="{{ url_for('team.manage_resource_availability', resource_id=resource.id, next=request.full_path.rstrip('?')) }}" class="text-reset d-block">
       <div class="small-box bg-primary"><div class="inner"><h4>{{ resource.availabilities|length }}</h4><p>Disponibilidades</p></div></div>
     </a>
   </div>
   <div class="col-6 col-lg-2">
-    <a href="{{ url_for('team.manage_resource_availability', resource_id=resource.id) }}" class="text-reset d-block">
+    <a href="{{ url_for('team.manage_resource_availability', resource_id=resource.id, next=request.full_path.rstrip('?')) }}" class="text-reset d-block">
       <div class="small-box bg-warning"><div class="inner"><h4>{{ resource.availability_exceptions|selectattr('is_active')|list|length }}</h4><p>Excepciones activas</p></div></div>
     </a>
   </div>
   <div class="col-6 col-lg-2">
-    <a href="{{ url_for('team.manage_resource_costs', resource_id=resource.id) }}" class="text-reset d-block">
+    <a href="{{ url_for('team.manage_resource_costs', resource_id=resource.id, next=request.full_path.rstrip('?')) }}" class="text-reset d-block">
       <div class="small-box bg-success"><div class="inner"><h4>{{ resource.costs|length }}</h4><p>Tarifas</p></div></div>
     </a>
   </div>
@@ -62,34 +63,29 @@
 
 <div class="card border-0 metric-card mb-3">
   <div class="card-header view360-tone-2 d-flex align-items-center">
-    <strong>2. Roles</strong>
-    <a href="{{ url_for('team.manage_resource_roles', resource_id=resource.id) }}" class="btn btn-primary btn-sm ml-auto btn-manage-action btn-action-standard">Gestionar</a>
+    <strong>2. Perfil (Roles y conocimientos)</strong>
+    <a href="{{ url_for('team.manage_resource_profile', resource_id=resource.id, next=request.full_path.rstrip('?')) }}" class="btn btn-primary btn-sm ml-auto btn-manage-action btn-action-standard">Gestionar</a>
   </div>
   <div class="card-body">
-    <div class="row g-2 mb-3">
-      <div class="col-12 col-md-6 col-xl-3"><strong>Total de roles:</strong> {{ resource.role_links|length }}</div>
-      <div class="col-12 col-md-6 col-xl-9">
-        <strong>Roles asignados:</strong>
-        {% for link in resource.role_links %}
+    {% set role_links_sorted = resource.role_links|sort(attribute='role.name') %}
+    {% set knowledge_links_sorted = resource.knowledge_links|sort(attribute='knowledge.name') %}
+    <div class="row g-2">
+      <div class="col-12">
+        <strong>Roles:</strong>
+        {% for link in role_links_sorted %}
           {{ link.role.name }}{% if not loop.last %}, {% endif %}
         {% else %}
           -
         {% endfor %}
       </div>
-    </div>
-    <div class="table-responsive">
-      <table class="table table-sm table-hover mb-0">
-        <thead><tr><th>Rol</th></tr></thead>
-        <tbody>
-          {% for link in resource.role_links %}
-          <tr>
-            <td>{{ link.role.name }}</td>
-          </tr>
-          {% else %}
-          <tr><td class="text-secondary text-center">Sin roles asignados.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="col-12">
+        <strong>Conocimientos:</strong>
+        {% for link in knowledge_links_sorted %}
+          {{ link.knowledge.name }}{% if not loop.last %}, {% endif %}
+        {% else %}
+          -
+        {% endfor %}
+      </div>
     </div>
   </div>
 </div>
@@ -98,7 +94,7 @@
   <div class="card-header view360-tone-3 d-flex align-items-center">
     <strong>3. Disponibilidad</strong>
     <a href="{{ url_for('team.team_calendar', resource_id=resource.id, next=request.full_path.rstrip('?')) }}" class="btn btn-outline-primary btn-sm ml-auto btn-manage-action btn-action-standard">Calendario</a>
-    <a href="{{ url_for('team.manage_resource_availability', resource_id=resource.id) }}" class="btn btn-success btn-sm ml-2 btn-manage-action btn-action-standard">Gestionar</a>
+    <a href="{{ url_for('team.manage_resource_availability', resource_id=resource.id, next=request.full_path.rstrip('?')) }}" class="btn btn-success btn-sm ml-2 btn-manage-action btn-action-standard">Gestionar</a>
   </div>
   <div class="card-body">
     <div class="row g-2 mb-3">
@@ -169,22 +165,17 @@
 <div class="card border-0 metric-card mb-3">
   <div class="card-header view360-tone-4 d-flex align-items-center">
     <strong>4. Costos</strong>
-    <a href="{{ url_for('team.manage_resource_costs', resource_id=resource.id) }}" class="btn btn-secondary btn-sm ml-auto btn-manage-action btn-action-standard">Gestionar</a>
+    <a href="{{ url_for('team.manage_resource_costs', resource_id=resource.id, next=request.full_path.rstrip('?')) }}" class="btn btn-secondary btn-sm ml-auto btn-manage-action btn-action-standard">Gestionar</a>
   </div>
   <div class="card-body">
     <div class="row g-2 mb-3">
-      <div class="col-12 col-md-6 col-xl-6">
+      <div class="col-12">
         <strong>Tarifa vigente:</strong>
         {% if current_cost %}
         {{ current_cost.valid_from }}{% if current_cost.valid_to %} - {{ current_cost.valid_to }}{% else %} - actual{% endif %} | {{ 'Por hora' if current_cost.hourly_cost is not none else 'Por mes' }} | {{ current_cost.hourly_cost if current_cost.hourly_cost is not none else current_cost.monthly_cost }} {{ current_cost.currency }}
         {% else %}
         -
         {% endif %}
-      </div>
-      <div class="col-12 col-md-6 col-xl-3"><strong>Total tarifas:</strong> {{ resource.costs|length }}</div>
-      <div class="col-12 col-md-6 col-xl-3">
-        <strong>Moneda vigente:</strong>
-        {% if current_cost %}{{ current_cost.currency }}{% else %}-{% endif %}
       </div>
     </div>
   </div>
@@ -201,14 +192,14 @@
           <tr>
             <td>
               {% if item.client_id %}
-              <a href="{{ url_for('clients.client_detail', client_id=item.client_id) }}">{{ item.client_name }}</a>
+              <a href="{{ url_for('clients.client_detail', client_id=item.client_id, next=request.full_path.rstrip('?')) }}">{{ item.client_name }}</a>
               {% else %}
               {{ item.client_name }}
               {% endif %}
             </td>
             <td>
               {% if item.project_id %}
-              <a href="{{ url_for('projects.project_detail', project_id=item.project_id) }}">{{ item.project_name }}</a>
+              <a href="{{ url_for('projects.project_detail', project_id=item.project_id, next=request.full_path.rstrip('?')) }}">{{ item.project_name }}</a>
               {% else %}
               {{ item.project_name }}
               {% endif %}

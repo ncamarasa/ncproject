@@ -3,6 +3,7 @@
 {% block page_title %}Configuración / Clientes{% endblock %}
 {% block page_subtitle %}Catálogos administrables por usuario{% endblock %}
 {% block dashboard_content %}
+{% set current_url = request.full_path.rstrip('?') %}
 <div class="card border-0 metric-card">
   <div class="card-header"><strong>Catálogos dinámicos del formulario de Clientes</strong></div>
   <div class="card-body">
@@ -23,9 +24,9 @@
       >
         <div class="card border mb-3">
           <div class="card-body">
-            <h3 class="h6">ABM Cotizaciones de monedas</h3>
+            <h3 class="h6">Cotizaciones de monedas</h3>
             <p class="small text-secondary mb-3">Configuración compartida para unificar importes entre monedas en todos los módulos.</p>
-            <a href="{{ url_for('settings.project_currency_rates') }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar cotizaciones</a>
+            <a href="{{ url_for('settings.project_currency_rates', next=current_url) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar cotizaciones</a>
           </div>
         </div>
       </div>
@@ -37,9 +38,9 @@
       >
         <div class="card border mb-3">
           <div class="card-body">
-            <h3 class="h6">ABM Tipos de empresa</h3>
+            <h3 class="h6">Tipos de empresa</h3>
             <p class="small text-secondary mb-3">Gestioná opciones del campo "Tipo" en clientes.</p>
-            <a href="{{ url_for('settings.company_types') }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar tipos de empresa</a>
+            <a href="{{ url_for('settings.company_types', next=current_url) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar tipos de empresa</a>
           </div>
         </div>
       </div>
@@ -51,9 +52,9 @@
       >
         <div class="card border mb-3">
           <div class="card-body">
-            <h3 class="h6">ABM Tipos de pago</h3>
+            <h3 class="h6">Tipos de pago</h3>
             <p class="small text-secondary mb-3">Gestioná opciones del campo "Condición de pago" en clientes.</p>
-            <a href="{{ url_for('settings.payment_types') }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar tipos de pago</a>
+            <a href="{{ url_for('settings.payment_types', next=current_url) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar tipos de pago</a>
           </div>
         </div>
       </div>
@@ -66,9 +67,9 @@
       >
         <div class="card border mb-3">
           <div class="card-body">
-            <h3 class="h6">ABM {{ field_label }}</h3>
+            <h3 class="h6">{{ field_label }}</h3>
             <p class="small text-secondary mb-3">Gestioná opciones del campo "{{ field_label }}" en clientes.</p>
-            <a href="{{ url_for('settings.client_catalog', field_key=field_key) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar {{ field_label|lower }}</a>
+            <a href="{{ url_for('settings.client_catalog', field_key=field_key, next=current_url) }}" class="btn btn-primary btn-sm btn-action-standard">Gestionar {{ field_label|lower }}</a>
           </div>
         </div>
       </div>

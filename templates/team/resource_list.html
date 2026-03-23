@@ -4,7 +4,8 @@
 {% block page_subtitle %}Gestión centralizada de personas y asignaciones{% endblock %}
 
 {% block dashboard_content %}
-<div class="card border-0 metric-card search-panel-card mb-3">
+{% set list_next = request.full_path.rstrip('?') %}
+<div class="card mb-3 search-panel-card">
   <div class="card-header"><strong>Filtros de búsqueda</strong></div>
   <div class="card-body">
     <form method="get" class="row g-2 align-items-end">
@@ -38,6 +39,15 @@
           {% endfor %}
         </select>
       </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label">Conocimiento</label>
+        <select name="knowledge_id" class="custom-select">
+          <option value="">Todos</option>
+          {% for knowledge in knowledges %}
+          <option value="{{ knowledge.id }}" {% if filters.knowledge_id|string == knowledge.id|string %}selected{% endif %}>{{ knowledge.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <div class="col-12 d-flex gap-2 mt-2">
         <button class="btn btn-outline-primary btn-sm btn-action-standard" type="submit">Filtrar</button>
         <a class="btn btn-outline-secondary btn-sm btn-action-standard" href="{{ url_for('team.list_resources') }}">Limpiar</a>
@@ -50,26 +60,46 @@
   <div class="card-header d-flex justify-content-between align-items-center">
     <strong>Listado de recursos</strong>
     <div class="d-flex gap-2 ml-auto justify-content-end">
-      {% if user_can('settings.view') %}
-      <a href="{{ url_for('settings.team_roles') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Roles</a>
-      {% endif %}
+      <a href="{{ url_for('team.indicators_dashboard', next=request.full_path.rstrip('?')) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Indicadores</a>
+      <a href="{{ url_for('team.capacity_dashboard', next=request.full_path.rstrip('?')) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Capacidad</a>
       <a href="{{ url_for('team.team_calendar', next=request.full_path.rstrip('?')) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Calendario</a>
-      <a href="{{ url_for('team.create_resource') }}" class="btn btn-primary btn-sm btn-action-standard"><i class="bi bi-plus-circle"></i> Nuevo recurso</a>
+      <a href="{{ url_for('team.create_resource', next=list_next) }}" class="btn btn-primary btn-sm btn-action-standard"><i class="bi bi-plus-circle"></i> Nuevo recurso</a>
     </div>
   </div>
   <div class="card-body p-3">
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0">
-        <thead><tr><th>#</th><th>Nombre</th><th>Email</th><th>Tipo</th><th>Cargo / Área</th><th>Estado</th><th class="text-end">Acciones</th></tr></thead>
+        <thead><tr><th>#</th><th>Nombre</th><th>Email</th><th>Cargo / Área</th><th>Roles</th><th>Estado</th><th class="text-end">Acciones</th></tr></thead>
         <tbody>
           {% for resource in resources %}
           <tr>
-            <td>#{{ resource.id }}</td>
-            <td><strong>{{ resource.full_name }}</strong>{% if resource.vendor_name %}<br><small class="text-secondary">{{ resource.vendor_name }}</small>{% endif %}</td>
+            {% set row_number = ((current_page - 1) * per_page + loop.index) if current_page is defined and per_page is defined else loop.index %}
+            <td>{{ row_number }}</td>
+            <td>
+              <strong>{{ resource.full_name }}</strong>
+              {% set normalized_type = (resource.resource_type or '')|lower %}
+              {% if normalized_type in ['internal', 'interno'] %}
+                {% set type_label = 'Interno' %}
+              {% elif normalized_type in ['external', 'externo'] %}
+                {% set type_label = 'Externo' %}
+              {% else %}
+                {% set type_label = resource.resource_type|replace('_', ' ')|title %}
+              {% endif %}
+              <br>
+              <small class="text-secondary">{{ type_label }}{% if resource.vendor_name %} - {{ resource.vendor_name }}{% endif %}</small>
+            </td>
             <td>{{ resource.email or '-' }}</td>
-            {% set normalized_type = (resource.resource_type or '')|lower %}
-            <td>{% if normalized_type in ['internal', 'interno'] %}Interno{% elif normalized_type in ['external', 'externo'] %}Externo{% else %}{{ resource.resource_type|replace('_', ' ')|title }}{% endif %}</td>
             <td>{{ resource.position or '-' }}{% if resource.area %}<br><small class="text-secondary">{{ resource.area }}</small>{% endif %}</td>
+            <td>
+              {% set active_role_links = resource.role_links|selectattr('role')|selectattr('role.is_active')|list %}
+              {% if active_role_links %}
+                {% for link in active_role_links %}
+                <span class="badge badge-light">{{ link.role.name }}</span>{% if not loop.last %} {% endif %}
+                {% endfor %}
+              {% else %}
+                <span class="text-secondary">-</span>
+              {% endif %}
+            </td>
             <td>
               {% if resource.is_active %}
               <span class="badge badge-success">Activo</span>
@@ -78,8 +108,8 @@
               {% endif %}
             </td>
             <td class="text-end">
-              <a href="{{ url_for('team.resource_detail', resource_id=resource.id) }}" class="btn btn-sm btn-outline-primary btn-action-icon" title="Detalle" aria-label="Detalle"><i class="fas fa-eye"></i></a>
-              <a href="{{ url_for('team.edit_resource', resource_id=resource.id) }}" class="btn btn-sm btn-outline-secondary btn-action-icon" title="Editar" aria-label="Editar"><i class="fas fa-pen"></i></a>
+              <a href="{{ url_for('team.resource_detail', resource_id=resource.id, next=list_next) }}" class="btn btn-sm btn-outline-primary btn-action-icon" title="Detalle" aria-label="Detalle"><i class="fas fa-eye"></i></a>
+              <a href="{{ url_for('team.edit_resource', resource_id=resource.id, next=list_next) }}" class="btn btn-sm btn-outline-secondary btn-action-icon" title="Editar" aria-label="Editar"><i class="fas fa-pen"></i></a>
               <form method="post" class="d-inline" action="{{ url_for('team.toggle_resource', resource_id=resource.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-sm btn-outline-warning btn-action-icon" type="submit" title="{{ 'Desactivar' if resource.is_active else 'Activar' }}" aria-label="{{ 'Desactivar' if resource.is_active else 'Activar' }}">

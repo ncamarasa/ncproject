@@ -8,42 +8,40 @@
   {% endif %}
 {% endblock %}
 {% block page_subtitle %}Vista 360: solo visualización{% endblock %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('projects.list_projects') %}
 {% block page_actions %}
-<a href="{{ url_for('projects.edit_project', project_id=project.id) }}" class="btn btn-primary btn-sm btn-action-standard">Editar</a>
-<a href="{{ url_for('clients.client_detail', client_id=project.client_id) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver cliente</a>
-<a href="{{ url_for('projects.list_projects') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver al listado</a>
+<a href="{{ url_for('projects.edit_project', project_id=project.id, next=request.full_path.rstrip('?')) }}" class="btn btn-primary btn-sm btn-action-standard">Editar</a>
+<a href="{{ url_for('clients.client_detail', client_id=project.client_id, next=request.full_path.rstrip('?')) }}" class="btn btn-outline-primary btn-sm btn-action-standard">Ver cliente</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
 {% endblock %}
 
 {% block dashboard_content %}
-<div class="project-hero mb-3">
-  <div class="d-flex flex-wrap align-items-center gap-2">
-    <span class="badge badge-pill badge-light border">Cliente: {{ project.client.name if project.client else '-' }}</span>
-    <span class="badge badge-pill badge-info">Estado: {{ project.status or '-' }}</span>
-    <span class="badge badge-pill badge-secondary">Prioridad: {{ project.priority or '-' }}</span>
-    <span class="badge badge-pill badge-light border">PM: {{ project.project_manager or '-' }}</span>
-  </div>
-</div>
-
-<div class="row g-3 mb-2 project-kpi-grid">
-  <div class="col-6 col-lg-3">
-    <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="text-reset d-block">
-      <div class="project-kpi-card kpi-info"><div class="inner"><h4>{{ progress_avg }}%</h4><p>Avance general</p></div></div>
+<div class="row g-3 mb-2">
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('tasks.manage_tasks', project_id=project.id, next=request.full_path.rstrip('?')) }}" class="text-reset d-block">
+      <div class="small-box bg-info"><div class="inner"><h4>{{ progress_avg }}%</h4><p>Avance</p></div></div>
     </a>
   </div>
-  <div class="col-6 col-lg-3">
-    <a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="text-reset d-block">
-      <div class="project-kpi-card kpi-warning"><div class="inner"><h4>{{ task_milestones }}</h4><p>Hitos totales</p></div></div>
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('tasks.gantt', project_id=project.id, next=request.full_path.rstrip('?')) }}" class="text-reset d-block">
+      <div class="small-box bg-warning"><div class="inner"><h4>{{ task_milestones }}</h4><p>Hitos</p></div></div>
     </a>
   </div>
-  <div class="col-6 col-lg-3">
-    <a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="text-reset d-block">
-      <div class="project-kpi-card kpi-primary"><div class="inner"><h4>{{ milestone_open }}</h4><p>Hitos pendientes</p></div></div>
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('tasks.manage_tasks', project_id=project.id, hide_completed=1, next=request.full_path.rstrip('?')) }}" class="text-reset d-block">
+      <div class="small-box bg-primary"><div class="inner"><h4>{{ milestone_open }}</h4><p>Pendientes</p></div></div>
     </a>
   </div>
-  <div class="col-6 col-lg-3">
-    <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="text-reset d-block">
-      <div class="project-kpi-card kpi-danger"><div class="inner"><h4>{{ task_overdue }}</h4><p>Tareas atrasadas</p></div></div>
+  <div class="col-6 col-lg-2">
+    <a href="{{ url_for('tasks.manage_tasks', project_id=project.id, next=request.full_path.rstrip('?')) }}" class="text-reset d-block">
+      <div class="small-box bg-danger"><div class="inner"><h4>{{ task_overdue }}</h4><p>Atrasadas</p></div></div>
     </a>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="small-box bg-secondary"><div class="inner"><h4>{{ project.status or '-' }}</h4><p>Estado</p></div></div>
+  </div>
+  <div class="col-6 col-lg-2">
+    <div class="small-box bg-success"><div class="inner"><h4>{{ project_days_to_end_display }}</h4><p>Días al fin</p></div></div>
   </div>
 </div>
 
@@ -55,13 +53,18 @@
         <dl class="row mb-0 project-compact-dl">
           <dt class="col-sm-5">Código</dt><dd class="col-sm-7">{{ project.project_code or '-' }}</dd>
           <dt class="col-sm-5">Cliente</dt>
-          <dd class="col-sm-7"><a href="{{ url_for('clients.client_detail', client_id=project.client_id) }}">{{ project.client.name }}</a></dd>
+          <dd class="col-sm-7"><a href="{{ url_for('clients.client_detail', client_id=project.client_id, next=request.full_path.rstrip('?')) }}">{{ project.client.name }}</a></dd>
           <dt class="col-sm-5">Contrato asociado</dt>
           <dd class="col-sm-7">
             {% if project.client_contract %}
               {{ project.client_contract.contract_code or '-' }} - {{ project.client_contract.contract_name or project.client_contract.contract_type }}
             {% else %}-{% endif %}
           </dd>
+          <dt class="col-sm-5">Modalidad facturación</dt><dd class="col-sm-7">{{ project.billing_mode or '-' }}</dd>
+          <dt class="col-sm-5">Moneda</dt><dd class="col-sm-7">{{ project.currency_code or '-' }}</dd>
+          <dt class="col-sm-5">Centro de costos</dt><dd class="col-sm-7">{{ project.cost_center or '-' }}</dd>
+          <dt class="col-sm-5">Código ERP / PSA</dt><dd class="col-sm-7">{{ project.erp_psa_code or '-' }}</dd>
+          <dt class="col-sm-5">Tarifa promedio (referencial)</dt><dd class="col-sm-7">{{ project.average_rate|money(project.currency_code) if project.average_rate is not none else '-' }}</dd>
           <dt class="col-sm-5">Tipo</dt><dd class="col-sm-7">{{ project.project_type or '-' }}</dd>
           <dt class="col-sm-5">Estado</dt><dd class="col-sm-7">{{ project.status or '-' }}</dd>
           <dt class="col-sm-5">Prioridad</dt><dd class="col-sm-7">{{ project.priority or '-' }}</dd>
@@ -99,7 +102,7 @@
           <dt class="col-sm-5">Project Manager</dt>
           <dd class="col-sm-7">
             {% if project.project_manager_resource_id %}
-            <a href="{{ url_for('team.resource_detail', resource_id=project.project_manager_resource_id) }}">{{ project.project_manager or '-' }}</a>
+            <a href="{{ url_for('team.resource_detail', resource_id=project.project_manager_resource_id, next=request.full_path.rstrip('?')) }}">{{ project.project_manager or '-' }}</a>
             {% else %}
             {{ project.project_manager or '-' }}
             {% endif %}
@@ -107,7 +110,7 @@
           <dt class="col-sm-5">Responsable comercial</dt>
           <dd class="col-sm-7">
             {% if project.commercial_manager_resource_id %}
-            <a href="{{ url_for('team.resource_detail', resource_id=project.commercial_manager_resource_id) }}">{{ project.commercial_manager or '-' }}</a>
+            <a href="{{ url_for('team.resource_detail', resource_id=project.commercial_manager_resource_id, next=request.full_path.rstrip('?')) }}">{{ project.commercial_manager or '-' }}</a>
             {% else %}
             {{ project.commercial_manager or '-' }}
             {% endif %}
@@ -115,7 +118,7 @@
           <dt class="col-sm-5">Responsable funcional</dt>
           <dd class="col-sm-7">
             {% if project.functional_manager_resource_id %}
-            <a href="{{ url_for('team.resource_detail', resource_id=project.functional_manager_resource_id) }}">{{ project.functional_manager or '-' }}</a>
+            <a href="{{ url_for('team.resource_detail', resource_id=project.functional_manager_resource_id, next=request.full_path.rstrip('?')) }}">{{ project.functional_manager or '-' }}</a>
             {% else %}
             {{ project.functional_manager or '-' }}
             {% endif %}
@@ -123,7 +126,7 @@
           <dt class="col-sm-5">Responsable técnico</dt>
           <dd class="col-sm-7">
             {% if project.technical_manager_resource_id %}
-            <a href="{{ url_for('team.resource_detail', resource_id=project.technical_manager_resource_id) }}">{{ project.technical_manager or '-' }}</a>
+            <a href="{{ url_for('team.resource_detail', resource_id=project.technical_manager_resource_id, next=request.full_path.rstrip('?')) }}">{{ project.technical_manager or '-' }}</a>
             {% else %}
             {{ project.technical_manager or '-' }}
             {% endif %}
@@ -135,7 +138,7 @@
     </div>
   </div>
 
-  <div class="col-12 col-xl-6">
+  <div class="col-12">
     <div class="card border-0 metric-card h-100">
       <div class="card-header view360-tone-4"><strong>4. Planificación y operación</strong></div>
       <div class="card-body">
@@ -165,7 +168,7 @@
     <div class="card border-0 metric-card">
       <div class="card-header view360-tone-5 d-flex justify-content-between align-items-center">
         <strong>5. Stakeholders</strong>
-        <a href="{{ url_for('projects.manage_stakeholders', project_id=project.id) }}" class="btn btn-warning btn-sm ml-auto btn-manage-action btn-action-standard">Gestionar stakeholders</a>
+        <a href="{{ url_for('projects.manage_stakeholders', project_id=project.id, next=request.full_path.rstrip('?')) }}" class="btn btn-warning btn-sm ml-auto btn-manage-action btn-action-standard">Gestionar stakeholders</a>
       </div>
       <div class="card-body">
         <div class="table-responsive">
@@ -204,8 +207,8 @@
       <div class="card-header view360-tone-6 d-flex justify-content-between align-items-center">
         <strong>6. Seguimiento general</strong>
         <div class="d-flex gap-2 ml-auto">
-          <a href="{{ url_for('tasks.manage_tasks', project_id=project.id) }}" class="btn btn-success btn-sm btn-manage-action btn-action-standard">Gestionar tareas</a>
-          <a href="{{ url_for('tasks.gantt', project_id=project.id) }}" class="btn btn-secondary btn-sm btn-manage-action btn-action-standard">Ver Gantt</a>
+          <a href="{{ url_for('tasks.manage_tasks', project_id=project.id, next=request.full_path.rstrip('?')) }}" class="btn btn-success btn-sm btn-manage-action btn-action-standard">Gestionar tareas</a>
+          <a href="{{ url_for('tasks.gantt', project_id=project.id, next=request.full_path.rstrip('?')) }}" class="btn btn-secondary btn-sm btn-manage-action btn-action-standard">Ver Gantt</a>
         </div>
       </div>
       <div class="card-body">
@@ -238,7 +241,7 @@
                 <td>{{ task.status or '-' }}</td>
                 <td>
                   {% if task.responsible_resource_id %}
-                  <a href="{{ url_for('team.resource_detail', resource_id=task.responsible_resource_id) }}">{{ task.responsible or '-' }}</a>
+                  <a href="{{ url_for('team.resource_detail', resource_id=task.responsible_resource_id, next=request.full_path.rstrip('?')) }}">{{ task.responsible or '-' }}</a>
                   {% else %}
                   {{ task.responsible or '-' }}
                   {% endif %}
@@ -258,7 +261,12 @@
 
   <div class="col-12">
     <div class="card border-0 metric-card">
-      <div class="card-header view360-tone-7"><strong>7. Presupuesto y horas</strong></div>
+      <div class="card-header view360-tone-7 d-flex justify-content-between align-items-center">
+        <strong>7. Presupuesto y horas</strong>
+        {% if financial_summary.actual_calculated_at %}
+        <span class="text-secondary text-right ml-auto" style="font-size: 0.78rem;">Última revisión: {{ financial_summary.actual_calculated_at }}</span>
+        {% endif %}
+      </div>
       <div class="card-body">
         {% if financial_summary.warnings %}
         <div class="alert alert-warning py-2" role="alert">
@@ -269,27 +277,14 @@
         {% endif %}
         {% set currency_code = financial_summary.currency if financial_summary.currency != '-' else (project.currency_code or '') %}
         <div class="row g-3 mb-3">
-          <div class="col-12 col-md-6 col-xl-3"><div class="project-mini-kpi"><small>Ingreso estimado</small><strong>{{ financial_summary.estimated_revenue|money(currency_code) if financial_summary.coverage_valid > 0 else '-' }}</strong></div></div>
-          <div class="col-12 col-md-6 col-xl-3"><div class="project-mini-kpi"><small>Costo estimado</small><strong>{{ financial_summary.estimated_cost|money(currency_code) if financial_summary.coverage_valid > 0 else '-' }}</strong></div></div>
-          <div class="col-12 col-md-6 col-xl-3"><div class="project-mini-kpi"><small>Costo real aprobado</small><strong>{{ financial_summary.actual_cost|money(currency_code) if financial_summary.actual_logs_valued > 0 else '-' }}</strong></div></div>
-          <div class="col-12 col-md-6 col-xl-3"><div class="project-mini-kpi"><small>Presupuesto vendido</small><strong>{{ project.sold_budget|money(currency_code) if project.sold_budget is not none else '-' }}</strong></div></div>
+          <div class="col-12 col-md-6"><div class="project-mini-kpi"><small>Ingreso estimado</small><strong>{{ financial_summary.estimated_revenue|money(currency_code) if financial_summary.coverage_valid > 0 else '-' }}</strong></div></div>
+          <div class="col-12 col-md-6"><div class="project-mini-kpi"><small>Costo estimado</small><strong>{{ financial_summary.estimated_cost|money(currency_code) if financial_summary.coverage_valid > 0 else '-' }}</strong></div></div>
+          <div class="col-12 col-md-6"><div class="project-mini-kpi"><small>Costo real aprobado</small><strong>{{ financial_summary.actual_cost|money(currency_code) if financial_summary.actual_logs_valued > 0 else '-' }}</strong></div></div>
+          <div class="col-12 col-md-6"><div class="project-mini-kpi"><small>Presupuesto vendido</small><strong>{{ project.sold_budget|money(currency_code) if project.sold_budget is not none else '-' }}</strong></div></div>
         </div>
 
         <div class="row g-3">
-          <div class="col-12 col-xl-4">
-            <div class="project-fin-block">
-              <h6 class="project-fin-title">Base</h6>
-              <dl class="row mb-0 project-compact-dl">
-                <dt class="col-6">Modalidad</dt><dd class="col-6">{{ project.billing_mode or '-' }}</dd>
-                <dt class="col-6">Moneda</dt><dd class="col-6">{{ financial_summary.currency if financial_summary.currency != '-' else (project.currency_code or '-') }}</dd>
-                <dt class="col-6">Tarifa promedio</dt><dd class="col-6">{{ project.average_rate|money(currency_code) if project.average_rate is not none else '-' }}</dd>
-                <dt class="col-6">Centro de costos</dt><dd class="col-6">{{ project.cost_center or '-' }}</dd>
-                <dt class="col-6">Código ERP / PSA</dt><dd class="col-6">{{ project.erp_psa_code or '-' }}</dd>
-              </dl>
-            </div>
-          </div>
-
-          <div class="col-12 col-xl-4">
+          <div class="col-12 col-xl-6">
             <div class="project-fin-block">
               <h6 class="project-fin-title">Estimado (planificación)</h6>
               <dl class="row mb-0 project-compact-dl">
@@ -312,7 +307,7 @@
             </div>
           </div>
 
-          <div class="col-12 col-xl-4">
+          <div class="col-12 col-xl-6">
             <div class="project-fin-block">
               <h6 class="project-fin-title">Real aprobado (consumo)</h6>
               <dl class="row mb-0 project-compact-dl">
@@ -331,42 +326,43 @@
                 <dt class="col-6">Cobertura real
                   <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Worklogs aprobados que pudieron valorizarse (con asignación, rol, costo, precio y cotización vigentes) sobre el total de worklogs aprobados."></i>
                 </dt><dd class="col-6">{{ financial_summary.actual_logs_valued }}/{{ financial_summary.actual_logs_total }}</dd>
-                {% if financial_summary.actual_logs_total > 0 %}
-                <dt class="col-6">Último cálculo</dt><dd class="col-6"><small class="text-muted">{{ financial_summary.actual_calculated_at }}</small></dd>
-                {% endif %}
               </dl>
             </div>
           </div>
 
           <div class="col-12">
-            <div class="project-fin-block project-fin-budget">
-              <h6 class="project-fin-title">Margen contra presupuesto</h6>
-              <dl class="row mb-0 project-compact-dl">
-                <dt class="col-sm-4">Margen estimado vs presupuesto
-                  <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Presupuesto vendido menos costo estimado calculado por planificación."></i>
-                </dt>
-                <dd class="col-sm-8">
-                  {{ financial_summary.estimated_margin_vs_sold_budget|money(currency_code) if financial_summary.estimated_margin_vs_sold_budget is not none else '-' }}
+            <h6 class="project-fin-title mb-2">Margen contra presupuesto</h6>
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <div class="project-mini-kpi">
+                  <small>
+                    Margen estimado vs presupuesto
+                    <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Presupuesto vendido menos costo estimado calculado por planificación."></i>
+                  </small>
+                  <strong>{{ financial_summary.estimated_margin_vs_sold_budget|money(currency_code) if financial_summary.estimated_margin_vs_sold_budget is not none else '-' }}</strong>
                   {% if financial_summary.estimated_margin_vs_sold_budget is not none %}
                     {% set sig = financial_summary.estimated_budget_signal %}
-                    <span class="badge {% if sig.key == 'green' %}badge-success{% elif sig.key == 'yellow' %}badge-warning{% elif sig.key == 'red' %}badge-danger{% else %}badge-secondary{% endif %} ml-2">
+                    <span class="badge {% if sig.key == 'green' %}badge-success{% elif sig.key == 'yellow' %}badge-warning{% elif sig.key == 'red' %}badge-danger{% else %}badge-secondary{% endif %} ml-2 align-middle">
                       {{ sig.label }}{% if sig.pct is not none %} ({{ sig.pct|number(1) }}%){% endif %}
                     </span>
                   {% endif %}
-                </dd>
-                <dt class="col-sm-4">Margen real vs presupuesto
-                  <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Presupuesto vendido menos costo real aprobado (timesheets aprobados)."></i>
-                </dt>
-                <dd class="col-sm-8">
-                  {{ financial_summary.actual_margin_vs_sold_budget|money(currency_code) if financial_summary.actual_margin_vs_sold_budget is not none else '-' }}
+                </div>
+              </div>
+              <div class="col-12 col-md-6">
+                <div class="project-mini-kpi">
+                  <small>
+                    Margen real vs presupuesto
+                    <i class="fas fa-circle-info text-muted ml-1" data-toggle="tooltip" data-placement="top" title="Presupuesto vendido menos costo real aprobado (timesheets aprobados)."></i>
+                  </small>
+                  <strong>{{ financial_summary.actual_margin_vs_sold_budget|money(currency_code) if financial_summary.actual_margin_vs_sold_budget is not none else '-' }}</strong>
                   {% if financial_summary.actual_margin_vs_sold_budget is not none %}
                     {% set sig = financial_summary.actual_budget_signal %}
-                    <span class="badge {% if sig.key == 'green' %}badge-success{% elif sig.key == 'yellow' %}badge-warning{% elif sig.key == 'red' %}badge-danger{% else %}badge-secondary{% endif %} ml-2">
+                    <span class="badge {% if sig.key == 'green' %}badge-success{% elif sig.key == 'yellow' %}badge-warning{% elif sig.key == 'red' %}badge-danger{% else %}badge-secondary{% endif %} ml-2 align-middle">
                       {{ sig.label }}{% if sig.pct is not none %} ({{ sig.pct|number(1) }}%){% endif %}
                     </span>
                   {% endif %}
-                </dd>
-              </dl>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -374,37 +370,6 @@
     </div>
   </div>
 
-  <div class="col-12">
-    <div class="card border-0 metric-card">
-      <div class="card-header view360-tone-8 d-flex justify-content-between align-items-center">
-        <strong>8. Cierre y documentos</strong>
-        <a href="{{ url_for('projects.edit_project', project_id=project.id) }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Actualizar datos</a>
-      </div>
-      <div class="card-body">
-        <div class="row g-3">
-          <div class="col-12 col-lg-4">
-            <dl class="row mb-0 project-compact-dl">
-              <dt class="col-6">Registro</dt><dd class="col-6">{% if project.is_active %}<span class="badge badge-success">Activo</span>{% else %}<span class="badge badge-secondary">Inactivo</span>{% endif %}</dd>
-              <dt class="col-6">Contrato adjunto</dt>
-              <dd class="col-6">
-                {% if project.contract_file_name %}
-                  <a href="{{ url_for('projects.download_contract', project_id=project.id) }}">{{ project.contract_original_name or 'Descargar contrato' }}</a>
-                {% else %}
-                  -
-                {% endif %}
-              </dd>
-            </dl>
-          </div>
-          <div class="col-12 col-lg-8">
-            <label class="form-label mb-2">Observaciones del proyecto</label>
-            <div class="project-closure-notes">
-              {{ project.observations or 'Sin observaciones registradas.' }}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
 </div>
 {% endblock %}
 

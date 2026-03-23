@@ -1,0 +1,92 @@
+{% extends 'dashboard/layout.html' %}
+{% block title %}Equipo - Capacidad | NCProject{% endblock %}
+{% block page_title %}Equipo - Capacidad{% endblock %}
+{% block page_subtitle %}Monitoreo de utilización y balance de carga{% endblock %}
+
+{% block dashboard_content %}
+<div class="card mb-3 search-panel-card">
+  <div class="card-header"><strong>Filtros de monitoreo</strong></div>
+  <div class="card-body">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-12 col-md-4">
+        <label class="form-label">Buscar</label>
+        <input name="q" class="form-control" value="{{ filters.q }}" placeholder="Nombre, email, cargo">
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label">Rol</label>
+        <select name="role_id" class="custom-select">
+          <option value="">Todos</option>
+          {% for role in roles %}
+          <option value="{{ role.id }}" {% if filters.role_id|string == role.id|string %}selected{% endif %}>{{ role.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label">Período</label>
+        <select name="utilization_window" class="custom-select">
+          <option value="month" {% if filters.utilization_window == 'month' %}selected{% endif %}>Mes actual</option>
+          <option value="week" {% if filters.utilization_window == 'week' %}selected{% endif %}>Semana actual</option>
+        </select>
+      </div>
+      <div class="col-12 d-flex gap-2 mt-2">
+        <button class="btn btn-outline-primary btn-sm btn-action-standard" type="submit">Aplicar</button>
+        <a class="btn btn-outline-secondary btn-sm btn-action-standard" href="{{ url_for('team.capacity_dashboard') }}">Limpiar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-md-6 col-xl-2">
+    <div class="card border-0 metric-card h-100"><div class="card-body"><small class="text-secondary">Recursos</small><h4 class="mb-0">{{ kpis.resource_count }}</h4></div></div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-2">
+    <div class="card border-0 metric-card h-100"><div class="card-body"><small class="text-secondary">Carga global</small><h4 class="mb-0">{% if kpis.global_pct is not none %}{{ kpis.global_pct|number(1) }}%{% else %}-{% endif %}</h4></div></div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-2">
+    <div class="card border-0 metric-card h-100"><div class="card-body"><small class="text-secondary">Hs asignadas</small><h4 class="mb-0">{{ kpis.total_assigned|number(1) }}</h4></div></div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-2">
+    <div class="card border-0 metric-card h-100"><div class="card-body"><small class="text-secondary">Hs base</small><h4 class="mb-0">{{ kpis.total_base|number(1) }}</h4></div></div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-2">
+    <div class="card border-0 metric-card h-100"><div class="card-body"><small class="text-secondary">Sobrecargados</small><h4 class="mb-0 text-danger">{{ kpis.overloaded_count }}</h4></div></div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-2">
+    <div class="card border-0 metric-card h-100"><div class="card-body"><small class="text-secondary">Subutilizados</small><h4 class="mb-0 text-secondary">{{ kpis.low_utilization_count }}</h4></div></div>
+  </div>
+</div>
+
+<div class="card border-0 metric-card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Capacidad por recurso</strong>
+    <small class="text-secondary">{{ utilization_window_label }} | {{ period_label }}</small>
+  </div>
+  <div class="card-body p-3">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead><tr><th>N°</th><th>Recurso</th><th>Carga %</th><th>Horas</th><th>Estado</th><th class="text-end">Acciones</th></tr></thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td>
+              <strong>{{ row.resource.full_name }}</strong>
+              <br><small class="text-secondary">{{ row.resource.position or '-' }}{% if row.resource.area %} / {{ row.resource.area }}{% endif %}</small>
+            </td>
+            <td>{% if row.pct is not none %}{{ row.pct|number(1) }}%{% else %}-{% endif %}</td>
+            <td>{{ row.assigned_hours|number(1) }} / {{ row.base_hours|number(1) }} hs</td>
+            <td><span class="badge badge-{{ row.badge_class }}">{{ row.status_label }}</span></td>
+            <td class="text-end">
+              <a href="{{ url_for('team.resource_detail', resource_id=row.resource.id, next=request.full_path.rstrip('?')) }}" class="btn btn-sm btn-outline-primary btn-action-icon" title="Detalle" aria-label="Detalle"><i class="fas fa-eye"></i></a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center text-secondary">Sin datos para el período seleccionado.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -2,8 +2,10 @@
 {% block title %}Precios por rol | NCProject{% endblock %}
 {% block page_title %}Precios de venta por rol{% endblock %}
 {% block page_subtitle %}Vigencias comerciales para cálculo de ingresos y margen{% endblock %}
+{% set current_url = request.full_path.rstrip('?') %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('administration.list_users') %}
 {% block page_actions %}
-<a href="{{ url_for('administration.list_users') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
 {% endblock %}
 
 {% block dashboard_content %}
@@ -57,7 +59,7 @@
       <div class="col-12 col-md-1 d-flex gap-2">
         <button class="btn btn-primary btn-sm btn-action-standard" type="submit">{{ 'Guardar cambios' if is_edit else 'Agregar' }}</button>
         {% if is_edit %}
-        <a href="{{ url_for('administration.team_role_prices') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar edición</a>
+        <a href="{{ url_for('administration.team_role_prices', next=request.args.get('next')) if request.args.get('next') else url_for('administration.team_role_prices') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Cancelar edición</a>
         {% endif %}
       </div>
       <div class="col-12">
@@ -84,7 +86,7 @@
             <td>{{ item.currency }}</td>
             <td>{{ item.observations or '-' }}</td>
             <td class="text-end">
-              <a href="{{ url_for('administration.team_role_prices', edit_id=item.id) }}" class="btn btn-sm btn-outline-secondary btn-action-icon" title="Editar" aria-label="Editar">
+              <a href="{{ url_for('administration.team_role_prices', edit_id=item.id, next=current_url) }}" class="btn btn-sm btn-outline-secondary btn-action-icon" title="Editar" aria-label="Editar">
                 <i class="fas fa-pen"></i>
               </a>
             </td>

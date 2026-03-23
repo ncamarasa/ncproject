@@ -1,8 +1,10 @@
 {% extends 'dashboard/layout.html' %}
 {% block title %}ABM Tipos de empresa | NCProject{% endblock %}
 {% block page_title %}Configuración / Clientes / Tipos de empresa{% endblock %}
+{% set current_url = request.full_path.rstrip('?') %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('settings.clients_settings') %}
 {% block page_actions %}
-<a href="{{ url_for('settings.clients_settings') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
 {% endblock %}
 {% block dashboard_content %}
 <div class="card border-0 metric-card mb-3 form-mode-card form-mode-create">
@@ -31,7 +33,7 @@
         <tr>
           <td>{{ item.name }}</td>
           <td class="text-end">
-            <a class="btn btn-sm btn-outline-secondary btn-action-icon mr-1" href="{{ url_for('settings.edit_company_type', item_id=item.id) }}" title="Editar"><i class="fas fa-pen"></i></a>
+            <a class="btn btn-sm btn-outline-secondary btn-action-icon mr-1" href="{{ url_for('settings.edit_company_type', item_id=item.id, next=current_url) }}" title="Editar"><i class="fas fa-pen"></i></a>
             <form method="post" action="{{ url_for('settings.delete_company_type', item_id=item.id) }}" class="d-inline" onsubmit="return confirm('¿Eliminar tipo?');">
               <button class="btn btn-sm btn-outline-danger btn-action-icon" type="submit"><i class="fas fa-trash"></i></button>
             </form>

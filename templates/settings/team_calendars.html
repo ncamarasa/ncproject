@@ -2,8 +2,9 @@
 {% block title %}Calendarios de Equipo | NCProject{% endblock %}
 {% block page_title %}Configuración / Equipo / Calendarios{% endblock %}
 {% block page_subtitle %}Feriados por calendario para disponibilidad automática{% endblock %}
+{% set back_url = request.args.get('next') if request.args.get('next') and request.args.get('next').startswith('/') and not request.args.get('next').startswith('//') else url_for('settings.team_catalog', catalog_key='calendars') %}
 {% block page_actions %}
-<a href="{{ url_for('settings.team_catalog', catalog_key='calendars') }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
+<a href="{{ back_url }}" class="btn btn-outline-secondary btn-sm btn-action-standard">Volver</a>
 {% endblock %}
 
 {% block dashboard_content %}

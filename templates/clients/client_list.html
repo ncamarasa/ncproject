@@ -4,6 +4,7 @@
 {% block page_subtitle %}Entidad base de proyectos, soporte y contratos{% endblock %}
 
 {% block dashboard_content %}
+{% set list_next = request.full_path.rstrip('?') %}
 <div class="card mb-3 search-panel-card">
   <div class="card-header"><strong>Filtros de búsqueda</strong></div>
   <div class="card-body">
@@ -59,7 +60,7 @@
   <div class="card-header d-flex justify-content-between align-items-center">
     <strong>Listado de clientes</strong>
     <div class="d-flex gap-2 ml-auto justify-content-end">
-      <a href="{{ url_for('clients.create_client') }}" class="btn btn-primary btn-sm btn-action-standard"><i class="bi bi-plus-circle"></i> Nuevo cliente</a>
+      <a href="{{ url_for('clients.create_client', next=list_next) }}" class="btn btn-primary btn-sm btn-action-standard"><i class="bi bi-plus-circle"></i> Nuevo cliente</a>
     </div>
   </div>
   <div class="card-body table-responsive p-3">
@@ -97,10 +98,10 @@
               </td>
               <td>{% if client.is_active %}<span class="badge badge-success">Activo</span>{% else %}<span class="badge badge-secondary">Inactivo</span>{% endif %}</td>
               <td class="text-end">
-                <a class="btn btn-sm btn-outline-primary btn-action-icon" href="{{ url_for('clients.client_detail', client_id=client.id) }}" title="Detalle" aria-label="Detalle">
+                <a class="btn btn-sm btn-outline-primary btn-action-icon" href="{{ url_for('clients.client_detail', client_id=client.id, next=list_next) }}" title="Detalle" aria-label="Detalle">
                   <i class="fas fa-eye"></i>
                 </a>
-                <a class="btn btn-sm btn-outline-secondary btn-action-icon" href="{{ url_for('clients.edit_client', client_id=client.id) }}" title="Editar" aria-label="Editar">
+                <a class="btn btn-sm btn-outline-secondary btn-action-icon" href="{{ url_for('clients.edit_client', client_id=client.id, next=list_next) }}" title="Editar" aria-label="Editar">
                   <i class="fas fa-pen"></i>
                 </a>
               </td>
